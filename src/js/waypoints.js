@@ -100,6 +100,35 @@ export function setupWaypointLayers() {
         });
     }
 
+    if (!map.getLayer('gpx-waypoints-cluster-halo-layer')) {
+        map.addLayer({
+            id: 'gpx-waypoints-cluster-halo-layer',
+            type: 'circle',
+            source: 'gpx-waypoints',
+            filter: ['has', 'point_count'],
+            paint: {
+                'circle-radius': [
+                    'step',
+                    ['get', 'point_count'],
+                    21,
+                    10, 24,
+                    50, 29,
+                    200, 34
+                ],
+                'circle-color': [
+                    'step',
+                    ['get', 'point_count'],
+                    '#38bdf8',
+                    10, '#22c55e',
+                    50, '#f59e0b',
+                    200, '#ef4444'
+                ],
+                'circle-opacity': 0.18,
+                'circle-blur': 0.35
+            }
+        });
+    }
+
     if (!map.getLayer('gpx-waypoints-cluster-layer')) {
         map.addLayer({
             id: 'gpx-waypoints-cluster-layer',
@@ -115,10 +144,23 @@ export function setupWaypointLayers() {
                     50, 20,
                     200, 24
                 ],
-                'circle-color': '#1d4ed8',
-                'circle-opacity': 0.9,
-                'circle-stroke-width': 2,
-                'circle-stroke-color': '#ffffff'
+                'circle-color': [
+                    'step',
+                    ['get', 'point_count'],
+                    '#0284c7',
+                    10, '#16a34a',
+                    50, '#d97706',
+                    200, '#dc2626'
+                ],
+                'circle-opacity': 0.94,
+                'circle-stroke-width': [
+                    'interpolate',
+                    ['linear'],
+                    ['zoom'],
+                    4, 1.5,
+                    12, 2.5
+                ],
+                'circle-stroke-color': 'rgba(255,255,255,0.92)'
             }
         });
     }
@@ -131,10 +173,21 @@ export function setupWaypointLayers() {
             filter: ['has', 'point_count'],
             layout: {
                 'text-field': ['get', 'point_count_abbreviated'],
-                'text-size': 11
+                'text-size': [
+                    'step',
+                    ['get', 'point_count'],
+                    11,
+                    50, 12,
+                    200, 13
+                ],
+                'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+                'text-allow-overlap': true,
+                'text-ignore-placement': true
             },
             paint: {
-                'text-color': '#ffffff'
+                'text-color': '#ffffff',
+                'text-halo-color': 'rgba(15,23,42,0.55)',
+                'text-halo-width': 1
             }
         });
     }
@@ -171,9 +224,47 @@ export function setupWaypointLayers() {
                     17, 10
                 ],
                 'circle-color': ['get', 'color'],
-                'circle-opacity': 0.9,
-                'circle-stroke-width': 2,
-                'circle-stroke-color': '#ffffff'
+                'circle-opacity': 0.95,
+                'circle-stroke-width': [
+                    'interpolate',
+                    ['linear'],
+                    ['zoom'],
+                    6, 1.2,
+                    14, 2,
+                    17, 2.5
+                ],
+                'circle-stroke-color': 'rgba(255,255,255,0.96)'
+            }
+        });
+    }
+
+    if (!map.getLayer('gpx-waypoints-ring-layer')) {
+        map.addLayer({
+            id: 'gpx-waypoints-ring-layer',
+            type: 'circle',
+            source: 'gpx-waypoints',
+            filter: ['!', ['has', 'point_count']],
+            paint: {
+                'circle-radius': [
+                    'interpolate',
+                    ['linear'],
+                    ['zoom'],
+                    6, 7,
+                    10, 9,
+                    14, 13,
+                    17, 16
+                ],
+                'circle-color': 'rgba(255,255,255,0)',
+                'circle-stroke-width': [
+                    'interpolate',
+                    ['linear'],
+                    ['zoom'],
+                    8, 0.5,
+                    14, 1.4,
+                    17, 2
+                ],
+                'circle-stroke-color': ['get', 'color'],
+                'circle-opacity': 0.38
             }
         });
     }
@@ -187,12 +278,20 @@ export function setupWaypointLayers() {
             minzoom: 13,
             layout: {
                 'text-field': ['get', 'symbol'],
-                'text-size': 13,
+                'text-size': [
+                    'interpolate',
+                    ['linear'],
+                    ['zoom'],
+                    13, 11,
+                    17, 14
+                ],
                 'text-allow-overlap': true,
                 'text-ignore-placement': true
             },
             paint: {
-                'text-color': '#ffffff'
+                'text-color': '#ffffff',
+                'text-halo-color': 'rgba(15,23,42,0.62)',
+                'text-halo-width': 1
             }
         });
     }

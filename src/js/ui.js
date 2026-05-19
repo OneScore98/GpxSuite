@@ -51,6 +51,7 @@ let _updatePrintGridScale = null;
 let _setPrintPlanningOrientation = null;
 let _generateHighResPrintPreview = null;
 let _localLibraryBound = false;
+let _gisDragPayload = null;
 
 export function injectDeps(deps) {
     _updateMapData = deps.updateMapData;
@@ -135,6 +136,9 @@ export async function renderLocalGpxLibrary() {
 
         container.innerHTML = files.map(file => {
             const loadedTrack = tracks.find(track => track.localFileId === file.id);
+            const stateLabel = loadedTrack
+                ? (loadedTrack.visible === false ? 'Nascosta' : 'Visibile')
+                : (file.visible === false ? 'Nascosta salvata' : 'Visibile salvata');
             return `
               <div class="bg-gray-900 border border-gray-800 rounded-xl p-2.5 space-y-2">
                 <div class="flex items-start justify-between gap-2">
@@ -150,11 +154,11 @@ export async function renderLocalGpxLibrary() {
                 </div>
                 <div class="flex items-center justify-between gap-2 text-[10px] text-gray-500">
                   <span>${file.pointsCount} pt · ${file.segmentsCount} seg · ${file.waypointCount} wp</span>
-                  <span class="${loadedTrack ? 'text-green-400' : 'text-gray-600'}">${loadedTrack ? 'In memoria' : 'Solo archivio'}</span>
+                  <span class="${loadedTrack && loadedTrack.visible !== false ? 'text-green-400' : 'text-gray-500'}">${stateLabel}</span>
                 </div>
                 <div class="flex gap-2">
                   <button onclick="openStoredTrackFromLibrary('${file.id}')" class="flex-1 bg-emerald-600/20 hover:bg-emerald-600/35 text-emerald-300 border border-emerald-900/80 rounded-lg py-1.5 text-[11px] font-semibold">
-                    ${loadedTrack ? 'Apri/Focalizza' : 'Carica in memoria'}
+                    ${loadedTrack ? 'Rendi attiva' : 'Carica'}
                   </button>
                 </div>
               </div>
@@ -195,6 +199,31 @@ export async function openStoredTrackFromLibrary(fileId) {
     renderGisTree();
     renderLocalGpxLibrary();
     showToast(`Caricato da archivio: ${storedTrack.name}`, 'success');
+}
+
+export async function restoreStoredTracksOnStartup() {
+    const files = await listStoredTracks();
+    if (files.length === 0) return 0;
+
+    const restoredTracks = [];
+    for (let i = 0; i < files.length; i++) {
+        const storedTrack = await loadStoredTrack(files[i].id);
+        if (!storedTrack) continue;
+        ensureTrackStorageMeta(storedTrack, storedTrack.localSource || 'imported');
+        restoredTracks.push(storedTrack);
+    }
+
+    if (restoredTracks.length === 0) return 0;
+
+    setTracks(restoredTracks);
+    const activeTrack = restoredTracks.find(track => track.visible !== false) || restoredTracks[0];
+    setActiveTrackId(activeTrack.id);
+    setActiveSegmentId(activeTrack.segments[0]?.id || null);
+    if (_updateMapData) _updateMapData(true);
+    updateActiveTracksHeader();
+    renderGisTree();
+    renderLocalGpxLibrary();
+    return restoredTracks.length;
 }
 
 export async function deleteStoredTrackFromLibrary(fileId) {
@@ -260,71 +289,205 @@ function _doRenderGisTree() {
     if (tracks.length > 0) {
         html += `<div class="space-y-2">
           <span class="text-[10px] text-gray-400 font-bold uppercase tracking-wider flex items-center gap-1">
-            <i data-lucide="route" class="w-3.5 h-3.5"></i> Tracce GPX (${tracks.length})
+            <i data-lucide="folder-tree" class="w-3.5 h-3.5"></i> File GPX in mappa (${tracks.length})
           </span>`;
 
-        tracks.forEach(track => {
+        tracks.forEach((track, trackIndex) => {
             const isActive = track.id === activeTrackId;
+            const segmentCount = track.segments.length;
+            const pointCount = track.segments.reduce((sum, seg) => sum + seg.points.length, 0);
             html += `
-            <div class="bg-gray-900 border ${isActive ? 'border-blue-500/50' : 'border-gray-800'} rounded-xl p-2.5 space-y-2">
-              <div class="flex items-center justify-between gap-1"><input type="text" value="${escapeXml(track.name)}" onchange="renameTrack('${track.id}', this.value)" class="bg-transparent text-xs font-bold text-white border-b border-transparent hover:border-gray-700 focus:border-blue-500 focus:outline-none w-32">
-                <div class="flex items-center gap-1.5">
-                  <button onclick="toggleTrackVisibility('${track.id}')" class="text-gray-400 hover:text-white" title="Mostra/Nascondi Livello"><i data-lucide="${track.visible === false ? 'eye-off' : 'eye'}" class="w-3.5 h-3.5"></i></button>
-                  <input type="color" value="${track.color}" onchange="changeTrackColor('${track.id}', this.value)" class="w-4 h-4 rounded border-0 bg-transparent cursor-pointer">
-                  <button onclick="setTrackActive('${track.id}')" class="text-[10px] px-1.5 py-0.5 rounded ${isActive ? 'bg-blue-600 text-white font-bold' : 'bg-gray-800 text-gray-400'}" title="Rendi Attiva">Usa</button>
-                  <button onclick="deleteTrack('${track.id}')" class="text-gray-500 hover:text-red-400"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
-                </div>
-              </div>
-
-              <div class="pl-2 border-l border-gray-800 space-y-1">
-                ${track.segments.map(seg => {
-                    const isSegActive = seg.id === activeSegmentId;
-                    return `
-                    <div class="flex items-center justify-between text-xs py-1 px-1.5 rounded ${isSegActive ? 'bg-blue-950/40 text-blue-300' : 'text-gray-400'}">
-                      <div class="flex items-center gap-1">
-                        <i data-lucide="milestone" class="w-3 h-3 text-gray-500"></i><input type="text" value="${escapeXml(seg.name)}" onchange="renameSegment('${track.id}', '${seg.id}', this.value)" class="bg-transparent text-[11px] border-b border-transparent hover:border-gray-700 focus:border-blue-500 focus:outline-none w-28">
-                      </div>
-                      <div class="flex items-center gap-1.5">
-                        <span class="text-[10px] text-gray-500">${seg.points.length} pt</span>
-                        <button onclick="toggleSegmentVisibility('${track.id}', '${seg.id}')" class="text-gray-500 hover:text-white" title="Mostra/Nascondi"><i data-lucide="${seg.visible === false ? 'eye-off' : 'eye'}" class="w-3 h-3"></i></button>
-                        <button onclick="setSegmentActive('${track.id}', '${seg.id}')" class="text-[9px] hover:underline">${isSegActive ? '⚡' : 'Usa'}</button>
-                        <button onclick="deleteSegment('${track.id}', '${seg.id}')" class="text-gray-600 hover:text-red-400"><i data-lucide="x" class="w-3 h-3"></i></button>
+            <div class="group bg-gray-900/95 border ${isActive ? 'border-blue-500/60 shadow-blue-950/30' : 'border-gray-800'} rounded-xl overflow-hidden shadow-lg"
+                 ondragover="handleGisDragOver(event)"
+                 ondrop="handleGisDrop(event, 'track', '${track.id}')">
+              <div class="flex items-stretch">
+                <div class="w-1.5" style="background-color: ${track.color || '#3b82f6'}"></div>
+                <div class="flex-1 min-w-0 p-2.5 space-y-2">
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="flex items-start gap-2 min-w-0">
+                      <button draggable="true"
+                              ondragstart="handleGisDragStart(event, 'track', '${track.id}')"
+                              ondragend="handleGisDragEnd(event)"
+                              class="mt-0.5 text-gray-600 hover:text-gray-300 cursor-grab active:cursor-grabbing"
+                              title="Trascina per riordinare questo file GPX">
+                        <i data-lucide="grip-vertical" class="w-4 h-4"></i>
+                      </button>
+                      <div class="min-w-0">
+                        <div class="flex items-center gap-1.5 min-w-0">
+                          <i data-lucide="file-map" class="w-3.5 h-3.5 ${isActive ? 'text-blue-300' : 'text-gray-500'} shrink-0"></i>
+                          <input type="text" value="${escapeXml(track.name)}" onchange="renameTrack('${track.id}', this.value)" class="bg-transparent text-xs font-bold ${track.visible === false ? 'text-gray-500 line-through' : 'text-white'} border-b border-transparent hover:border-gray-700 focus:border-blue-500 focus:outline-none min-w-0 w-36">
+                        </div>
+                        <div class="text-[10px] text-gray-500 mt-0.5 pl-5">
+                          File ${trackIndex + 1} · ${segmentCount} segmenti · ${pointCount} pt · ${track.waypoints.length} wp
+                        </div>
                       </div>
                     </div>
-                  `;
-                }).join('')}
-                <button onclick="addNewSegmentToTrack('${track.id}')" class="text-[10px] text-blue-400 hover:underline flex items-center gap-0.5 pt-1 pl-1">
-                  <i data-lucide="plus" class="w-3 h-3"></i> Aggiungi Tracciato/Segmento
-                </button>
-              </div>` + (track.waypoints.length > 0 ? `
-      <div class="flex items-center justify-between ml-1 mb-1">
-            <span class="text-[9px] text-gray-500 font-bold uppercase tracking-wider flex items-center gap-1">
-                <i data-lucide="map-pinned" class="w-3 h-3"></i> Waypoints (${track.waypoints.length})
-            </span>
-            <button onclick="toggleAllWaypointsVisibility('${track.id}')" class="text-gray-500 hover:text-white" title="Mostra/Nascondi Gruppo Waypoint"><i data-lucide="${track.waypointsVisible === false ? 'eye-off' : 'eye'}" class="w-3.5 h-3.5"></i></button>
-        </div>
-        <div class="${track.waypointsVisible === false ? 'hidden' : 'space-y-1'}">
-          ${track.waypoints.map(wp => `
-              <div class="flex items-center justify-between gap-1 text-xs hover:bg-gray-800/40 p-1 rounded transition-all ${wp.visible === false ? 'opacity-50' : ''}">
-                <div class="flex items-center gap-1.5 min-w-0">
-                  <span class="text-sm">${wp.symbol}</span>
-                  <span class="font-medium text-gray-200 truncate cursor-pointer" onclick="zoomToWaypoint(${wp.lon}, ${wp.lat})">${escapeXml(wp.name)}</span>
-                  <span class="text-[9px] text-gray-500">${wp.ele}m</span>
-                </div>
-                <div class="flex items-center gap-1">
-                  <button onclick="toggleWaypointVisibility('${track.id}', '${wp.id}')" class="text-gray-500 hover:text-white" title="Mostra/Nascondi"><i data-lucide="${wp.visible === false ? 'eye-off' : 'eye'}" class="w-3 h-3"></i></button>
-                  <button onclick="openWaypointEditor('${track.id}', '${wp.id}')" class="text-gray-500 hover:text-white"><i data-lucide="edit-3" class="w-3 h-3"></i></button>
-                  <button onclick="deleteWaypoint('${track.id}', '${wp.id}')" class="text-gray-500 hover:text-red-400"><i data-lucide="trash" class="w-3 h-3"></i></button>
+                    <div class="flex items-center gap-1.5 shrink-0">
+                      <button onclick="toggleTrackVisibility('${track.id}')" class="text-gray-400 hover:text-white" title="Mostra/Nascondi File"><i data-lucide="${track.visible === false ? 'eye-off' : 'eye'}" class="w-3.5 h-3.5"></i></button>
+                      <input type="color" value="${track.color}" onchange="changeTrackColor('${track.id}', this.value)" class="w-4 h-4 rounded border-0 bg-transparent cursor-pointer" title="Colore traccia">
+                      <button onclick="setTrackActive('${track.id}')" class="text-[10px] px-1.5 py-0.5 rounded ${isActive ? 'bg-blue-600 text-white font-bold' : 'bg-gray-800 text-gray-400 hover:text-white'}" title="Rendi Attiva">Usa</button>
+                      <button onclick="deleteTrack('${track.id}')" class="text-gray-500 hover:text-red-400" title="Elimina file"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                    </div>
+                  </div>
+
+                  <div class="ml-5 pl-3 border-l border-gray-800/90 space-y-1"
+                       ondragover="handleGisDragOver(event)"
+                       ondrop="handleGisDrop(event, 'track-segments', '${track.id}')">
+                    <div class="text-[9px] text-gray-600 font-bold uppercase tracking-wider flex items-center gap-1 pb-0.5">
+                      <i data-lucide="git-branch" class="w-3 h-3"></i> Segmenti
+                    </div>
+                    ${track.segments.map((seg, segIndex) => {
+                        const isSegActive = seg.id === activeSegmentId;
+                        return `
+                        <div class="flex items-center justify-between text-xs py-1.5 px-1.5 rounded border ${isSegActive ? 'bg-blue-950/40 text-blue-300 border-blue-900/60' : 'text-gray-400 border-transparent hover:bg-gray-800/45 hover:border-gray-800'} ${seg.visible === false ? 'opacity-55' : ''}"
+                             ondragover="handleGisDragOver(event)"
+                             ondrop="handleGisDrop(event, 'segment', '${track.id}', '${seg.id}')">
+                          <div class="flex items-center gap-1.5 min-w-0">
+                            <button draggable="true"
+                                    ondragstart="handleGisDragStart(event, 'segment', '${track.id}', '${seg.id}')"
+                                    ondragend="handleGisDragEnd(event)"
+                                    class="text-gray-600 hover:text-gray-300 cursor-grab active:cursor-grabbing shrink-0"
+                                    title="Trascina per riordinare o spostare questo segmento">
+                              <i data-lucide="grip-vertical" class="w-3.5 h-3.5"></i>
+                            </button>
+                            <i data-lucide="milestone" class="w-3 h-3 text-gray-500 shrink-0"></i>
+                            <input type="text" value="${escapeXml(seg.name)}" onchange="renameSegment('${track.id}', '${seg.id}', this.value)" class="bg-transparent text-[11px] border-b border-transparent hover:border-gray-700 focus:border-blue-500 focus:outline-none min-w-0 w-24 ${seg.visible === false ? 'line-through' : ''}">
+                          </div>
+                          <div class="flex items-center gap-1.5 shrink-0">
+                            <span class="text-[10px] text-gray-500">${segIndex + 1}/${seg.points.length} pt</span>
+                            <button onclick="toggleSegmentVisibility('${track.id}', '${seg.id}')" class="text-gray-500 hover:text-white" title="Mostra/Nascondi Segmento"><i data-lucide="${seg.visible === false ? 'eye-off' : 'eye'}" class="w-3 h-3"></i></button>
+                            <button onclick="setSegmentActive('${track.id}', '${seg.id}')" class="text-[9px] hover:underline">${isSegActive ? 'Attivo' : 'Usa'}</button>
+                            <button onclick="deleteSegment('${track.id}', '${seg.id}')" class="text-gray-600 hover:text-red-400" title="Elimina segmento"><i data-lucide="x" class="w-3 h-3"></i></button>
+                          </div>
+                        </div>
+                      `;
+                    }).join('')}
+                    <button onclick="addNewSegmentToTrack('${track.id}')" class="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-0.5 pt-1 pl-1">
+                      <i data-lucide="plus" class="w-3 h-3"></i> Aggiungi Segmento
+                    </button>
+                  </div>` + (track.waypoints.length > 0 ? `
+                  <div class="ml-5 pl-3 border-l border-gray-800/60 pt-1">
+                    <div class="flex items-center justify-between mb-1">
+                      <span class="text-[9px] text-gray-500 font-bold uppercase tracking-wider flex items-center gap-1">
+                        <i data-lucide="map-pinned" class="w-3 h-3"></i> Waypoints (${track.waypoints.length})
+                      </span>
+                      <button onclick="toggleAllWaypointsVisibility('${track.id}')" class="text-gray-500 hover:text-white" title="Mostra/Nascondi Gruppo Waypoint"><i data-lucide="${track.waypointsVisible === false ? 'eye-off' : 'eye'}" class="w-3.5 h-3.5"></i></button>
+                    </div>
+                    <div class="${track.waypointsVisible === false ? 'hidden' : 'space-y-1'}">
+                      ${track.waypoints.map(wp => `
+                          <div class="flex items-center justify-between gap-1 text-xs hover:bg-gray-800/40 p-1 rounded transition-all ${wp.visible === false ? 'opacity-50' : ''}">
+                            <div class="flex items-center gap-1.5 min-w-0">
+                              <span class="text-sm">${wp.symbol}</span>
+                              <span class="font-medium text-gray-200 truncate cursor-pointer" onclick="zoomToWaypoint(${wp.lon}, ${wp.lat})">${escapeXml(wp.name)}</span>
+                              <span class="text-[9px] text-gray-500">${wp.ele}m</span>
+                            </div>
+                            <div class="flex items-center gap-1">
+                              <button onclick="toggleWaypointVisibility('${track.id}', '${wp.id}')" class="text-gray-500 hover:text-white" title="Mostra/Nascondi"><i data-lucide="${wp.visible === false ? 'eye-off' : 'eye'}" class="w-3 h-3"></i></button>
+                              <button onclick="openWaypointEditor('${track.id}', '${wp.id}')" class="text-gray-500 hover:text-white"><i data-lucide="edit-3" class="w-3 h-3"></i></button>
+                              <button onclick="deleteWaypoint('${track.id}', '${wp.id}')" class="text-gray-500 hover:text-red-400"><i data-lucide="trash" class="w-3 h-3"></i></button>
+                            </div>
+                          </div>
+                      `).join('')}
+                    </div>
+                  </div>
+                ` : '') + `
                 </div>
               </div>
-          `).join('')}
-        </div>
-      ` : '') + `</div>`;
+            </div>`;
         });
         html += `</div>`;
     }
     container.innerHTML = html;
     lucide.createIcons();
+}
+
+function getDropPosition(event) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return event.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+}
+
+function finishGisTreeMove(message) {
+    if (_saveHistoryState) _saveHistoryState();
+    if (_updateMapData) _updateMapData(true);
+    updateActiveTracksHeader();
+    renderGisTree();
+    renderLocalGpxLibrary();
+    showToast(message, 'success');
+}
+
+export function handleGisDragStart(event, type, trackId, segId = null) {
+    _gisDragPayload = { type, trackId, segId };
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', JSON.stringify(_gisDragPayload));
+}
+
+export function handleGisDragOver(event) {
+    if (!_gisDragPayload) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+}
+
+export function handleGisDragEnd() {
+    _gisDragPayload = null;
+}
+
+export function handleGisDrop(event, targetType, targetTrackId, targetSegId = null) {
+    if (!_gisDragPayload) return;
+
+    if (_gisDragPayload.type === 'track' && targetType !== 'track') return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (_gisDragPayload.type === 'track' && targetType === 'track') {
+        const fromIndex = tracks.findIndex(track => track.id === _gisDragPayload.trackId);
+        const targetIndex = tracks.findIndex(track => track.id === targetTrackId);
+        if (fromIndex === -1 || targetIndex === -1 || fromIndex === targetIndex) return;
+
+        let toIndex = targetIndex + (getDropPosition(event) === 'after' ? 1 : 0);
+        if (fromIndex < toIndex) toIndex--;
+        tracks.splice(toIndex, 0, tracks.splice(fromIndex, 1)[0]);
+        setActiveTrackId(_gisDragPayload.trackId);
+        const activeTrack = tracks.find(track => track.id === _gisDragPayload.trackId);
+        setActiveSegmentId(activeTrack?.segments[0]?.id || null);
+        _gisDragPayload = null;
+        finishGisTreeMove("Ordine dei file aggiornato");
+        return;
+    }
+
+    if (_gisDragPayload.type !== 'segment') return;
+
+    const sourceTrack = tracks.find(track => track.id === _gisDragPayload.trackId);
+    const targetTrack = tracks.find(track => track.id === targetTrackId);
+    if (!sourceTrack || !targetTrack) return;
+
+    if (
+        targetType === 'segment' &&
+        sourceTrack.id === targetTrack.id &&
+        _gisDragPayload.segId === targetSegId
+    ) {
+        _gisDragPayload = null;
+        return;
+    }
+
+    const sourceIndex = sourceTrack.segments.findIndex(seg => seg.id === _gisDragPayload.segId);
+    if (sourceIndex === -1) return;
+
+    const [segment] = sourceTrack.segments.splice(sourceIndex, 1);
+    let targetIndex = targetTrack.segments.length;
+
+    if (targetType === 'segment' && targetSegId) {
+        targetIndex = targetTrack.segments.findIndex(seg => seg.id === targetSegId);
+        if (targetIndex === -1) targetIndex = targetTrack.segments.length;
+        else if (getDropPosition(event) === 'after') targetIndex++;
+    }
+
+    if (sourceTrack.id === targetTrack.id && sourceIndex < targetIndex) targetIndex--;
+    targetTrack.segments.splice(Math.max(0, targetIndex), 0, segment);
+    setActiveTrackId(targetTrack.id);
+    setActiveSegmentId(segment.id);
+    _gisDragPayload = null;
+    finishGisTreeMove(sourceTrack.id === targetTrack.id ? "Segmento riordinato" : "Segmento spostato in un altro file");
 }
 
 export function setTrackActive(trackId) {

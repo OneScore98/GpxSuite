@@ -112,6 +112,7 @@ export async function listStoredTracks() {
             source: rec.source,
             createdAt: rec.createdAt,
             updatedAt: rec.updatedAt,
+            visible: rec.track?.visible !== false,
             pointsCount: rec.pointsCount || 0,
             segmentsCount: rec.segmentsCount || 0,
             waypointCount: rec.waypointCount || 0

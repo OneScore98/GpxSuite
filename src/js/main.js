@@ -14,14 +14,15 @@ import {
 } from './print.js';
 import {
     injectDeps, setupEvents, createNewTrack, renderGisTree,
-    initLocalLibrary, renderLocalGpxLibrary, openStoredTrackFromLibrary, deleteStoredTrackFromLibrary,
+    initLocalLibrary, renderLocalGpxLibrary, restoreStoredTracksOnStartup,
+    openStoredTrackFromLibrary, deleteStoredTrackFromLibrary,
+    handleGisDragStart, handleGisDragOver, handleGisDrop, handleGisDragEnd,
     updateActiveTracksHeader, showToast,
     setTrackActive, renameTrack, changeTrackColor, toggleTrackVisibility,
     toggleAllWaypointsVisibility, toggleWaypointVisibility, toggleSegmentVisibility,
     deleteTrack, addNewSegmentToTrack, renameSegment, setSegmentActive, deleteSegment,
     zoomToWaypoint, deleteWaypoint, searchNominatim
 } from './ui.js';
-import { hasStoredTracks } from './storage.js';
 
 // Inietta le dipendenze circolari in ui.js prima che venga usata
 injectDeps({
@@ -66,6 +67,10 @@ window.deleteWaypoint = deleteWaypoint;
 window.openWaypointEditor = openWaypointEditor;
 window.openStoredTrackFromLibrary = openStoredTrackFromLibrary;
 window.deleteStoredTrackFromLibrary = deleteStoredTrackFromLibrary;
+window.handleGisDragStart = handleGisDragStart;
+window.handleGisDragOver = handleGisDragOver;
+window.handleGisDrop = handleGisDrop;
+window.handleGisDragEnd = handleGisDragEnd;
 
 window.onload = function() {
     lucide.createIcons();
@@ -143,10 +148,11 @@ window.onload = function() {
         renderLocalGpxLibrary();
 
         try {
-            if (!(await hasStoredTracks())) {
+            const restoredCount = await restoreStoredTracksOnStartup();
+            if (restoredCount === 0) {
                 createNewTrack("Traccia 1");
             } else {
-                showToast("Archivio locale GPX pronto", "info");
+                showToast(`Ripristinate ${restoredCount} tracce locali`, "success");
             }
         } catch (err) {
             console.error(err);
