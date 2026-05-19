@@ -14,12 +14,14 @@ import {
 } from './print.js';
 import {
     injectDeps, setupEvents, createNewTrack, renderGisTree,
+    initLocalLibrary, renderLocalGpxLibrary, openStoredTrackFromLibrary, deleteStoredTrackFromLibrary,
     updateActiveTracksHeader, showToast,
     setTrackActive, renameTrack, changeTrackColor, toggleTrackVisibility,
     toggleAllWaypointsVisibility, toggleWaypointVisibility, toggleSegmentVisibility,
     deleteTrack, addNewSegmentToTrack, renameSegment, setSegmentActive, deleteSegment,
     zoomToWaypoint, deleteWaypoint, searchNominatim
 } from './ui.js';
+import { hasStoredTracks } from './storage.js';
 
 // Inietta le dipendenze circolari in ui.js prima che venga usata
 injectDeps({
@@ -62,6 +64,8 @@ window.deleteSegment = deleteSegment;
 window.zoomToWaypoint = zoomToWaypoint;
 window.deleteWaypoint = deleteWaypoint;
 window.openWaypointEditor = openWaypointEditor;
+window.openStoredTrackFromLibrary = openStoredTrackFromLibrary;
+window.deleteStoredTrackFromLibrary = deleteStoredTrackFromLibrary;
 
 window.onload = function() {
     lucide.createIcons();
@@ -100,7 +104,7 @@ window.onload = function() {
     });
     resizeObserver.observe(document.getElementById('map'));
 
-    mapInstance.on('load', () => {
+    mapInstance.on('load', async() => {
         setMapLoaded(true);
 
         mapInstance.addSource('terrain-nextzen', {
@@ -131,8 +135,23 @@ window.onload = function() {
 
         setupLayers();
         setupEvents();
+        initLocalLibrary();
         initChart();
         setupPrintDragEvents();
-        createNewTrack("Traccia 1");
+        renderGisTree();
+        updateActiveTracksHeader();
+        renderLocalGpxLibrary();
+
+        try {
+            if (!(await hasStoredTracks())) {
+                createNewTrack("Traccia 1");
+            } else {
+                showToast("Archivio locale GPX pronto", "info");
+            }
+        } catch (err) {
+            console.error(err);
+            showToast("Archivio locale non disponibile in questo browser", "error");
+            createNewTrack("Traccia 1");
+        }
     });
 };

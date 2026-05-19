@@ -20,6 +20,13 @@ import {
 
 import { escapeXml } from './utils.js';
 import { forceUpdateStats } from './stats.js';
+import {
+    listStoredTracks,
+    loadStoredTrack,
+    deleteStoredTrack,
+    ensureTrackStorageMeta,
+    onLibraryChanged
+} from './storage.js';
 
 // Riferimenti a funzioni degli altri moduli — iniettati da main.js per evitare
 // dipendenze circolari tra ui.js e gli altri moduli
@@ -43,6 +50,7 @@ let _updatePrintGridLayout = null;
 let _updatePrintGridScale = null;
 let _setPrintPlanningOrientation = null;
 let _generateHighResPrintPreview = null;
+let _localLibraryBound = false;
 
 export function injectDeps(deps) {
     _updateMapData = deps.updateMapData;
@@ -71,6 +79,10 @@ export function createNewTrack(name) {
     const trackName = name || `Traccia ${tracks.length + 1}`;
     const newTrack = {
         id: 'track_' + Date.now(),
+        localFileId: 'local_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+        localCreatedAt: Date.now(),
+        localUpdatedAt: Date.now(),
+        localSource: 'created',
         name: trackName,
         desc: 'Nessuna descrizione',
         color: '#3b82f6',
@@ -94,6 +106,116 @@ export function createNewTrack(name) {
     renderGisTree();
     showToast(`Creata: ${trackName}`, 'info');
     return newTrack;
+}
+
+function formatLibraryDate(ts) {
+    if (!ts) return 'Data sconosciuta';
+    return new Date(ts).toLocaleString('it-IT', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+export async function renderLocalGpxLibrary() {
+    const container = document.getElementById('local-gpx-library');
+    if (!container) return;
+
+    try {
+        const files = await listStoredTracks();
+        if (files.length === 0) {
+            container.innerHTML = `
+              <div class="text-center py-4 text-gray-500 text-[11px] italic">
+                Nessun GPX salvato sul dispositivo.
+              </div>`;
+            return;
+        }
+
+        container.innerHTML = files.map(file => {
+            const loadedTrack = tracks.find(track => track.localFileId === file.id);
+            return `
+              <div class="bg-gray-900 border border-gray-800 rounded-xl p-2.5 space-y-2">
+                <div class="flex items-start justify-between gap-2">
+                  <div class="min-w-0">
+                    <div class="text-xs font-semibold text-white truncate">${escapeXml(file.name)}</div>
+                    <div class="text-[10px] text-gray-500">
+                      ${file.source === 'imported' ? 'Importato' : 'Creato in app'} · Agg. ${formatLibraryDate(file.updatedAt)}
+                    </div>
+                  </div>
+                  <button onclick="deleteStoredTrackFromLibrary('${file.id}')" class="text-gray-500 hover:text-red-400 shrink-0" title="Elimina dal dispositivo">
+                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                  </button>
+                </div>
+                <div class="flex items-center justify-between gap-2 text-[10px] text-gray-500">
+                  <span>${file.pointsCount} pt · ${file.segmentsCount} seg · ${file.waypointCount} wp</span>
+                  <span class="${loadedTrack ? 'text-green-400' : 'text-gray-600'}">${loadedTrack ? 'In memoria' : 'Solo archivio'}</span>
+                </div>
+                <div class="flex gap-2">
+                  <button onclick="openStoredTrackFromLibrary('${file.id}')" class="flex-1 bg-emerald-600/20 hover:bg-emerald-600/35 text-emerald-300 border border-emerald-900/80 rounded-lg py-1.5 text-[11px] font-semibold">
+                    ${loadedTrack ? 'Apri/Focalizza' : 'Carica in memoria'}
+                  </button>
+                </div>
+              </div>
+            `;
+        }).join('');
+        lucide.createIcons();
+    } catch (err) {
+        console.error(err);
+        container.innerHTML = `
+          <div class="text-center py-4 text-red-400 text-[11px] italic">
+            Archivio locale non disponibile.
+          </div>`;
+    }
+}
+
+export async function openStoredTrackFromLibrary(fileId) {
+    const existing = tracks.find(track => track.localFileId === fileId);
+    if (existing) {
+        setTrackActive(existing.id);
+        showToast(`Già in memoria: ${existing.name}`, 'info');
+        return;
+    }
+
+    const storedTrack = await loadStoredTrack(fileId);
+    if (!storedTrack) {
+        showToast("File locale non trovato", "error");
+        renderLocalGpxLibrary();
+        return;
+    }
+
+    ensureTrackStorageMeta(storedTrack, storedTrack.localSource || 'imported');
+    tracks.push(storedTrack);
+    setActiveTrackId(storedTrack.id);
+    setActiveSegmentId(storedTrack.segments[0]?.id || null);
+    if (_saveHistoryState) _saveHistoryState();
+    if (_updateMapData) _updateMapData(true);
+    updateActiveTracksHeader();
+    renderGisTree();
+    renderLocalGpxLibrary();
+    showToast(`Caricato da archivio: ${storedTrack.name}`, 'success');
+}
+
+export async function deleteStoredTrackFromLibrary(fileId) {
+    const track = tracks.find(item => item.localFileId === fileId);
+    if (track) {
+        deleteTrack(track.id);
+        return;
+    }
+
+    await deleteStoredTrack(fileId);
+    renderLocalGpxLibrary();
+    showToast("GPX eliminato dal dispositivo", "info");
+}
+
+export function initLocalLibrary() {
+    renderLocalGpxLibrary();
+    if (_localLibraryBound) return;
+    onLibraryChanged(() => {
+        renderLocalGpxLibrary();
+    });
+    _localLibraryBound = true;
 }
 
 // Verifica se l'albero GIS è visibile sullo schermo. Quando il pannello è chiuso
@@ -277,14 +399,21 @@ export function toggleSegmentVisibility(trackId, segId) {
 }
 
 export function deleteTrack(trackId) {
-    setTracks(tracks.filter(t => t.id !== trackId));
+    const trackToDelete = tracks.find(t => t.id === trackId);
+    const remainingTracks = tracks.filter(t => t.id !== trackId);
+    setTracks(remainingTracks);
     if (activeTrackId === trackId) {
-        setActiveTrackId(tracks.length > 0 ? tracks[0].id : null);
-        setActiveSegmentId(activeTrackId && tracks[0].segments.length > 0 ? tracks[0].segments[0].id : null);
+        const nextTrack = remainingTracks.length > 0 ? remainingTracks[0] : null;
+        setActiveTrackId(nextTrack ? nextTrack.id : null);
+        setActiveSegmentId(nextTrack && nextTrack.segments.length > 0 ? nextTrack.segments[0].id : null);
+    }
+    if (trackToDelete?.localFileId) {
+        deleteStoredTrack(trackToDelete.localFileId).catch(err => console.error(err));
     }
     if (_saveHistoryState) _saveHistoryState();
     if (_updateMapData) _updateMapData();
     updateActiveTracksHeader();
+    renderLocalGpxLibrary();
 }
 
 export function addNewSegmentToTrack(trackId) {
@@ -424,6 +553,8 @@ export function showToast(message, type = 'info') {
 }
 
 export function setupEvents() {
+    initLocalLibrary();
+
     document.getElementById('btn-main-menu').onclick = () => {
         const p = document.getElementById('panel-main-menu');
         p.classList.toggle('-translate-x-80');

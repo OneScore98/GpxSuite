@@ -50,6 +50,7 @@ export async function importGPX(xmlText, fileName) {
 
         // Costruisci il nuovo track con i dati pre-parsati
         const newTrack = createNewTrack(fileName.replace('.gpx', ''));
+        newTrack.localSource = 'imported';
         newTrack.segments = result.segments;
         // I waypoint vengono aggiunti a quelli esistenti del nuovo track (se presenti)
         for (let i = 0; i < result.waypoints.length; i++) {

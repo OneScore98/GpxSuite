@@ -26,7 +26,7 @@ import {
 
 import { renderGisTree, showToast, isGisTreeVisible } from './ui.js';
 import { updateStatsAndProfile } from './stats.js';
-import { updateWaypointsOnMap } from './waypoints.js';
+import { setupWaypointLayers, updateWaypointsOnMap, bindWaypointInteractions } from './waypoints.js';
 
 // ─── RDP iterativo (no ricorsione, no stack overflow) ─────────────────────────
 function rdpIterative(points, tolerance) {
@@ -302,6 +302,9 @@ export function setupLayers() {
             'circle-stroke-color': '#ffffff'
         }
     });
+
+    setupWaypointLayers();
+    bindWaypointInteractions();
 
     // Switch LOD solo al termine del gesto (no lavoro durante pan/zoom inerziale)
     // `zoomend` scatta quando l'utente smette di interagire e la mappa è stabile.

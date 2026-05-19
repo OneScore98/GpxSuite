@@ -20,6 +20,7 @@ import { updateMapData } from './map.js';
 import { queryElevation } from './map.js';
 import { showToast, updateActiveTracksHeader, createNewTrack } from './ui.js';
 import { haversineDistance } from './stats.js';
+import { schedulePersistTracks } from './storage.js';
 
 // Throttle: su file enormi JSON.stringify dell'intero state può richiedere
 // 100+ ms. Se l'utente fa molte modifiche rapide (es. tracciamento continuo),
@@ -39,6 +40,7 @@ export function saveHistoryState() {
         const stateCopy = JSON.stringify({ tracks });
         undoStack.push(stateCopy);
         if (undoStack.length > 30) undoStack.shift();
+        schedulePersistTracks(tracks);
     };
     if (window.requestIdleCallback) {
         _historyIdleHandle = window.requestIdleCallback(flush, { timeout: 800 });
@@ -70,6 +72,7 @@ export function triggerUndo() {
 
     updateMapData();
     showToast("Annullato con successo!", "success");
+    schedulePersistTracks(tracks);
 
     if (undoStack.length <= 1) {
         document.getElementById('btn-undo').disabled = true;
