@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GeoViewer 3D - Pro GPX Suite & Print Studio</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- MapLibre GL JS -->
+    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+
+    <!-- Turf.js per calcoli GIS -->
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+
+    <!-- Chart.js per Altimetria -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- CSS Custom & Print Rules -->
+    <link rel="stylesheet" href="src/css/style.css">
+
+    <!-- Sandbox security patch per window.parent su Blob URL -->
+    <script>
+        (function() {
+            try {
+                var dummy = window.parent.location.href;
+            } catch (e) {
+                var mockParent = {};
+                Object.defineProperty(mockParent, 'location', {
+                    get: function() {
+                        return {
+                            href: window.location.href,
+                            origin: window.location.origin,
+                            protocol: window.location.protocol,
+                            host: window.location.host,
+                            hostname: window.location.hostname,
+                            port: window.location.port,
+                            pathname: window.location.pathname,
+                            search: window.location.search,
+                            hash: window.location.hash
+                        };
+                    }
+                });
+                Object.defineProperty(window, 'parent', {
+                    get: function() {
+                        return mockParent;
+                    }
+                });
+            }
+        })();
+    </script>
+</head>
+
+<body class="bg-gray-900 text-gray-100 select-none">
+
+    <!-- MAPPA (A tutto schermo) -->
+    <div id="map"></div>
+
+    <!-- SOVRAPPOSIZIONE GRIGLIA DI STAMPA TRASCINABILE (Inizialmente nascosta) -->
+    <div id="print-drag-grid" class="hidden absolute border-4 border-dashed border-blue-500 bg-blue-500/10 cursor-grab active:cursor-grabbing z-30 flex flex-wrap items-stretch justify-items-stretch">
+        <!-- Generato dinamicamente in base alle colonne e righe di stampa -->
+    </div>
+
+    <!-- HEADER DELLE TRACCE ATTIVE -->
+    <div id="header-tracks-container" class="absolute top-3 left-16 right-16 z-10 flex items-center gap-2 overflow-x-auto no-scrollbar py-1 px-2 pointer-events-none">
+        <div id="active-tracks-container" class="flex items-center gap-2 pointer-events-auto bg-gray-950/80 backdrop-blur-md px-3 py-1.5 rounded-full border border-gray-800/80 shadow-lg text-xs max-w-full overflow-x-auto">
+            <span class="text-gray-400 font-medium whitespace-nowrap mr-1">Tracce attive:</span>
+            <div id="active-tracks-list" class="flex items-center gap-1.5">
+                <span class="text-gray-500 italic whitespace-nowrap">Nessuna traccia creata</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- BARRA STRUMENTI SINISTRA (Compatta) -->
+    <div class="absolute top-3 left-3 z-10 flex flex-col gap-2 pointer-events-auto">
+        <!-- Pulsante Menu Principale -->
+        <button id="btn-main-menu" class="w-10 h-10 rounded-xl bg-gray-950/90 backdrop-blur-md border border-gray-800 hover:bg-gray-800 transition-all shadow-xl flex items-center justify-center text-white" title="Menu Principale">
+      <i data-lucide="menu" class="w-5 h-5"></i>
+    </button>
+
+        <!-- Gruppo Strumenti GPX Rapid -->
+        <div class="flex flex-col gap-1 bg-gray-950/95 backdrop-blur-md border border-gray-800/90 rounded-xl p-1 shadow-xl">
+            <!-- Nuova Traccia -->
+            <button id="btn-draw-track" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Nuova Traccia">
+        <i data-lucide="pencil" class="w-4 h-4"></i>
+      </button>
+
+            <!-- Snap to road toggle -->
+            <button id="btn-snap-toggle" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-400 relative" title="Snap alle Strade (Attivo/Disattivo)">
+        <i data-lucide="git-commit" class="w-4 h-4"></i>
+        <span id="snap-indicator" class="absolute bottom-1 right-1 w-2 h-2 rounded-full bg-red-500 border border-gray-950"></span>
+      </button>
+
+            <!-- Taglio Traccia -->
+            <button id="btn-cut-track" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Taglia Traccia in un punto">
+        <i data-lucide="scissors" class="w-4 h-4"></i>
+      </button>
+
+            <!-- Selezione Area / Cancella punti in Box -->
+            <button id="btn-box-delete" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Elimina punti dentro area">
+        <i data-lucide="box" class="w-4 h-4"></i>
+      </button>
+
+            <!-- Aggiungi Waypoint -->
+            <button id="btn-add-waypoint" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Inserisci Waypoint">
+        <i data-lucide="map-pin" class="w-4 h-4"></i>
+      </button>
+
+            <div class="h-[1px] bg-gray-800 my-1 mx-1"></div>
+
+            <!-- Undo (CTRL-Z) -->
+            <button id="btn-undo" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300 disabled:opacity-40" disabled title="Annulla modifica (Ctrl+Z)">
+        <i data-lucide="undo-2" class="w-4 h-4"></i>
+      </button>
+
+            <!-- Toggle Profilo Altitudine & Statistiche -->
+            <button id="btn-toggle-stats" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Mostra/Nascondi Profilo Altitudine & Statistiche">
+        <i data-lucide="bar-chart-2" class="w-4 h-4"></i>
+      </button>
+
+            <!-- Importa GPX -->
+            <label class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300 cursor-pointer" title="Importa file GPX">
+        <input type="file" id="file-import-gpx" accept=".gpx" class="hidden">
+        <i data-lucide="upload" class="w-4 h-4"></i>
+      </label>
+
+            <!-- Esporta GPX -->
+            <button id="btn-export-gpx" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Esporta file GPX">
+        <i data-lucide="download" class="w-4 h-4"></i>
+      </button>
+
+            <!-- Configurazione Stampa (Progettazione Interattiva) -->
+            <button id="btn-open-print" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-green-400" title="Progetta e Stampa Mappa (Punto 10)">
+        <i data-lucide="printer" class="w-4 h-4"></i>
+      </button>
+        </div>
+    </div>
+
+    <!-- PANNELLO PRINCIPALE SINISTRO (Scomparsa) -->
+    <div id="panel-main-menu" class="absolute top-16 left-3 bottom-3 w-72 bg-gray-950/95 backdrop-blur-md border border-gray-800 rounded-2xl shadow-2xl flex flex-col z-20 transition-all duration-300 -translate-x-80 overflow-hidden">
+        <!-- Header -->
+        <div class="p-4 border-b border-gray-800 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+                <h2 class="font-bold text-sm tracking-wide">GEOCONTROLLI</h2>
+            </div>
+            <button id="btn-close-main-menu" class="text-gray-400 hover:text-white">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+        </div>
+
+        <!-- Contenuto scrollabile -->
+        <div class="flex-1 overflow-y-auto p-4 space-y-5">
+            <!-- Ricerca Nominatim -->
+            <div class="space-y-2">
+                <label class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Cerca Località</label>
+                <div class="flex gap-1.5">
+                    <input type="text" id="input-search" placeholder="Es. Cortina d'Ampezzo..." class="flex-1 bg-gray-900 border border-gray-800 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-blue-500">
+                    <button id="btn-search" class="bg-blue-600 hover:bg-blue-500 text-white rounded-lg px-2.5 flex items-center justify-center">
+            <i data-lucide="search" class="w-3.5 h-3.5"></i>
+          </button>
+                </div>
+            </div>
+
+            <!-- Selezione Mappe e Sentieri -->
+            <div class="space-y-2">
+                <label class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Mappe di Base</label>
+                <div class="grid grid-cols-3 gap-1 bg-gray-900 p-1 rounded-lg border border-gray-800">
+                    <button id="map-style-osm" class="text-[10px] font-medium py-1.5 px-1 rounded-md text-center bg-blue-600 text-white transition-all">MAPPA</button>
+                    <button id="map-style-sat" class="text-[10px] font-medium py-1.5 px-1 rounded-md text-center text-gray-400 hover:text-white transition-all">SAT</button>
+                    <button id="map-style-topo" class="text-[10px] font-medium py-1.5 px-1 rounded-md text-center text-gray-400 hover:text-white transition-all">TOPO</button>
+                </div>
+
+                <!-- Opzioni Satellite (Ibrido) -->
+                <div id="sat-options-container" class="hidden pt-1.5 flex items-center justify-between">
+                    <span class="text-xs text-gray-300">Vista Ibrida (Strade/Nomi)</span>
+                    <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="toggle-hybrid" class="sr-only peer" checked>
+            <div class="w-8 h-4 bg-gray-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-300 after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600"></div>
+          </label>
+                </div>
+
+                <!-- Opzione Sentieri Ufficiali OSM -->
+                <div class="pt-2 flex items-center justify-between border-t border-gray-800 mt-2">
+                    <div class="flex flex-col">
+                        <span class="text-xs text-green-400 font-semibold flex items-center gap-1">
+              <i data-lucide="footprints" class="w-3.5 h-3.5"></i> Sentieri OSM (Punto 7)
+            </span>
+                        <span class="text-[9px] text-gray-500">Rete escursionistica mondiale</span>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="toggle-hiking-trails" class="sr-only peer">
+            <div class="w-8 h-4 bg-gray-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-300 after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-green-600"></div>
+          </label>
+                </div>
+            </div>
+
+            <!-- Vista 2D / 3D Terreno -->
+            <div class="space-y-2">
+                <label class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Prospettiva Dimensionale</label>
+                <div class="grid grid-cols-2 gap-1 bg-gray-900 p-1 rounded-lg border border-gray-800">
+                    <button id="view-mode-2d" class="text-xs font-medium py-1 px-2 rounded bg-blue-600 text-white">2D PLANO</button>
+                    <button id="view-mode-3d" class="text-xs font-medium py-1 px-2 rounded text-gray-400 hover:text-white">3D TERRENO</button>
+                </div>
+            </div>
+
+            <!-- Configurazione Snap e Profilo Strade -->
+            <div class="space-y-2 bg-gray-900/50 p-2.5 rounded-xl border border-gray-800">
+                <div class="flex items-center justify-between">
+                    <label class="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">Profilo Snapping</label>
+                    <span id="routing-badge" class="text-[9px] bg-red-950 text-red-400 px-1.5 py-0.5 rounded border border-red-900 font-bold uppercase">Disattivato</span>
+                </div>
+
+                <div class="grid grid-cols-5 gap-1 pt-1.5">
+                    <button id="snap-profile-off" class="text-[10px] font-bold py-1 rounded bg-blue-600 text-white" title="Disattiva Snap (Linea d'Aria)">OFF</button>
+                    <button id="snap-profile-foot" class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Piedi (OSRM)">🚶</button>
+                    <button id="snap-profile-bike" class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Bici (OSRM)">🚲</button>
+                    <button id="snap-profile-moto" class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Moto (OSRM)">🏍️</button>
+                    <button id="snap-profile-car" class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Auto (OSRM)">🚗</button>
+                </div>
+            </div>
+
+            <!-- Esplora Rilievi 3D Rapidi -->
+            <div class="space-y-2">
+                <label class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Voli Rapidi 3D</label>
+                <div class="flex flex-wrap gap-1">
+                    <button onclick="flyToPOI(11.83, 46.54, 4500, 58, 45)" class="bg-gray-900 hover:bg-gray-800 text-[10px] px-2 py-1 rounded-lg border border-gray-800 transition-all text-gray-300">🏔️ Dolomiti</button>
+                    <button onclick="flyToPOI(15.00, 37.75, 5500, 60, -35)" class="bg-gray-900 hover:bg-gray-800 text-[10px] px-2 py-1 rounded-lg border border-gray-800 transition-all text-gray-300">🌋 Etna</button>
+                    <button onclick="flyToPOI(6.86, 45.83, 6200, 64, 115)" class="bg-gray-900 hover:bg-gray-800 text-[10px] px-2 py-1 rounded-lg border border-gray-800 transition-all text-gray-300">🏔️ M. Bianco</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PANNELLO PROGETTAZIONE DI STAMPA FLUTTUANTE (Sotto il menu a sinistra) -->
+    <div id="panel-print-setup" class="hidden absolute top-16 left-3 bottom-3 w-80 bg-gray-950/98 backdrop-blur-md border border-stone-800 rounded-2xl shadow-2xl flex flex-col z-20 overflow-hidden">
+        <div class="p-4 border-b border-gray-800 flex items-center justify-between bg-stone-900">
+            <div class="flex items-center gap-2 text-green-400">
+                <i data-lucide="printer" class="w-4 h-4"></i>
+                <h2 class="font-bold text-xs uppercase tracking-wider">Layout di Stampa</h2>
+            </div>
+            <button id="btn-close-print-setup" class="text-gray-400 hover:text-white">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-4 space-y-5 text-xs text-stone-300">
+            <p class="text-stone-400 leading-relaxed">
+                Trascina la griglia blu sulla mappa per inquadrare il territorio. Puoi anche zoomare la mappa per regolare la scala dei fogli.
+            </p>
+
+            <!-- Suddivisione Griglia -->
+            <div class="space-y-1.5">
+                <label class="block text-[10px] font-bold text-stone-400 uppercase tracking-wider">Suddivisione Fogli</label>
+                <select id="print-grid-select" class="w-full bg-stone-900 border border-stone-800 rounded-lg p-2.5 outline-none text-white font-medium">
+          <option value="1x1">1 Foglio (A4 Singolo)</option>
+          <option value="2x1">2 Fogli Orizzontali (Affiancati)</option>
+          <option value="1x2">2 Fogli Verticali (In Colonna)</option>
+          <option value="2x2">4 Fogli (Matrice 2x2)</option>
+          <option value="3x1">3 Fogli Orizzontali</option>
+          <option value="3x2">6 Fogli (Matrice 3x2)</option>
+        </select>
+            </div>
+
+            <!-- Orientamento -->
+            <div class="space-y-1.5">
+                <label class="block text-[10px] font-bold text-stone-400 uppercase tracking-wider">Orientamento Pagina</label>
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="btn-print-port" class="py-2 rounded-lg bg-blue-600 text-white font-bold">Verticale</button>
+                    <button id="btn-print-land" class="py-2 rounded-lg bg-stone-900 hover:bg-stone-800 border border-stone-800 text-stone-400 hover:text-white">Orizzontale</button>
+                </div>
+            </div>
+
+            <!-- Slider Dimensione (Scala) -->
+            <div class="space-y-1.5">
+                <div class="flex justify-between items-center">
+                    <label class="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Dimensione della Griglia</label>
+                    <span id="print-scale-lbl" class="font-bold text-blue-400">100%</span>
+                </div>
+                <input type="range" id="print-scale-slider" min="30" max="150" value="100" class="w-full accent-blue-500 cursor-pointer">
+            </div>
+
+            <!-- Info e Report di Sormonto -->
+            <div class="bg-blue-950/30 border border-blue-900/50 p-3 rounded-xl space-y-1">
+                <span class="font-bold text-blue-400 block uppercase text-[9px]">Fascia di Sormonto</span>
+                <p class="text-stone-400 leading-normal text-[10px]">
+                    I fogli includono un margine di sormonto del 10%. Una volta stampati, taglia il bordo tratteggiato interno per incollarli con precisione.
+                </p>
+            </div>
+        </div>
+
+        <!-- Pulsante Genera Anteprime -->
+        <div class="p-4 border-t border-gray-800 bg-stone-900">
+            <button id="btn-generate-previews" class="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg transition-all">
+        <i data-lucide="check" class="w-4 h-4"></i>
+        <span>Genera Anteprime e Stampa</span>
+      </button>
+        </div>
+    </div>
+
+    <!-- BARRA APERTURA ALBERO TRACCE (Destra) -->
+    <button id="btn-open-sidebar-right" class="absolute top-3 right-3 z-10 w-10 h-10 rounded-xl bg-gray-950/90 backdrop-blur-md border border-gray-800 hover:bg-gray-800 transition-all shadow-xl flex items-center justify-center text-white" title="Apri Albero Tracce & Waypoints">
+    <i data-lucide="folder-tree" class="w-5 h-5 text-blue-400"></i>
+  </button>
+
+    <!-- ALBERO DELLE TRACCE SIDEBAR DESTRA (Scomparsa) -->
+    <div id="sidebar-tracks-right" class="absolute top-16 right-3 bottom-3 w-80 bg-gray-950/95 backdrop-blur-md border border-gray-800 rounded-2xl shadow-2xl flex flex-col z-20 transition-all duration-300 translate-x-96 overflow-hidden">
+        <!-- Header -->
+        <div class="p-4 border-b border-gray-800 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <i data-lucide="network" class="w-4 h-4 text-blue-400"></i>
+                <h2 class="font-bold text-sm tracking-wide">STRUTTURA GIS</h2>
+            </div>
+            <button id="btn-close-sidebar-right" class="text-gray-400 hover:text-white">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+        </div>
+
+        <!-- Contenuto scrollabile del File Tree -->
+        <div class="flex-1 overflow-y-auto p-4 space-y-4">
+            <div class="flex gap-2">
+                <button id="btn-tree-new-track" class="flex-1 bg-blue-600/25 hover:bg-blue-600/40 text-blue-300 border border-blue-800/80 rounded-lg py-1.5 text-xs font-semibold flex items-center justify-center gap-1">
+          <i data-lucide="plus" class="w-3.5 h-3.5"></i> Nuova Traccia
+        </button>
+            </div>
+
+            <div id="gis-file-tree" class="space-y-3">
+                <div class="text-center py-6 text-gray-500 text-xs italic">
+                    Nessuna traccia caricata in memoria.<br>Inizia a disegnare o importa un GPX.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODALE CONFIGURAZIONE WAYPOINT -->
+    <div id="modal-waypoint" class="hidden absolute inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center">
+        <div class="bg-gray-950 border border-gray-800 w-96 p-5 rounded-2xl shadow-2xl space-y-4">
+            <h3 class="font-bold text-sm flex items-center gap-2 border-b border-gray-800 pb-2.5">
+                <i data-lucide="map-pin" class="w-4 h-4 text-blue-400"></i> MODIFICA WAYPOINT
+            </h3>
+
+            <div class="space-y-3">
+                <div class="space-y-1">
+                    <label class="text-[10px] text-gray-400 uppercase font-semibold">Nome</label>
+                    <input type="text" id="wp-title" class="w-full bg-gray-900 border border-gray-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500">
+                </div>
+
+                <div class="space-y-1">
+                    <label class="text-[10px] text-gray-400 uppercase font-semibold">Descrizione</label>
+                    <textarea id="wp-desc" rows="2" class="w-full bg-gray-900 border border-gray-800 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"></textarea>
+                </div>
+
+                <div class="space-y-1">
+                    <label class="text-[10px] text-gray-400 uppercase font-semibold">Icona / Simbolo</label>
+                    <select id="wp-symbol" class="w-full bg-gray-900 border border-gray-800 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500 text-white">
+            <option value="🏕️">🏕️ Campeggio / Bivacco</option>
+            <option value="🏔️">🏔️ Vetta / Punto panoramico</option>
+            <option value="🚰">🚰 Fonte d'Acqua</option>
+            <option value="🚗">🚗 Parcheggio</option>
+            <option value="🏠">🏠 Rifugio / Baita</option>
+            <option value="⚠️">⚠️ Pericolo / Attenzione</option>
+            <option value="📍">📍 Generico</option>
+          </select>
+                </div>
+            </div>
+
+            <div class="flex gap-2 justify-end pt-2">
+                <button id="btn-wp-cancel" class="bg-gray-900 hover:bg-gray-800 border border-gray-800 text-gray-400 px-3 py-1.5 rounded-lg text-xs">Annulla</button>
+                <button id="btn-wp-save" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded-lg text-xs font-semibold">Salva Modifiche</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PANNELLO INFERIORE STATISTICHE E ALTIMETRIA -->
+    <div id="panel-bottom-stats" class="absolute left-3 right-3 bottom-3 h-52 bg-gray-950/95 backdrop-blur-md border border-gray-800 rounded-2xl shadow-2xl flex flex-col z-10 transition-all duration-300 translate-y-60 overflow-hidden">
+        <div class="px-4 py-2 border-b border-gray-800 flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <span class="text-xs font-bold text-gray-300 uppercase tracking-wider">Profilo Altitudine & Statistiche</span>
+                <div id="quick-stats-row" class="hidden md:flex items-center gap-3 text-xs text-gray-400">
+                    <span>Distanza: <b id="stat-dist" class="text-white">0.00 km</b></span>
+                    <span>Ascesa: <b id="stat-ascent" class="text-green-400">+0 m</b></span>
+                    <span>Discesa: <b id="stat-descent" class="text-red-400">-0 m</b></span>
+                    <span>Alt. Max: <b id="stat-max-alt" class="text-blue-400">0 m</b></span>
+                </div>
+            </div>
+            <button id="btn-close-bottom" class="text-gray-400 hover:text-white">
+        <i data-lucide="chevrons-down" class="w-4 h-4"></i>
+      </button>
+        </div>
+
+        <div class="flex-1 p-3 flex gap-4 min-h-0">
+            <div class="flex-1 min-w-0 h-full relative">
+                <canvas id="altitudeChart" class="w-full h-full"></canvas>
+            </div>
+
+            <div class="w-52 border-l border-gray-800 pl-4 flex flex-col justify-center gap-1.5 text-xs text-gray-400">
+                <div class="flex justify-between border-b border-gray-800/50 pb-1">
+                    <span>Pendenza Media:</span>
+                    <span id="stat-avg-slope" class="font-bold text-white">0%</span>
+                </div>
+                <div class="flex justify-between border-b border-gray-800/50 pb-1">
+                    <span>Pendenza Max:</span>
+                    <span id="stat-max-slope" class="font-bold text-red-400">0%</span>
+                </div>
+                <div class="flex justify-between border-b border-gray-800/50 pb-1">
+                    <span>Superficie Area:</span>
+                    <span id="stat-area" class="font-bold text-blue-300">0 ha</span>
+                </div>
+                <div class="flex justify-between pt-1">
+                    <span>Segmenti Totali:</span>
+                    <span id="stat-segments-count" class="font-bold text-white">0</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- NOTIFICHE TOAST -->
+    <div id="toast-container" class="absolute bottom-16 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- ============================================== -->
+    <!-- MODALE FINALE DI ANTEPRIMA STAMPA A4           -->
+    <!-- ============================================== -->
+    <div id="print-preview-modal" class="hidden fixed inset-0 bg-gray-950/98 z-[99999] flex flex-col md:flex-row overflow-hidden text-stone-800">
+        <!-- Controlli laterali di conferma -->
+        <div class="w-full md:w-80 bg-stone-900 border-r border-stone-800 p-5 flex flex-col gap-5 text-stone-100 shrink-0">
+            <div class="flex items-center gap-2 border-b border-stone-800 pb-3">
+                <i data-lucide="printer" class="w-5 h-5 text-green-400 animate-pulse"></i>
+                <h3 class="font-bold text-sm tracking-wide uppercase">Conferma di Stampa</h3>
+            </div>
+            <p class="text-xs text-stone-400 leading-relaxed">
+                I tuoi fogli sono stati ritagliati e impaginati correttamente in base alla posizione scelta sulla mappa.
+            </p>
+
+            <div class="text-[11px] text-stone-400 space-y-1 bg-stone-950 p-3 rounded-xl border border-stone-800">
+                <span class="font-bold text-stone-200 block mb-1 uppercase">💡 Suggerimento:</span> Nell'interfaccia di stampa del tuo sistema operativo, imposta la modalità **"Salva come PDF"** o seleziona la tua stampante fisica, abilitando i colori
+                di sfondo per una resa ottimale.
+            </div>
+
+            <div class="flex-1"></div>
+
+            <div class="flex flex-col gap-2">
+                <button id="btn-print-preview-cancel" class="bg-stone-800 hover:bg-stone-700 text-stone-300 py-2.5 rounded-xl text-xs font-semibold">Torna alla Progettazione</button>
+                <button id="btn-print-preview-confirm" class="bg-green-600 hover:bg-green-500 text-white py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-lg">
+          <i data-lucide="printer" class="w-4 h-4"></i>
+          <span>Lancia Stampa (A4 PDF)</span>
+        </button>
+            </div>
+        </div>
+
+        <!-- Area dei fogli A4 reali di anteprima -->
+        <div class="flex-1 bg-stone-950 p-6 overflow-y-auto flex flex-col items-center gap-6 print-page-container">
+            <div id="print-pages-wrapper" class="flex flex-col items-center gap-6 w-full max-w-full">
+                <!-- Generato Dinamicamente tramite JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- CONTAINER NASCOSTO UTILIZZATO SOLO PER LA COMPILAZIONE DI STAMPA FISICA -->
+    <div id="print-output-container" class="hidden"></div>
+
+    <!-- JAVASCRIPT APPLICATIVO (moduli ES) -->
+    <script type="module" src="src/js/main.js"></script>
+</body>
+
+</html>

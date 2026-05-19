@@ -1,0 +1,80 @@
+/* Stili custom — NON Tailwind (quello resta via CDN) */
+
+body,
+html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    font-family: system-ui, -apple-system, sans-serif;
+}
+
+#map {
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+}
+
+/* Scrollbar personalizzate sottili */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.4);
+}
+
+/* Griglia di stampa trascinabile */
+#print-drag-grid {
+    touch-action: none;
+    user-select: none;
+}
+
+/* Stili per la stampa nativa - Punto 10 */
+@media print {
+    body * {
+        visibility: hidden;
+    }
+    #print-output-container,
+    #print-output-container * {
+        visibility: visible;
+    }
+    #print-output-container {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100% !important;
+        height: auto !important;
+        background: white !important;
+        z-index: 9999999 !important;
+    }
+    .print-page {
+        width: 210mm !important;
+        height: 297mm !important;
+        page-break-after: always !important;
+        box-sizing: border-box !important;
+        padding: 15mm !important;
+        background: white !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: space-between !important;
+    }
+    .print-map-frame {
+        width: 100% !important;
+        height: 220mm !important;
+        border: 2px solid #000 !important;
+    }
+}
