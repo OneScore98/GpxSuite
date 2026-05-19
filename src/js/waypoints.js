@@ -93,7 +93,49 @@ export function setupWaypointLayers() {
     if (!map.getSource('gpx-waypoints')) {
         map.addSource('gpx-waypoints', {
             type: 'geojson',
-            data: { type: 'FeatureCollection', features: [] }
+            data: { type: 'FeatureCollection', features: [] },
+            cluster: true,
+            clusterMaxZoom: 11,
+            clusterRadius: 42
+        });
+    }
+
+    if (!map.getLayer('gpx-waypoints-cluster-layer')) {
+        map.addLayer({
+            id: 'gpx-waypoints-cluster-layer',
+            type: 'circle',
+            source: 'gpx-waypoints',
+            filter: ['has', 'point_count'],
+            paint: {
+                'circle-radius': [
+                    'step',
+                    ['get', 'point_count'],
+                    14,
+                    10, 16,
+                    50, 20,
+                    200, 24
+                ],
+                'circle-color': '#1d4ed8',
+                'circle-opacity': 0.9,
+                'circle-stroke-width': 2,
+                'circle-stroke-color': '#ffffff'
+            }
+        });
+    }
+
+    if (!map.getLayer('gpx-waypoints-cluster-count-layer')) {
+        map.addLayer({
+            id: 'gpx-waypoints-cluster-count-layer',
+            type: 'symbol',
+            source: 'gpx-waypoints',
+            filter: ['has', 'point_count'],
+            layout: {
+                'text-field': ['get', 'point_count_abbreviated'],
+                'text-size': 11
+            },
+            paint: {
+                'text-color': '#ffffff'
+            }
         });
     }
 
@@ -102,6 +144,8 @@ export function setupWaypointLayers() {
             id: 'gpx-waypoints-hit-layer',
             type: 'circle',
             source: 'gpx-waypoints',
+            filter: ['!', ['has', 'point_count']],
+            minzoom: 12,
             paint: {
                 'circle-radius': 16,
                 'circle-color': '#000000',
@@ -115,8 +159,17 @@ export function setupWaypointLayers() {
             id: 'gpx-waypoints-circle-layer',
             type: 'circle',
             source: 'gpx-waypoints',
+            filter: ['!', ['has', 'point_count']],
             paint: {
-                'circle-radius': 10,
+                'circle-radius': [
+                    'interpolate',
+                    ['linear'],
+                    ['zoom'],
+                    6, 4,
+                    10, 5,
+                    14, 8,
+                    17, 10
+                ],
                 'circle-color': ['get', 'color'],
                 'circle-opacity': 0.9,
                 'circle-stroke-width': 2,
@@ -130,9 +183,11 @@ export function setupWaypointLayers() {
             id: 'gpx-waypoints-symbol-layer',
             type: 'symbol',
             source: 'gpx-waypoints',
+            filter: ['!', ['has', 'point_count']],
+            minzoom: 13,
             layout: {
                 'text-field': ['get', 'symbol'],
-                'text-size': 14,
+                'text-size': 13,
                 'text-allow-overlap': true,
                 'text-ignore-placement': true
             },
@@ -152,6 +207,29 @@ export function updateWaypointsOnMap() {
 export function bindWaypointInteractions() {
     if (_waypointInteractionsBound) return;
     _waypointInteractionsBound = true;
+
+    map.on('mouseenter', 'gpx-waypoints-cluster-layer', () => {
+        map.getCanvas().style.cursor = 'pointer';
+    });
+
+    map.on('mouseleave', 'gpx-waypoints-cluster-layer', () => {
+        if (!_draggingWaypoint) map.getCanvas().style.cursor = '';
+    });
+
+    map.on('click', 'gpx-waypoints-cluster-layer', (e) => {
+        const feature = e?.features?.[0];
+        const clusterId = feature?.properties?.cluster_id;
+        const coords = feature?.geometry?.coordinates;
+        const src = map.getSource('gpx-waypoints');
+        if (!src || clusterId === undefined || !coords) return;
+        src.getClusterExpansionZoom(clusterId, (err, zoom) => {
+            if (err) return;
+            map.easeTo({
+                center: coords,
+                zoom
+            });
+        });
+    });
 
     map.on('mouseenter', 'gpx-waypoints-hit-layer', () => {
         map.getCanvas().style.cursor = 'pointer';
