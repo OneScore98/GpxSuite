@@ -256,11 +256,15 @@ function _doUpdateMapData() {
 
     // 4. UI: aggiorna solo se i pannelli sono effettivamente visibili
     //    (evita lavoro inutile su pannelli chiusi con file enormi)
-    if (typeof isGisTreeVisible === 'function' ? isGisTreeVisible() : true) {
+    if (!isDrawing && (typeof isGisTreeVisible === 'function' ? isGisTreeVisible() : true)) {
         renderGisTree();
     }
-    updateStatsAndProfile();
-    updateWaypointsOnMap();
+    if (!isDrawing) {
+        updateStatsAndProfile();
+    }
+    if (!isDrawing) {
+        updateWaypointsOnMap();
+    }
 }
 
 export function setupLayers() {

@@ -157,8 +157,8 @@ export async function renderLocalGpxLibrary() {
                   <span class="${loadedTrack && loadedTrack.visible !== false ? 'text-green-400' : 'text-gray-500'}">${stateLabel}</span>
                 </div>
                 <div class="flex gap-2">
-                  <button onclick="openStoredTrackFromLibrary('${file.id}')" class="flex-1 bg-emerald-600/20 hover:bg-emerald-600/35 text-emerald-300 border border-emerald-900/80 rounded-lg py-1.5 text-[11px] font-semibold">
-                    ${loadedTrack ? 'Rendi attiva' : 'Carica'}
+                  <button onclick="openStoredTrackFromLibrary('${file.id}')" class="flex-1 bg-emerald-600/20 hover:bg-emerald-600/35 text-emerald-300 border border-emerald-900/80 rounded-lg py-1.5 text-[11px] font-semibold ${loadedTrack ? 'opacity-60 cursor-default' : ''}">
+                    ${loadedTrack ? 'Gia caricato' : 'Carica'}
                   </button>
                 </div>
               </div>
@@ -325,7 +325,6 @@ function _doRenderGisTree() {
                     <div class="flex items-center gap-1.5 shrink-0">
                       <button onclick="toggleTrackVisibility('${track.id}')" class="text-gray-400 hover:text-white" title="Mostra/Nascondi File"><i data-lucide="${track.visible === false ? 'eye-off' : 'eye'}" class="w-3.5 h-3.5"></i></button>
                       <input type="color" value="${track.color}" onchange="changeTrackColor('${track.id}', this.value)" class="w-4 h-4 rounded border-0 bg-transparent cursor-pointer" title="Colore traccia">
-                      <button onclick="setTrackActive('${track.id}')" class="text-[10px] px-1.5 py-0.5 rounded ${isActive ? 'bg-blue-600 text-white font-bold' : 'bg-gray-800 text-gray-400 hover:text-white'}" title="Rendi Attiva">Usa</button>
                       <button onclick="deleteTrack('${track.id}')" class="text-gray-500 hover:text-red-400" title="Elimina file"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
                     </div>
                   </div>
@@ -356,7 +355,6 @@ function _doRenderGisTree() {
                           <div class="flex items-center gap-1.5 shrink-0">
                             <span class="text-[10px] text-gray-500">${segIndex + 1}/${seg.points.length} pt</span>
                             <button onclick="toggleSegmentVisibility('${track.id}', '${seg.id}')" class="text-gray-500 hover:text-white" title="Mostra/Nascondi Segmento"><i data-lucide="${seg.visible === false ? 'eye-off' : 'eye'}" class="w-3 h-3"></i></button>
-                            <button onclick="setSegmentActive('${track.id}', '${seg.id}')" class="text-[9px] hover:underline">${isSegActive ? 'Attivo' : 'Usa'}</button>
                             <button onclick="deleteSegment('${track.id}', '${seg.id}')" class="text-gray-600 hover:text-red-400" title="Elimina segmento"><i data-lucide="x" class="w-3 h-3"></i></button>
                           </div>
                         </div>
@@ -686,33 +684,39 @@ export async function searchNominatim() {
     }
 }
 
+function updateCursorCoordinates(lngLat) {
+    const el = document.getElementById('cursor-coordinates');
+    if (!el || !lngLat) return;
+    el.textContent = `${lngLat.lat.toFixed(6)}, ${lngLat.lng.toFixed(6)}`;
+}
+
 export function showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');
     const toast = document.createElement('div');
 
-    let colors = 'bg-gray-950/95 border-gray-800 text-gray-200';
-    if (type === 'success') colors = 'bg-green-950/95 border-green-800 text-green-300';
-    if (type === 'error') colors = 'bg-red-950/95 border-red-800 text-red-300';
-    if (type === 'info') colors = 'bg-blue-950/95 border-blue-800 text-blue-300';
+    let accent = 'bg-gray-500';
+    if (type === 'success') accent = 'bg-emerald-400';
+    if (type === 'error') accent = 'bg-red-400';
+    if (type === 'info') accent = 'bg-sky-400';
 
-    toast.className = `${colors} border px-4 py-2 rounded-xl shadow-2xl text-xs font-semibold tracking-wide flex items-center gap-2 transform translate-y-4 opacity-0 transition-all duration-300`;
+    toast.className = `bg-gray-950/88 border border-gray-800 text-gray-300 px-2.5 py-1.5 rounded-md shadow-lg text-[11px] font-medium flex items-center gap-2 transform -translate-x-2 opacity-0 transition-all duration-200`;
     toast.innerHTML = `
-        <div class="w-1.5 h-1.5 rounded-full ${type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500'}"></div>
-        <span>${message}</span>
+        <div class="w-1 h-1 rounded-full ${accent} shrink-0"></div>
+        <span class="leading-snug">${message}</span>
       `;
 
     container.appendChild(toast);
 
     setTimeout(() => {
-        toast.className = toast.className.replace('translate-y-4 opacity-0', 'translate-y-0 opacity-100');
+        toast.className = toast.className.replace('-translate-x-2 opacity-0', 'translate-x-0 opacity-100');
     }, 50);
 
     setTimeout(() => {
-        toast.className = toast.className.replace('translate-y-0 opacity-100', 'translate-y-4 opacity-0');
+        toast.className = toast.className.replace('translate-x-0 opacity-100', '-translate-x-2 opacity-0');
         setTimeout(() => {
             toast.remove();
-        }, 300);
-    }, 3500);
+        }, 220);
+    }, 2800);
 }
 
 export function setupEvents() {
@@ -792,6 +796,7 @@ export function setupEvents() {
             showToast("Clicca sulla mappa per iniziare a tracciare", "info");
         } else {
             btn.classList.remove('bg-blue-600', 'text-white');
+            if (_updateMapData) _updateMapData(true);
         }
     };
 
@@ -810,10 +815,10 @@ export function setupEvents() {
         }
     };
 
-    map.on('click', async(e) => {
+    map.on('click', (e) => {
         const coords = e.lngLat;
         if (isDrawing) {
-            await _addPointToActiveSegment(coords.lng, coords.lat);
+            _addPointToActiveSegment(coords.lng, coords.lat);
         } else if (isCutting) {
             _cutTrackAtPoint(coords);
         } else if (isBoxDeleting) {
@@ -821,6 +826,10 @@ export function setupEvents() {
         } else if (isAddingWaypoint) {
             _addWaypointAtCoords(coords.lng, coords.lat);
         }
+    });
+
+    map.on('mousemove', (e) => {
+        updateCursorCoordinates(e.lngLat);
     });
 
     document.getElementById('btn-cut-track').onclick = () => {

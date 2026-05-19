@@ -110,10 +110,10 @@ export function setupWaypointLayers() {
                 'circle-radius': [
                     'step',
                     ['get', 'point_count'],
-                    21,
-                    10, 24,
-                    50, 29,
-                    200, 34
+                    14,
+                    10, 17,
+                    50, 21,
+                    200, 25
                 ],
                 'circle-color': [
                     'step',
@@ -139,10 +139,10 @@ export function setupWaypointLayers() {
                 'circle-radius': [
                     'step',
                     ['get', 'point_count'],
-                    14,
-                    10, 16,
-                    50, 20,
-                    200, 24
+                    10,
+                    10, 12,
+                    50, 15,
+                    200, 18
                 ],
                 'circle-color': [
                     'step',
@@ -213,15 +213,15 @@ export function setupWaypointLayers() {
             type: 'circle',
             source: 'gpx-waypoints',
             filter: ['!', ['has', 'point_count']],
+            minzoom: 12,
             paint: {
                 'circle-radius': [
                     'interpolate',
                     ['linear'],
                     ['zoom'],
-                    6, 4,
-                    10, 5,
-                    14, 8,
-                    17, 10
+                    12, 5,
+                    14, 7,
+                    17, 9
                 ],
                 'circle-color': ['get', 'color'],
                 'circle-opacity': 0.95,
@@ -244,15 +244,15 @@ export function setupWaypointLayers() {
             type: 'circle',
             source: 'gpx-waypoints',
             filter: ['!', ['has', 'point_count']],
+            minzoom: 13,
             paint: {
                 'circle-radius': [
                     'interpolate',
                     ['linear'],
                     ['zoom'],
-                    6, 7,
-                    10, 9,
-                    14, 13,
-                    17, 16
+                    13, 9,
+                    14, 11,
+                    17, 14
                 ],
                 'circle-color': 'rgba(255,255,255,0)',
                 'circle-stroke-width': [

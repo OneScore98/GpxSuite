@@ -28,10 +28,11 @@ import { schedulePersistTracks } from './storage.js';
 let _historyIdleHandle = null;
 let _historyPending = false;
 
-export function saveHistoryState() {
+export function saveHistoryState(options = {}) {
     _historyPending = true;
     document.getElementById('btn-undo').disabled = false;
     if (_historyIdleHandle !== null) return;
+    const idleTimeout = options.idleTimeout || 800;
     const flush = () => {
         _historyIdleHandle = null;
         if (!_historyPending) return;
@@ -43,9 +44,9 @@ export function saveHistoryState() {
         schedulePersistTracks(tracks);
     };
     if (window.requestIdleCallback) {
-        _historyIdleHandle = window.requestIdleCallback(flush, { timeout: 800 });
+        _historyIdleHandle = window.requestIdleCallback(flush, { timeout: idleTimeout });
     } else {
-        _historyIdleHandle = setTimeout(flush, 300);
+        _historyIdleHandle = setTimeout(flush, Math.min(idleTimeout, 1200));
     }
 }
 
@@ -87,24 +88,29 @@ export async function addPointToActiveSegment(lon, lat) {
     const track = tracks.find(t => t.id === activeTrackId);
     const segment = track.segments.find(s => s.id === activeSegmentId);
 
-    let elevation = await queryElevation(lon, lat);
-
     if (segment.points.length === 0 || !isSnapActive) {
-        segment.points.push({
+        const point = {
             lat: lat,
             lon: lon,
-            ele: elevation,
+            ele: 0,
             isUserClicked: true
-        });
-        saveHistoryState();
+        };
+        segment.points.push(point);
+        saveHistoryState({ idleTimeout: 2500 });
         updateMapData();
+        queryElevation(lon, lat).then(ele => {
+            point.ele = ele;
+            schedulePersistTracks(tracks);
+        });
         return;
     }
 
     const lastPoint = segment.points[segment.points.length - 1];
     showToast("Calcolo percorso...", "info");
+    let elevation = 0;
 
     try {
+        elevation = await queryElevation(lon, lat);
         const routePoints = await fetchSnapRoute(lastPoint, { lon, lat }, currentSnapProfile);
         if (routePoints && routePoints.length > 0) {
             routePoints.forEach((pt, i) => {
@@ -132,7 +138,7 @@ export async function addPointToActiveSegment(lon, lat) {
         });
     }
 
-    saveHistoryState();
+    saveHistoryState({ idleTimeout: 2500 });
     updateMapData();
 }
 
