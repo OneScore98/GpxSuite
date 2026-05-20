@@ -87,6 +87,11 @@
       <i data-lucide="menu" class="w-5 h-5"></i>
     </button>
 
+        <!-- Pulsante espansione strumenti mobile -->
+        <button id="btn-mobile-toolbar-toggle" class="hidden w-10 h-10 rounded-xl bg-gray-950/90 backdrop-blur-md border border-gray-800 hover:bg-gray-800 transition-all shadow-xl items-center justify-center text-white" title="Mostra/Nascondi strumenti">
+      <i data-lucide="wrench" class="w-5 h-5"></i>
+    </button>
+
         <!-- Gruppo Strumenti GPX Rapid -->
         <div id="toolbar-quick-tools" class="flex flex-col gap-1 bg-gray-950/95 backdrop-blur-md border border-gray-800/90 rounded-xl p-1 shadow-xl">
             <!-- Nuova Traccia -->
@@ -202,6 +207,31 @@
             <div class="w-8 h-4 bg-gray-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-300 after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-green-600"></div>
           </label>
                 </div>
+
+                <!-- Opzione Mapillary -->
+                <div class="pt-2 space-y-2 border-t border-gray-800 mt-2">
+                    <div class="flex items-center justify-between gap-3">
+                        <div class="flex flex-col min-w-0">
+                            <span class="text-xs text-emerald-400 font-semibold flex items-center gap-1">
+              <i data-lucide="camera" class="w-3.5 h-3.5"></i> Mapillary
+            </span>
+                            <span class="text-[9px] text-gray-500">Foto stradali e copertura GPX</span>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="toggle-mapillary" class="sr-only peer">
+            <div class="w-8 h-4 bg-gray-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-300 after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-600"></div>
+          </label>
+                    </div>
+                    <div class="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-1.5">
+                        <input type="password" id="input-mapillary-token" placeholder="Client token Mapillary" class="min-w-0 bg-gray-900 border border-gray-800 rounded-lg px-2 py-1.5 text-[11px] text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500">
+                        <button id="btn-save-mapillary-token" class="bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg px-2 flex items-center justify-center" title="Salva token Mapillary">
+            <i data-lucide="save" class="w-3.5 h-3.5"></i>
+          </button>
+                        <button id="btn-clear-mapillary-token" class="bg-gray-900 hover:bg-gray-800 text-gray-400 rounded-lg px-2 flex items-center justify-center border border-gray-800" title="Rimuovi token Mapillary">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+          </button>
+                    </div>
+                </div>
             </div>
 
             <!-- Vista 2D / 3D Terreno -->
@@ -310,6 +340,11 @@
     <!-- BARRA APERTURA ALBERO TRACCE (Destra) -->
     <button id="btn-open-sidebar-right" class="absolute top-3 right-3 z-10 w-10 h-10 rounded-xl bg-gray-950/90 backdrop-blur-md border border-gray-800 hover:bg-gray-800 transition-all shadow-xl flex items-center justify-center text-white" title="Apri Albero Tracce & Waypoints">
     <i data-lucide="folder-tree" class="w-5 h-5 text-blue-400"></i>
+  </button>
+
+    <!-- PULSANTE MOBILE STATISTICHE -->
+    <button id="btn-mobile-stats" class="hidden absolute z-10 rounded-xl bg-gray-950/90 backdrop-blur-md border border-gray-800 hover:bg-gray-800 transition-all shadow-xl items-center justify-center text-white" title="Mostra/Nascondi statistiche">
+    <i data-lucide="bar-chart-2" class="w-5 h-5 text-blue-300"></i>
   </button>
 
     <!-- ALBERO DELLE TRACCE SIDEBAR DESTRA (Scomparsa) -->
@@ -430,6 +465,48 @@
 
     <!-- NOTIFICHE TOAST -->
     <div id="toast-container" class="absolute bottom-3 left-3 z-50 flex flex-col gap-1.5 pointer-events-none max-w-xs"></div>
+
+    <!-- VIEWER MAPILLARY -->
+    <div id="panel-mapillary-viewer" class="hidden absolute left-1/2 bottom-3 -translate-x-1/2 z-30 w-[22rem] max-w-[calc(100vw-1.5rem)] bg-gray-950/96 backdrop-blur-md border border-gray-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div class="px-3 py-2 border-b border-gray-800 flex items-center justify-between gap-2">
+            <div class="min-w-0">
+                <div id="mapillary-title" class="text-xs font-bold text-gray-100 truncate">Mapillary</div>
+                <div class="flex items-center gap-1.5 text-[10px] text-gray-500">
+                    <span id="mapillary-date"></span>
+                    <span id="mapillary-author" class="truncate"></span>
+                </div>
+            </div>
+            <div class="flex items-center gap-1 shrink-0">
+                <a id="mapillary-open-link" href="https://www.mapillary.com/" target="_blank" rel="noopener" class="w-8 h-8 rounded-lg hover:bg-gray-800 flex items-center justify-center text-emerald-400" title="Apri su Mapillary">
+          <i data-lucide="external-link" class="w-4 h-4"></i>
+        </a>
+                <button id="btn-close-mapillary-viewer" class="w-8 h-8 rounded-lg hover:bg-gray-800 flex items-center justify-center text-gray-400" title="Chiudi Mapillary">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+            </div>
+        </div>
+        <div class="mapillary-media relative bg-gray-900 aspect-video">
+            <img id="mapillary-image" class="hidden w-full h-full object-cover" alt="">
+            <div id="mapillary-placeholder" class="absolute inset-0 flex items-center justify-center text-[11px] text-gray-500 px-5 text-center">Seleziona un punto Mapillary sulla mappa.</div>
+        </div>
+        <div class="px-3 py-2 border-t border-gray-800 flex items-center justify-between gap-2">
+            <div class="flex items-center gap-1">
+                <button id="btn-mapillary-prev" class="w-8 h-8 rounded-lg bg-gray-900 hover:bg-gray-800 disabled:opacity-35 disabled:hover:bg-gray-900 flex items-center justify-center text-gray-300" disabled title="Foto precedente">
+          <i data-lucide="skip-back" class="w-4 h-4"></i>
+        </button>
+                <button id="btn-mapillary-play" class="w-8 h-8 rounded-lg bg-emerald-700 hover:bg-emerald-600 disabled:opacity-35 disabled:hover:bg-emerald-700 flex items-center justify-center text-white" disabled title="Riproduci sequenza">
+          <i data-lucide="play" class="w-4 h-4"></i>
+        </button>
+                <button id="btn-mapillary-next" class="w-8 h-8 rounded-lg bg-gray-900 hover:bg-gray-800 disabled:opacity-35 disabled:hover:bg-gray-900 flex items-center justify-center text-gray-300" disabled title="Foto successiva">
+          <i data-lucide="skip-forward" class="w-4 h-4"></i>
+        </button>
+            </div>
+            <span id="mapillary-sequence-status" class="text-[10px] text-gray-500 truncate">Sequenza non caricata</span>
+        </div>
+        <div class="px-3 py-2 text-[10px] text-gray-500 border-t border-gray-800">
+            Immagini e dati: <a href="https://www.mapillary.com/" target="_blank" rel="noopener" class="text-emerald-400 hover:text-emerald-300">Mapillary</a>
+        </div>
+    </div>
 
     <!-- ============================================== -->
     <!-- MODALE FINALE DI ANTEPRIMA STAMPA A4           -->

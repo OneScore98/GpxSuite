@@ -36,6 +36,9 @@ let _updateMapData = null;
 let _saveHistoryState = null;
 let _setBaseMap = null;
 let _setDimensionMode = null;
+let _setMapillaryCoverageVisible = null;
+let _configureMapillaryToken = null;
+let _closeMapillaryViewer = null;
 let _flyToPOI = null;
 let _triggerUndo = null;
 let _importGPX = null;
@@ -61,6 +64,9 @@ export function injectDeps(deps) {
     _saveHistoryState = deps.saveHistoryState;
     _setBaseMap = deps.setBaseMap;
     _setDimensionMode = deps.setDimensionMode;
+    _setMapillaryCoverageVisible = deps.setMapillaryCoverageVisible;
+    _configureMapillaryToken = deps.configureMapillaryToken;
+    _closeMapillaryViewer = deps.closeMapillaryViewer;
     _flyToPOI = deps.flyToPOI;
     _triggerUndo = deps.triggerUndo;
     _importGPX = deps.importGPX;
@@ -294,6 +300,12 @@ export async function restoreStoredTracksOnStartup() {
             map.setLayoutProperty('hiking-trails-layer', 'visibility', session.hikingTrailsVisible ? 'visible' : 'none');
         }
     }
+    if (document.getElementById('toggle-mapillary')) {
+        document.getElementById('toggle-mapillary').checked = session?.mapillaryVisible === true;
+    }
+    if (_setMapillaryCoverageVisible) {
+        _setMapillaryCoverageVisible(session?.mapillaryVisible === true, { silent: true });
+    }
 
     if (_setSnapProfile) {
         _setSnapProfile(session?.currentSnapProfile || 'off', { silent: true });
@@ -394,13 +406,27 @@ function closeStatsPanel() {
     document.getElementById('panel-bottom-stats').classList.add('translate-y-60');
     document.getElementById('btn-toggle-stats').classList.remove('bg-blue-600', 'text-white');
     document.getElementById('btn-toggle-stats').classList.add('text-gray-300');
+    document.getElementById('btn-mobile-stats')?.classList.remove('bg-blue-600', 'text-white');
 }
 
 function closeOtherPanels(except) {
+    closeMobileToolbar();
     if (except !== 'main') closeMainMenu();
     if (except !== 'sidebar') closeSidebar();
     if (except !== 'stats') closeStatsPanel();
     if (except !== 'print' && _disablePrintPlanning) _disablePrintPlanning();
+}
+
+function closeMobileToolbar() {
+    document.body.classList.remove('mobile-tools-open');
+    document.getElementById('btn-mobile-toolbar-toggle')?.classList.remove('bg-blue-600', 'text-white');
+}
+
+function toggleMobileToolbar() {
+    const isOpen = document.body.classList.toggle('mobile-tools-open');
+    const btn = document.getElementById('btn-mobile-toolbar-toggle');
+    btn?.classList.toggle('bg-blue-600', isOpen);
+    btn?.classList.toggle('text-white', isOpen);
 }
 
 export function syncMobileBackdrop() {
@@ -891,10 +917,22 @@ export function setupEvents() {
         syncMobileBackdrop();
     };
 
+    document.getElementById('btn-mobile-toolbar-toggle').onclick = () => {
+        if (isCompactLayout()) {
+            closeMainMenu();
+            closeSidebar();
+            closeStatsPanel();
+            if (_disablePrintPlanning) _disablePrintPlanning();
+            toggleMobileToolbar();
+            syncMobileBackdrop();
+        }
+    };
+
     document.getElementById('btn-main-menu').onclick = () => {
         const p = document.getElementById('panel-main-menu');
         const willOpen = p.classList.contains('-translate-x-80');
         if (willOpen && isCompactLayout()) closeOtherPanels('main');
+        else closeMobileToolbar();
         p.classList.toggle('-translate-x-80');
         syncMobileBackdrop();
     };
@@ -907,6 +945,7 @@ export function setupEvents() {
         const sb = document.getElementById('sidebar-tracks-right');
         const willOpen = sb.classList.contains('translate-x-96');
         if (willOpen && isCompactLayout()) closeOtherPanels('sidebar');
+        else closeMobileToolbar();
         sb.classList.toggle('translate-x-96');
         // Se l'abbiamo appena aperto e ci sono modifiche pendenti, rendi ora
         if (!sb.classList.contains('translate-x-96')) {
@@ -932,13 +971,20 @@ export function setupEvents() {
             closeStatsPanel();
         } else {
             if (isCompactLayout()) closeOtherPanels('stats');
+            else closeMobileToolbar();
             panel.classList.remove('translate-y-60');
             btn.classList.add('bg-blue-600', 'text-white');
             btn.classList.remove('text-gray-300');
+            document.getElementById('btn-mobile-stats')?.classList.add('bg-blue-600', 'text-white');
             // Forza un ricalcolo: il pannello era chiuso e abbiamo saltato i refresh
             forceUpdateStats();
         }
         syncMobileBackdrop();
+    };
+
+    document.getElementById('btn-mobile-stats').onclick = () => {
+        closeMobileToolbar();
+        document.getElementById('btn-toggle-stats').click();
     };
 
     document.getElementById('map-style-osm').onclick = () => _setBaseMap('osm');
@@ -955,6 +1001,26 @@ export function setupEvents() {
         map.setLayoutProperty('hiking-trails-layer', 'visibility', visible);
         schedulePersistAppSession();
         showToast(e.target.checked ? "Sentieri OSM Visibili" : "Sentieri OSM Nascosti", "success");
+    };
+
+    document.getElementById('toggle-mapillary').onchange = (e) => {
+        if (_setMapillaryCoverageVisible) _setMapillaryCoverageVisible(e.target.checked);
+    };
+
+    document.getElementById('btn-save-mapillary-token').onclick = () => {
+        const token = document.getElementById('input-mapillary-token').value;
+        if (_configureMapillaryToken) _configureMapillaryToken(token);
+        showToast(token.trim() ? "Token Mapillary salvato" : "Token Mapillary rimosso", "success");
+    };
+
+    document.getElementById('btn-clear-mapillary-token').onclick = () => {
+        document.getElementById('input-mapillary-token').value = '';
+        if (_configureMapillaryToken) _configureMapillaryToken('');
+        showToast("Token Mapillary rimosso", "success");
+    };
+
+    document.getElementById('btn-close-mapillary-viewer').onclick = () => {
+        if (_closeMapillaryViewer) _closeMapillaryViewer();
     };
 
     document.getElementById('view-mode-2d').onclick = () => _setDimensionMode(false);

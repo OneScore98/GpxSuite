@@ -6,6 +6,7 @@ import {
     activeSegmentId,
     currentStyle,
     currentSnapProfile,
+    isMapillaryVisible,
     is3D,
     map
 } from './state.js';
@@ -109,6 +110,7 @@ function buildSessionSnapshot() {
         currentSnapProfile,
         is3D,
         hikingTrailsVisible: readHikingTrailsVisibility(),
+        mapillaryVisible: isMapillaryVisible,
         trackOrder: appTracks.map(track => track.localFileId || track.id)
     };
 

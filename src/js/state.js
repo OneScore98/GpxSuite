@@ -7,6 +7,9 @@ export const OSRM_ENDPOINTS = {
     moto: 'https://routing.openstreetmap.de/routed-car/route/v1/driving/',
     car: 'https://routing.openstreetmap.de/routed-car/route/v1/driving/'
 };
+export const MAPILLARY_TILES_URL = 'https://tiles.mapillary.com/maps/vtp/mly1_public/2/{z}/{x}/{y}?access_token=';
+export const MAPILLARY_GRAPH_URL = 'https://graph.mapillary.com/';
+export const MAPILLARY_TOKEN_KEY = 'gpxsuite-mapillary-token-v1';
 
 // Riferimenti agli oggetti principali
 export let map = null;
@@ -15,6 +18,8 @@ export let mapLoaded = false;
 export let is3D = false;
 export let currentStyle = 'osm';
 export let undoStack = [];
+export let isMapillaryVisible = false;
+export let mapillaryToken = '';
 
 // Stato GPX / GIS
 export let tracks = [];
@@ -63,6 +68,8 @@ export function setMapLoaded(v) { mapLoaded = v; }
 export function setIs3D(v) { is3D = v; }
 export function setCurrentStyle(v) { currentStyle = v; }
 export function setUndoStack(v) { undoStack = v; }
+export function setIsMapillaryVisible(v) { isMapillaryVisible = v; }
+export function setMapillaryToken(v) { mapillaryToken = v; }
 export function setTracks(v) { tracks = v; }
 export function setActiveTrackId(v) { activeTrackId = v; }
 export function setActiveSegmentId(v) { activeSegmentId = v; }

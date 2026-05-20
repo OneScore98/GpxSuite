@@ -1,8 +1,11 @@
 // main.js — Entry point: importa tutto, chiama init al DOMContentLoaded
 
-import { setMap, setMapLoaded, NEXTZEN_TERRAIN_SOURCE } from './state.js';
+import { MAPILLARY_TOKEN_KEY, setMap, setMapLoaded, NEXTZEN_TERRAIN_SOURCE, is3D } from './state.js';
 
-import { setupLayers, updateMapData, setBaseMap, setDimensionMode, flyToPOI } from './map.js';
+import {
+    setupLayers, updateMapData, setBaseMap, setDimensionMode, flyToPOI,
+    configureMapillaryToken, setMapillaryCoverageVisible, closeMapillaryViewer
+} from './map.js';
 import { initChart } from './stats.js';
 import { importGPX, exportGPX } from './gpx.js';
 import { addPointToActiveSegment, cutTrackAtPoint, handleBoxDeleteClick, saveHistoryState, triggerUndo, setSnapProfile } from './tracks.js';
@@ -31,6 +34,9 @@ injectDeps({
     saveHistoryState,
     setBaseMap,
     setDimensionMode,
+    setMapillaryCoverageVisible,
+    configureMapillaryToken,
+    closeMapillaryViewer,
     flyToPOI,
     triggerUndo,
     importGPX,
@@ -89,6 +95,23 @@ function configureMapInteractions(mapInstance) {
     if ((navigator.maxTouchPoints || 0) > 0 && mapInstance.touchPitch) {
         mapInstance.touchPitch.enable();
     }
+
+    const enableTerrainForCameraGesture = () => {
+        if (is3D) return;
+        setDimensionMode(true, { silent: true, preserveCamera: true });
+    };
+    mapInstance.on('pitchstart', enableTerrainForCameraGesture);
+    mapInstance.on('rotatestart', enableTerrainForCameraGesture);
+
+    const canvas = mapInstance.getCanvas();
+    const maybeEnableTerrainForMouse = (e) => {
+        if (e.ctrlKey && e.buttons === 1) enableTerrainForCameraGesture();
+    };
+    canvas.addEventListener('mousedown', maybeEnableTerrainForMouse);
+    canvas.addEventListener('mousemove', maybeEnableTerrainForMouse);
+    canvas.addEventListener('touchstart', (e) => {
+        if (e.touches && e.touches.length >= 2) enableTerrainForCameraGesture();
+    }, { passive: true });
 }
 
 window.onload = function() {
@@ -176,6 +199,7 @@ window.onload = function() {
 
         setupLayers();
         setupEvents();
+        configureMapillaryToken(localStorage.getItem(MAPILLARY_TOKEN_KEY) || '');
         initChart();
         setupPrintDragEvents();
         renderGisTree();
