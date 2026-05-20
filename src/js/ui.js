@@ -58,6 +58,83 @@ let _generateHighResPrintPreview = null;
 let _localLibraryBound = false;
 let _gisDragPayload = null;
 const _compactLayoutMedia = window.matchMedia('(max-width: 767px)');
+const TOOL_CURSORS = {
+    draw: createSvgCursor('<line x1="5" y1="19" x2="19" y2="5" stroke="#f8fafc" stroke-width="3" stroke-linecap="round"/><line x1="4" y1="20" x2="9" y2="19" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/><path d="M16 4l4 4" stroke="#f8fafc" stroke-width="2" stroke-linecap="round"/>', 4, 20),
+    cut: createSvgCursor('<circle cx="7" cy="7" r="3" fill="none" stroke="#f8fafc" stroke-width="2"/><circle cx="7" cy="17" r="3" fill="none" stroke="#f8fafc" stroke-width="2"/><path d="M10 9l11 9M10 15L21 6" stroke="#f8fafc" stroke-width="2.4" stroke-linecap="round"/>', 12, 12),
+    box: createSvgCursor('<rect x="4" y="5" width="16" height="14" rx="1.5" fill="rgba(239,68,68,.18)" stroke="#ef4444" stroke-width="2.4" stroke-dasharray="4 2"/><path d="M7 8l10 8M17 8L7 16" stroke="#f8fafc" stroke-width="1.8" stroke-linecap="round"/>', 12, 12),
+    waypoint: createSvgCursor('<path d="M12 22s7-6.2 7-12a7 7 0 10-14 0c0 5.8 7 12 7 12z" fill="#2563eb" stroke="#f8fafc" stroke-width="2"/><circle cx="12" cy="10" r="2.5" fill="#f8fafc"/>', 12, 22)
+};
+
+function createSvgCursor(svgBody, hotX, hotY) {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">${svgBody}</svg>`;
+    return `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${hotX} ${hotY}, crosshair`;
+}
+
+function updateMapToolCursor() {
+    if (!map) return;
+    const canvas = map.getCanvas();
+    if (!canvas) return;
+    if (isDrawing) canvas.style.cursor = TOOL_CURSORS.draw;
+    else if (isCutting) canvas.style.cursor = TOOL_CURSORS.cut;
+    else if (isBoxDeleting) canvas.style.cursor = TOOL_CURSORS.box;
+    else if (isAddingWaypoint) canvas.style.cursor = TOOL_CURSORS.waypoint;
+    else canvas.style.cursor = '';
+}
+
+function setToolButtonState(buttonId, active) {
+    document.getElementById(buttonId)?.classList.toggle('bg-blue-600', active);
+    document.getElementById(buttonId)?.classList.toggle('text-white', active);
+}
+
+function updateToolButtons() {
+    setToolButtonState('btn-draw-track', isDrawing);
+    setToolButtonState('btn-cut-track', isCutting);
+    setToolButtonState('btn-box-delete', isBoxDeleting);
+    setToolButtonState('btn-add-waypoint', isAddingWaypoint);
+}
+
+function updateBoxDeletePreview(endLngLat = null) {
+    const src = mapLoaded && map ? map.getSource('box-delete-preview') : null;
+    if (!src) return;
+    if (!boxDeleteCoords || !endLngLat) {
+        src.setData({ type: 'FeatureCollection', features: [] });
+        return;
+    }
+    const minLng = Math.min(boxDeleteCoords.lng, endLngLat.lng);
+    const maxLng = Math.max(boxDeleteCoords.lng, endLngLat.lng);
+    const minLat = Math.min(boxDeleteCoords.lat, endLngLat.lat);
+    const maxLat = Math.max(boxDeleteCoords.lat, endLngLat.lat);
+    src.setData({
+        type: 'FeatureCollection',
+        features: [{
+            type: 'Feature',
+            properties: {},
+            geometry: {
+                type: 'Polygon',
+                coordinates: [[[minLng, minLat], [maxLng, minLat], [maxLng, maxLat], [minLng, maxLat], [minLng, minLat]]]
+            }
+        }]
+    });
+}
+
+function updateMapillaryToolbarButton() {
+    const btn = document.getElementById('btn-mapillary-layer');
+    const toggle = document.getElementById('toggle-mapillary');
+    if (!btn || !toggle) return;
+    const active = toggle.checked;
+    btn.classList.toggle('bg-emerald-700', active);
+    btn.classList.toggle('text-white', active);
+    btn.classList.toggle('text-gray-300', !active);
+}
+
+function clearBoxDeleteSelection() {
+    setBoxDeleteCoords(null);
+    updateBoxDeletePreview();
+    if (boxDeleteMarker) {
+        boxDeleteMarker.remove();
+        setBoxDeleteMarker(null);
+    }
+}
 
 export function injectDeps(deps) {
     _updateMapData = deps.updateMapData;
@@ -1020,17 +1097,20 @@ export function setupEvents() {
 
     document.getElementById('toggle-mapillary').onchange = (e) => {
         if (_setMapillaryCoverageVisible) _setMapillaryCoverageVisible(e.target.checked);
+        updateMapillaryToolbarButton();
     };
 
     document.getElementById('btn-save-mapillary-token').onclick = () => {
         const token = document.getElementById('input-mapillary-token').value;
         if (_configureMapillaryToken) _configureMapillaryToken(token);
+        updateMapillaryToolbarButton();
         showToast(token.trim() ? "Token Mapillary salvato" : "Token Mapillary rimosso", "success");
     };
 
     document.getElementById('btn-clear-mapillary-token').onclick = () => {
         document.getElementById('input-mapillary-token').value = '';
         if (_configureMapillaryToken) _configureMapillaryToken('');
+        updateMapillaryToolbarButton();
         showToast("Token Mapillary rimosso", "success");
     };
 
@@ -1047,6 +1127,7 @@ export function setupEvents() {
         setIsBoxDeleting(false);
         setIsAddingWaypoint(false);
         _disablePrintPlanning();
+        clearBoxDeleteSelection();
 
         const btn = document.getElementById('btn-draw-track');
         if (isDrawing) {
@@ -1056,6 +1137,8 @@ export function setupEvents() {
             btn.classList.remove('bg-blue-600', 'text-white');
             if (_updateMapData) _updateMapData(true);
         }
+        updateToolButtons();
+        updateMapToolCursor();
     };
 
     const profiles = ['off', 'foot', 'bike', 'moto', 'car'];
@@ -1073,6 +1156,14 @@ export function setupEvents() {
         }
     };
 
+    document.getElementById('btn-mapillary-layer').onclick = () => {
+        const toggle = document.getElementById('toggle-mapillary');
+        if (!toggle) return;
+        toggle.checked = !toggle.checked;
+        if (_setMapillaryCoverageVisible) _setMapillaryCoverageVisible(toggle.checked);
+        updateMapillaryToolbarButton();
+    };
+
     map.on('click', (e) => {
         const coords = e.lngLat;
         if (isDrawing) {
@@ -1088,6 +1179,8 @@ export function setupEvents() {
 
     map.on('mousemove', (e) => {
         updateCursorCoordinates(e.lngLat);
+        if (isBoxDeleting && boxDeleteCoords) updateBoxDeletePreview(e.lngLat);
+        updateMapToolCursor();
     });
 
     document.getElementById('btn-cut-track').onclick = () => {
@@ -1096,7 +1189,9 @@ export function setupEvents() {
         setIsBoxDeleting(false);
         setIsAddingWaypoint(false);
         _disablePrintPlanning();
-        document.getElementById('btn-draw-track').classList.remove('bg-blue-600', 'text-white');
+        clearBoxDeleteSelection();
+        updateToolButtons();
+        updateMapToolCursor();
         showToast(isCutting ? "Clicca su un punto della traccia per tagliarla in due segmenti" : "Taglio disattivato", "info");
     };
 
@@ -1106,12 +1201,9 @@ export function setupEvents() {
         setIsCutting(false);
         setIsAddingWaypoint(false);
         _disablePrintPlanning();
-        setBoxDeleteCoords(null);
-        if (boxDeleteMarker) {
-            boxDeleteMarker.remove();
-            setBoxDeleteMarker(null);
-        }
-        document.getElementById('btn-draw-track').classList.remove('bg-blue-600', 'text-white');
+        clearBoxDeleteSelection();
+        updateToolButtons();
+        updateMapToolCursor();
         showToast(isBoxDeleting ? "Clicca due punti per definire il rettangolo d'eliminazione" : "Cancellazione box disattivata", "info");
     };
 
@@ -1121,9 +1213,15 @@ export function setupEvents() {
         setIsCutting(false);
         setIsBoxDeleting(false);
         _disablePrintPlanning();
-        document.getElementById('btn-draw-track').classList.remove('bg-blue-600', 'text-white');
+        clearBoxDeleteSelection();
+        updateToolButtons();
+        updateMapToolCursor();
         showToast(isAddingWaypoint ? "Clicca sulla mappa per inserire un Waypoint" : "Inserimento waypoint disattivato", "info");
     };
+
+    updateToolButtons();
+    updateMapToolCursor();
+    updateMapillaryToolbarButton();
 
     document.getElementById('btn-undo').onclick = _triggerUndo;
 

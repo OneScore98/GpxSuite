@@ -477,6 +477,7 @@ label {
         padding: 0.35rem;
         border-radius: 0.9rem;
         opacity: 0;
+        visibility: hidden;
         pointer-events: none;
         transform: translateY(-0.35rem) scale(0.98);
         transform-origin: top left;
@@ -485,6 +486,7 @@ label {
 
     body.mobile-tools-open #toolbar-quick-tools {
         opacity: 1;
+        visibility: visible;
         pointer-events: auto;
         transform: translateY(0) scale(1);
     }
@@ -539,12 +541,32 @@ label {
         height: min(38vh, 20rem);
     }
 
+    #panel-main-menu.-translate-x-80 {
+        transform: translateX(calc(-100vw - 2rem));
+    }
+
     #sidebar-tracks-right.translate-x-96 {
-        transform: translateY(calc(-100% - 1rem));
+        transform: translateX(calc(100vw + 2rem));
     }
 
     #panel-bottom-stats.translate-y-60 {
-        transform: translateY(calc(100% + 5rem));
+        transform: translateY(calc(100vh + 2rem));
+    }
+
+    #panel-main-menu.-translate-x-80,
+    #sidebar-tracks-right.translate-x-96,
+    #panel-bottom-stats.translate-y-60 {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+    }
+
+    #panel-main-menu:not(.-translate-x-80),
+    #sidebar-tracks-right:not(.translate-x-96),
+    #panel-bottom-stats:not(.translate-y-60) {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
     }
 }
 

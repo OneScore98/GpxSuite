@@ -321,11 +321,15 @@ export function setupLayers() {
     });
 
     map.on('mouseenter', 'gpx-lines-layer', () => {
-        map.getCanvas().style.cursor = 'pointer';
+        if (!isDrawing && !isCutting && !isBoxDeleting && !isAddingWaypoint) {
+            map.getCanvas().style.cursor = 'pointer';
+        }
     });
 
     map.on('mouseleave', 'gpx-lines-layer', () => {
-        map.getCanvas().style.cursor = '';
+        if (!isDrawing && !isCutting && !isBoxDeleting && !isAddingWaypoint) {
+            map.getCanvas().style.cursor = '';
+        }
     });
 
     map.addSource('gpx-edit-points', {
@@ -349,12 +353,71 @@ export function setupLayers() {
     bindWaypointInteractions();
     setupMapillaryLayers();
 
+    map.addSource('box-delete-preview', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] }
+    });
+
+    map.addLayer({
+        id: 'box-delete-preview-fill',
+        type: 'fill',
+        source: 'box-delete-preview',
+        paint: {
+            'fill-color': '#ef4444',
+            'fill-opacity': 0.16
+        }
+    });
+
+    map.addLayer({
+        id: 'box-delete-preview-line',
+        type: 'line',
+        source: 'box-delete-preview',
+        paint: {
+            'line-color': '#ef4444',
+            'line-width': 2,
+            'line-dasharray': [2, 1]
+        }
+    });
+
     // Switch LOD solo al termine del gesto (no lavoro durante pan/zoom inerziale)
     // `zoomend` scatta quando l'utente smette di interagire e la mappa è stabile.
     map.on('zoomend', () => applyLodToMap());
 
     // Sincronizza il LOD anche al primo idle (raro caso in cui zoomend non scatta)
     map.once('idle', () => applyLodToMap());
+}
+
+export function updateBoxDeletePreview(startLngLat, endLngLat) {
+    const src = mapLoaded ? map.getSource('box-delete-preview') : null;
+    if (!src) return;
+
+    if (!startLngLat || !endLngLat) {
+        src.setData({ type: 'FeatureCollection', features: [] });
+        return;
+    }
+
+    const minLng = Math.min(startLngLat.lng, endLngLat.lng);
+    const maxLng = Math.max(startLngLat.lng, endLngLat.lng);
+    const minLat = Math.min(startLngLat.lat, endLngLat.lat);
+    const maxLat = Math.max(startLngLat.lat, endLngLat.lat);
+
+    src.setData({
+        type: 'FeatureCollection',
+        features: [{
+            type: 'Feature',
+            properties: {},
+            geometry: {
+                type: 'Polygon',
+                coordinates: [[
+                    [minLng, minLat],
+                    [maxLng, minLat],
+                    [maxLng, maxLat],
+                    [minLng, maxLat],
+                    [minLng, minLat]
+                ]]
+            }
+        }]
+    });
 }
 
 function hasMapillaryToken() {
@@ -432,11 +495,15 @@ function bindMapillaryInteractions() {
     _mapillaryInteractionsBound = true;
 
     map.on('mouseenter', 'mapillary-images-layer', () => {
-        map.getCanvas().style.cursor = 'pointer';
+        if (!isDrawing && !isCutting && !isBoxDeleting && !isAddingWaypoint) {
+            map.getCanvas().style.cursor = 'pointer';
+        }
     });
 
     map.on('mouseleave', 'mapillary-images-layer', () => {
-        map.getCanvas().style.cursor = '';
+        if (!isDrawing && !isCutting && !isBoxDeleting && !isAddingWaypoint) {
+            map.getCanvas().style.cursor = '';
+        }
     });
 
     map.on('click', 'mapillary-images-layer', (e) => {

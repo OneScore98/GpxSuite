@@ -6,6 +6,9 @@ import {
     activeTrackId,
     activeWpForEdit, setActiveWpForEdit,
     isAddingWaypoint, setIsAddingWaypoint,
+    isDrawing,
+    isCutting,
+    isBoxDeleting,
     map
 } from './state.js';
 
@@ -308,11 +311,15 @@ export function bindWaypointInteractions() {
     _waypointInteractionsBound = true;
 
     map.on('mouseenter', 'gpx-waypoints-cluster-layer', () => {
-        map.getCanvas().style.cursor = 'pointer';
+        if (!isDrawing && !isCutting && !isBoxDeleting && !isAddingWaypoint) {
+            map.getCanvas().style.cursor = 'pointer';
+        }
     });
 
     map.on('mouseleave', 'gpx-waypoints-cluster-layer', () => {
-        if (!_draggingWaypoint) map.getCanvas().style.cursor = '';
+        if (!_draggingWaypoint && !isDrawing && !isCutting && !isBoxDeleting && !isAddingWaypoint) {
+            map.getCanvas().style.cursor = '';
+        }
     });
 
     map.on('click', 'gpx-waypoints-cluster-layer', (e) => {
@@ -331,11 +338,15 @@ export function bindWaypointInteractions() {
     });
 
     map.on('mouseenter', 'gpx-waypoints-hit-layer', () => {
-        map.getCanvas().style.cursor = 'pointer';
+        if (!isDrawing && !isCutting && !isBoxDeleting && !isAddingWaypoint) {
+            map.getCanvas().style.cursor = 'pointer';
+        }
     });
 
     map.on('mouseleave', 'gpx-waypoints-hit-layer', () => {
-        if (!_draggingWaypoint) map.getCanvas().style.cursor = '';
+        if (!_draggingWaypoint && !isDrawing && !isCutting && !isBoxDeleting && !isAddingWaypoint) {
+            map.getCanvas().style.cursor = '';
+        }
     });
 
     map.on('mousedown', 'gpx-waypoints-hit-layer', (e) => {

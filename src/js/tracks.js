@@ -16,7 +16,7 @@ import {
     map
 } from './state.js';
 
-import { updateMapData } from './map.js';
+import { updateMapData, updateBoxDeletePreview } from './map.js';
 import { queryElevation } from './map.js';
 import { showToast, updateActiveTracksHeader, createNewTrack } from './ui.js';
 import { haversineDistance } from './stats.js';
@@ -257,6 +257,7 @@ export function cutTrackAtPoint(lngLat) {
 export function handleBoxDeleteClick(lngLat) {
     if (!boxDeleteCoords) {
         setBoxDeleteCoords(lngLat);
+        updateBoxDeletePreview(lngLat, lngLat);
         const marker = new maplibregl.Marker({ color: '#ef4444' })
             .setLngLat(lngLat)
             .addTo(map);
@@ -294,6 +295,7 @@ export function handleBoxDeleteClick(lngLat) {
 
         setIsBoxDeleting(false);
         setBoxDeleteCoords(null);
+        updateBoxDeletePreview(null, null);
         if (boxDeleteMarker) {
             boxDeleteMarker.remove();
             setBoxDeleteMarker(null);
