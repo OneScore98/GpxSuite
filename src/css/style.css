@@ -1,21 +1,29 @@
 /* Stili custom — NON Tailwind (quello resta via CDN) */
 
+:root {
+    --app-height: 100vh;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+}
+
 body,
 html {
     margin: 0;
     padding: 0;
     width: 100%;
-    height: 100%;
+    height: var(--app-height);
     overflow: hidden;
     font-family: system-ui, -apple-system, sans-serif;
+    overscroll-behavior: none;
 }
 
 #map {
-    width: 100%;
-    height: 100%;
     position: absolute;
-    top: 0;
-    bottom: 0;
+    inset: 0;
+    width: 100%;
+    height: var(--app-height);
 }
 
 /* Scrollbar personalizzate sottili */
@@ -41,6 +49,200 @@ html {
 #print-drag-grid {
     touch-action: none;
     user-select: none;
+}
+
+button,
+label,
+input,
+select,
+textarea {
+    -webkit-tap-highlight-color: transparent;
+}
+
+button,
+label {
+    touch-action: manipulation;
+}
+
+#mobile-panel-backdrop {
+    padding: 0;
+    border: 0;
+}
+
+@supports (height: 100dvh) {
+    :root {
+        --app-height: 100dvh;
+    }
+}
+
+@media (pointer: coarse) {
+    #cursor-coordinates {
+        display: none;
+    }
+}
+
+@media (max-width: 767px) {
+    html,
+    body {
+        font-size: 16px;
+    }
+
+    #header-tracks-container {
+        top: calc(var(--safe-top) + 0.5rem);
+        left: calc(var(--safe-left) + 0.5rem);
+        right: calc(var(--safe-right) + 3.75rem);
+        padding: 0;
+    }
+
+    #active-tracks-container {
+        padding: 0.625rem 0.75rem;
+        border-radius: 1rem;
+        max-width: 100%;
+    }
+
+    #toolbar-left {
+        top: auto;
+        left: 50%;
+        bottom: calc(var(--safe-bottom) + 0.5rem);
+        transform: translateX(-50%);
+        flex-direction: row;
+        align-items: center;
+        width: min(calc(100vw - 1rem - var(--safe-left) - var(--safe-right)), 34rem);
+        max-width: calc(100vw - 1rem - var(--safe-left) - var(--safe-right));
+        gap: 0.5rem;
+    }
+
+    #toolbar-left > button,
+    #btn-open-sidebar-right {
+        width: 2.75rem;
+        height: 2.75rem;
+        border-radius: 1rem;
+        flex: 0 0 auto;
+    }
+
+    #toolbar-quick-tools {
+        flex-direction: row;
+        flex: 1 1 auto;
+        align-items: center;
+        gap: 0.375rem;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 0.375rem;
+        border-radius: 1rem;
+    }
+
+    #toolbar-quick-tools > button,
+    #toolbar-quick-tools > label {
+        width: 2.75rem;
+        height: 2.75rem;
+        border-radius: 0.9rem;
+        flex: 0 0 auto;
+    }
+
+    #toolbar-quick-tools > div.h-\[1px\] {
+        width: 1px;
+        height: 1.75rem;
+        margin: 0 0.15rem;
+    }
+
+    #btn-open-sidebar-right {
+        top: calc(var(--safe-top) + 0.5rem);
+        right: calc(var(--safe-right) + 0.5rem);
+    }
+
+    #panel-main-menu,
+    #panel-print-setup,
+    #sidebar-tracks-right,
+    #panel-bottom-stats {
+        left: calc(var(--safe-left) + 0.5rem);
+        right: calc(var(--safe-right) + 0.5rem);
+        width: auto;
+        max-width: none;
+        border-radius: 1.25rem;
+    }
+
+    #panel-main-menu,
+    #panel-print-setup {
+        top: calc(var(--safe-top) + 3.75rem);
+        bottom: calc(var(--safe-bottom) + 4.75rem);
+    }
+
+    #panel-main-menu {
+        transform: translateY(0);
+    }
+
+    #panel-main-menu.-translate-x-80 {
+        transform: translateY(calc(-100% - 1rem));
+    }
+
+    #panel-print-setup {
+        z-index: 20;
+    }
+
+    #sidebar-tracks-right {
+        top: auto;
+        bottom: calc(var(--safe-bottom) + 4.75rem);
+        height: min(68vh, 42rem);
+        transform: translateY(0);
+    }
+
+    #sidebar-tracks-right.translate-x-96 {
+        transform: translateY(calc(100% + 1rem));
+    }
+
+    #modal-waypoint {
+        padding: 1rem;
+    }
+
+    #modal-waypoint > div {
+        width: min(100%, 28rem);
+        max-height: calc(var(--app-height) - 2rem);
+        overflow-y: auto;
+    }
+
+    #panel-bottom-stats {
+        bottom: calc(var(--safe-bottom) + 4.75rem);
+        height: min(54vh, 30rem);
+    }
+
+    #panel-bottom-stats .px-4.py-2 {
+        padding: 0.9rem 1rem;
+    }
+
+    #quick-stats-row {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.35rem 0.75rem;
+    }
+
+    #panel-bottom-stats .flex-1.p-3.flex.gap-4.min-h-0 {
+        flex-direction: column;
+        gap: 0.75rem;
+        padding: 0.75rem;
+    }
+
+    #panel-bottom-stats .w-52 {
+        width: 100%;
+        border-left: 0;
+        border-top: 1px solid rgba(31, 41, 55, 1);
+        padding-left: 0;
+        padding-top: 0.75rem;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.5rem 1rem;
+    }
+
+    #toast-container {
+        top: calc(var(--safe-top) + 4.25rem);
+        bottom: auto;
+        left: calc(var(--safe-left) + 0.5rem);
+        right: calc(var(--safe-right) + 0.5rem);
+        max-width: none;
+    }
+
+    #print-preview-modal .print-page-container {
+        padding: 1rem 0.75rem 6rem;
+    }
 }
 
 /* Stili per la stampa nativa - Punto 10 */

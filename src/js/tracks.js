@@ -20,7 +20,7 @@ import { updateMapData } from './map.js';
 import { queryElevation } from './map.js';
 import { showToast, updateActiveTracksHeader, createNewTrack } from './ui.js';
 import { haversineDistance } from './stats.js';
-import { schedulePersistTracks } from './storage.js';
+import { schedulePersistAppSession, schedulePersistTracks } from './storage.js';
 
 // Throttle: su file enormi JSON.stringify dell'intero state può richiedere
 // 100+ ms. Se l'utente fa molte modifiche rapide (es. tracciamento continuo),
@@ -74,19 +74,57 @@ export function triggerUndo() {
     updateMapData();
     showToast("Annullato con successo!", "success");
     schedulePersistTracks(tracks);
+    schedulePersistAppSession();
 
     if (undoStack.length <= 1) {
         document.getElementById('btn-undo').disabled = true;
     }
 }
 
-export async function addPointToActiveSegment(lon, lat) {
-    if (!activeTrackId || !activeSegmentId) {
+function ensureActiveEditableSegment() {
+    if (!activeTrackId || tracks.length === 0) {
         createNewTrack();
     }
 
-    const track = tracks.find(t => t.id === activeTrackId);
-    const segment = track.segments.find(s => s.id === activeSegmentId);
+    let track = tracks.find(t => t.id === activeTrackId) || tracks[tracks.length - 1] || null;
+    if (!track) return { track: null, segment: null };
+
+    if (track.id !== activeTrackId) {
+        setActiveTrackId(track.id);
+    }
+
+    if (track.visible === false) {
+        track.visible = true;
+    }
+
+    if (!Array.isArray(track.segments) || track.segments.length === 0) {
+        track.segments = [{
+            id: 'seg_' + Date.now(),
+            name: 'Tracciato 1',
+            points: [],
+            visible: true
+        }];
+    }
+
+    let segment = track.segments.find(s => s.id === activeSegmentId) || null;
+    if (!segment) {
+        segment = track.segments[track.segments.length - 1];
+        setActiveSegmentId(segment.id);
+    }
+
+    if (segment.visible === false) {
+        segment.visible = true;
+    }
+
+    return { track, segment };
+}
+
+export async function addPointToActiveSegment(lon, lat) {
+    const { track, segment } = ensureActiveEditableSegment();
+    if (!track || !segment) {
+        showToast("Impossibile trovare un segmento attivo per il disegno", "error");
+        return;
+    }
 
     if (segment.points.length === 0 || !isSnapActive) {
         const point = {
@@ -263,7 +301,7 @@ export function handleBoxDeleteClick(lngLat) {
     }
 }
 
-export function setSnapProfile(profile) {
+export function setSnapProfile(profile, options = {}) {
     setCurrentSnapProfile(profile);
     setIsSnapActive(profile !== 'off');
 
@@ -283,11 +321,17 @@ export function setSnapProfile(profile) {
         indicator.className = "absolute bottom-1 right-1 w-2 h-2 rounded-full bg-green-500 border border-gray-950 animate-pulse";
         badge.innerText = `Attivo (${profile.toUpperCase()})`;
         badge.className = "text-[9px] bg-green-950 text-green-400 px-1.5 py-0.5 rounded border border-green-900 font-bold uppercase";
-        showToast(`Snap stradale attivato: Profilo ${profile.toUpperCase()}`, 'success');
+        if (!options.silent) {
+            showToast(`Snap stradale attivato: Profilo ${profile.toUpperCase()}`, 'success');
+        }
     } else {
         indicator.className = "absolute bottom-1 right-1 w-2 h-2 rounded-full bg-red-500 border border-gray-950";
         badge.innerText = "Disattivato";
         badge.className = "text-[9px] bg-red-950 text-red-400 px-1.5 py-0.5 rounded border border-red-900 font-bold uppercase";
-        showToast("Snap disattivato: Disegno in linea d'aria", 'info');
+        if (!options.silent) {
+            showToast("Snap disattivato: Disegno in linea d'aria", 'info');
+        }
     }
+
+    schedulePersistAppSession();
 }

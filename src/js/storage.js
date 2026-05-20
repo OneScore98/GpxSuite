@@ -1,12 +1,24 @@
 // storage.js — persistenza locale IndexedDB per GPX per-device/per-browser
 
+import {
+    tracks as appTracks,
+    activeTrackId,
+    activeSegmentId,
+    currentStyle,
+    currentSnapProfile,
+    is3D,
+    map
+} from './state.js';
+
 const DB_NAME = 'gpxsuite-local-db';
 const STORE_NAME = 'gpx-files';
 const LIBRARY_EVENT = 'gpxsuite:local-library-changed';
+const SESSION_KEY = 'gpxsuite-last-session-v1';
 
 let _dbPromise = null;
 let _persistTimer = null;
 let _persistQueuedTracks = [];
+let _sessionTimer = null;
 
 function promisifyRequest(request) {
     return new Promise((resolve, reject) => {
@@ -83,21 +95,97 @@ async function putTrackRecord(track) {
     await waitForTransaction(tx);
 }
 
-export function schedulePersistTracks(tracks) {
-    _persistQueuedTracks = tracks.slice();
+function readHikingTrailsVisibility() {
+    return document.getElementById('toggle-hiking-trails')?.checked === true;
+}
+
+function buildSessionSnapshot() {
+    const snapshot = {
+        version: 1,
+        savedAt: Date.now(),
+        activeTrackId: activeTrackId || null,
+        activeSegmentId: activeSegmentId || null,
+        currentStyle,
+        currentSnapProfile,
+        is3D,
+        hikingTrailsVisible: readHikingTrailsVisibility(),
+        trackOrder: appTracks.map(track => track.localFileId || track.id)
+    };
+
+    if (map) {
+        const center = map.getCenter();
+        snapshot.mapView = {
+            center: [center.lng, center.lat],
+            zoom: map.getZoom(),
+            pitch: map.getPitch(),
+            bearing: map.getBearing()
+        };
+    } else {
+        snapshot.mapView = null;
+    }
+
+    return snapshot;
+}
+
+export function loadPersistedAppSession() {
+    try {
+        const raw = localStorage.getItem(SESSION_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch (err) {
+        console.error('Errore lettura sessione locale:', err);
+        return null;
+    }
+}
+
+function persistAppSessionNow() {
+    try {
+        localStorage.setItem(SESSION_KEY, JSON.stringify(buildSessionSnapshot()));
+    } catch (err) {
+        console.error('Errore salvataggio sessione locale:', err);
+    }
+}
+
+export function schedulePersistAppSession() {
+    clearTimeout(_sessionTimer);
+    _sessionTimer = setTimeout(() => {
+        _sessionTimer = null;
+        persistAppSessionNow();
+    }, 150);
+}
+
+async function persistTracksNow(trackList) {
+    for (let i = 0; i < trackList.length; i++) {
+        try {
+            await putTrackRecord(trackList[i]);
+        } catch (err) {
+            console.error('Errore salvataggio IndexedDB:', err);
+        }
+    }
+}
+
+export function schedulePersistTracks(trackList) {
+    _persistQueuedTracks = trackList.slice();
     clearTimeout(_persistTimer);
     _persistTimer = setTimeout(async() => {
         const toPersist = _persistQueuedTracks.slice();
         _persistTimer = null;
-        for (let i = 0; i < toPersist.length; i++) {
-            try {
-                await putTrackRecord(toPersist[i]);
-            } catch (err) {
-                console.error('Errore salvataggio IndexedDB:', err);
-            }
-        }
+        await persistTracksNow(toPersist);
+        persistAppSessionNow();
         emitLibraryChanged();
     }, 250);
+    schedulePersistAppSession();
+}
+
+export async function flushPersistedStateNow() {
+    clearTimeout(_persistTimer);
+    clearTimeout(_sessionTimer);
+    _persistTimer = null;
+    _sessionTimer = null;
+    _persistQueuedTracks = appTracks.slice();
+    await persistTracksNow(_persistQueuedTracks);
+    persistAppSessionNow();
 }
 
 export async function listStoredTracks() {

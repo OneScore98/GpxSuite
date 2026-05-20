@@ -9,7 +9,7 @@ import {
     printGrid, updatePrintGridProp
 } from './state.js';
 
-import { showToast } from './ui.js';
+import { showToast, syncMobileBackdrop } from './ui.js';
 
 export function togglePrintPlanning() {
     setPrintPlanningMode(!printPlanningMode);
@@ -31,6 +31,7 @@ export function togglePrintPlanning() {
 
         updatePrintGridDimensions();
         showToast("Progettazione Stampa Attiva. Trascina la griglia blu sul tracciato.", "success");
+        syncMobileBackdrop();
     } else {
         disablePrintPlanning();
     }
@@ -40,6 +41,7 @@ export function disablePrintPlanning() {
     setPrintPlanningMode(false);
     document.getElementById('print-drag-grid').classList.add('hidden');
     document.getElementById('panel-print-setup').classList.add('hidden');
+    syncMobileBackdrop();
 }
 
 export function updatePrintGridDimensions() {

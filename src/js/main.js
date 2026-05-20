@@ -7,6 +7,7 @@ import { initChart } from './stats.js';
 import { importGPX, exportGPX } from './gpx.js';
 import { addPointToActiveSegment, cutTrackAtPoint, handleBoxDeleteClick, saveHistoryState, triggerUndo, setSnapProfile } from './tracks.js';
 import { addWaypointAtCoords, saveWaypointModifications, openWaypointEditor, updateWaypointsOnMap } from './waypoints.js';
+import { flushPersistedStateNow, schedulePersistAppSession } from './storage.js';
 import {
     togglePrintPlanning, disablePrintPlanning,
     setupPrintDragEvents, updatePrintGridLayout, updatePrintGridScale,
@@ -14,7 +15,7 @@ import {
 } from './print.js';
 import {
     injectDeps, setupEvents, createNewTrack, renderGisTree,
-    initLocalLibrary, renderLocalGpxLibrary, restoreStoredTracksOnStartup,
+    restoreStoredTracksOnStartup,
     openStoredTrackFromLibrary, deleteStoredTrackFromLibrary,
     handleGisDragStart, handleGisDragOver, handleGisDrop, handleGisDragEnd,
     updateActiveTracksHeader, showToast,
@@ -72,13 +73,34 @@ window.handleGisDragOver = handleGisDragOver;
 window.handleGisDrop = handleGisDrop;
 window.handleGisDragEnd = handleGisDragEnd;
 
+function updateViewportMetrics() {
+    const vv = window.visualViewport;
+    const viewportHeight = vv ? vv.height : window.innerHeight;
+    document.documentElement.style.setProperty('--app-height', `${Math.round(viewportHeight)}px`);
+}
+
 window.onload = function() {
+    updateViewportMetrics();
+    window.addEventListener('resize', updateViewportMetrics);
+    window.addEventListener('orientationchange', updateViewportMetrics);
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', updateViewportMetrics);
+        window.visualViewport.addEventListener('scroll', updateViewportMetrics);
+    }
+    window.addEventListener('pagehide', () => { flushPersistedStateNow().catch(err => console.error(err)); });
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+            flushPersistedStateNow().catch(err => console.error(err));
+        }
+    });
+
     lucide.createIcons();
 
     const mapInstance = new maplibregl.Map({
         container: 'map',
         style: {
             version: 8,
+            glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
             sources: {
                 'osm-raster': {
                     type: 'raster',
@@ -103,6 +125,7 @@ window.onload = function() {
     });
 
     setMap(mapInstance);
+    mapInstance.on('moveend', schedulePersistAppSession);
 
     const resizeObserver = new ResizeObserver(() => {
         if (mapInstance) mapInstance.resize();
@@ -140,19 +163,17 @@ window.onload = function() {
 
         setupLayers();
         setupEvents();
-        initLocalLibrary();
         initChart();
         setupPrintDragEvents();
         renderGisTree();
         updateActiveTracksHeader();
-        renderLocalGpxLibrary();
 
         try {
-            const restoredCount = await restoreStoredTracksOnStartup();
-            if (restoredCount === 0) {
+            const restoreResult = await restoreStoredTracksOnStartup();
+            if (restoreResult.restoredCount === 0) {
                 createNewTrack("Traccia 1");
             } else {
-                showToast(`Ripristinate ${restoredCount} tracce locali`, "success");
+                showToast("Ripristinato l'ultimo stato locale", "success");
             }
         } catch (err) {
             console.error(err);

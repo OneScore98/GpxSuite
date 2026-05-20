@@ -25,7 +25,9 @@ import {
     loadStoredTrack,
     deleteStoredTrack,
     ensureTrackStorageMeta,
-    onLibraryChanged
+    onLibraryChanged,
+    loadPersistedAppSession,
+    schedulePersistAppSession
 } from './storage.js';
 
 // Riferimenti a funzioni degli altri moduli — iniettati da main.js per evitare
@@ -52,6 +54,7 @@ let _setPrintPlanningOrientation = null;
 let _generateHighResPrintPreview = null;
 let _localLibraryBound = false;
 let _gisDragPayload = null;
+const _compactLayoutMedia = window.matchMedia('(max-width: 767px)');
 
 export function injectDeps(deps) {
     _updateMapData = deps.updateMapData;
@@ -198,32 +201,93 @@ export async function openStoredTrackFromLibrary(fileId) {
     updateActiveTracksHeader();
     renderGisTree();
     renderLocalGpxLibrary();
+    schedulePersistAppSession();
     showToast(`Caricato da archivio: ${storedTrack.name}`, 'success');
 }
 
 export async function restoreStoredTracksOnStartup() {
+    const session = loadPersistedAppSession();
     const files = await listStoredTracks();
-    if (files.length === 0) return 0;
+    if (files.length === 0) return { restoredCount: 0, session };
 
     const restoredTracks = [];
     for (let i = 0; i < files.length; i++) {
         const storedTrack = await loadStoredTrack(files[i].id);
         if (!storedTrack) continue;
         ensureTrackStorageMeta(storedTrack, storedTrack.localSource || 'imported');
+        if (!Array.isArray(storedTrack.segments) || storedTrack.segments.length === 0) {
+            storedTrack.segments = [{
+                id: 'seg_' + Date.now() + '_' + i,
+                name: 'Tracciato 1',
+                points: [],
+                visible: true
+            }];
+        }
         restoredTracks.push(storedTrack);
     }
 
-    if (restoredTracks.length === 0) return 0;
+    if (restoredTracks.length === 0) return { restoredCount: 0, session };
+
+    if (Array.isArray(session?.trackOrder) && session.trackOrder.length > 0) {
+        const orderMap = new Map(session.trackOrder.map((id, index) => [id, index]));
+        restoredTracks.sort((a, b) => {
+            const aIndex = orderMap.has(a.localFileId) ? orderMap.get(a.localFileId) : Number.MAX_SAFE_INTEGER;
+            const bIndex = orderMap.has(b.localFileId) ? orderMap.get(b.localFileId) : Number.MAX_SAFE_INTEGER;
+            return aIndex - bIndex;
+        });
+    }
 
     setTracks(restoredTracks);
-    const activeTrack = restoredTracks.find(track => track.visible !== false) || restoredTracks[0];
-    setActiveTrackId(activeTrack.id);
-    setActiveSegmentId(activeTrack.segments[0]?.id || null);
+    const activeTrack = restoredTracks.find(track => track.id === session?.activeTrackId)
+        || restoredTracks.find(track => track.visible !== false)
+        || restoredTracks[0];
+    setActiveTrackId(activeTrack?.id || null);
+
+    const activeSegment = activeTrack?.segments.find(segment => segment.id === session?.activeSegmentId)
+        || activeTrack?.segments[0]
+        || null;
+    setActiveSegmentId(activeSegment?.id || null);
+
+    if (typeof session?.hikingTrailsVisible === 'boolean') {
+        const hikingToggle = document.getElementById('toggle-hiking-trails');
+        if (hikingToggle) hikingToggle.checked = session.hikingTrailsVisible;
+        if (mapLoaded && map.getLayer('hiking-trails-layer')) {
+            map.setLayoutProperty('hiking-trails-layer', 'visibility', session.hikingTrailsVisible ? 'visible' : 'none');
+        }
+    }
+
+    if (_setSnapProfile) {
+        _setSnapProfile(session?.currentSnapProfile || 'off', { silent: true });
+    }
+
     if (_updateMapData) _updateMapData(true);
     updateActiveTracksHeader();
     renderGisTree();
     renderLocalGpxLibrary();
-    return restoredTracks.length;
+
+    const applyMapSession = () => {
+        if (session?.mapView && mapLoaded && map) {
+            map.jumpTo({
+                center: session.mapView.center,
+                zoom: session.mapView.zoom,
+                pitch: session.mapView.pitch,
+                bearing: session.mapView.bearing
+            });
+        }
+        if (_setDimensionMode) {
+            _setDimensionMode(!!session?.is3D, { silent: true });
+        }
+    };
+
+    if (session?.currentStyle && session.currentStyle !== currentStyle && _setBaseMap) {
+        map.once('idle', applyMapSession);
+        _setBaseMap(session.currentStyle);
+    } else {
+        applyMapSession();
+    }
+
+    schedulePersistAppSession();
+    return { restoredCount: restoredTracks.length, session };
 }
 
 export async function deleteStoredTrackFromLibrary(fileId) {
@@ -253,6 +317,64 @@ export function isGisTreeVisible() {
     const el = document.getElementById('sidebar-tracks-right');
     if (!el) return false;
     return !el.classList.contains('translate-x-96');
+}
+
+function isCompactLayout() {
+    return _compactLayoutMedia.matches;
+}
+
+function isMainMenuOpen() {
+    const el = document.getElementById('panel-main-menu');
+    return !!el && !el.classList.contains('-translate-x-80');
+}
+
+function isSidebarOpen() {
+    const el = document.getElementById('sidebar-tracks-right');
+    return !!el && !el.classList.contains('translate-x-96');
+}
+
+function isStatsPanelOpen() {
+    const el = document.getElementById('panel-bottom-stats');
+    return !!el && !el.classList.contains('translate-y-60');
+}
+
+function isPrintSetupOpen() {
+    const el = document.getElementById('panel-print-setup');
+    return !!el && !el.classList.contains('hidden');
+}
+
+function closeMainMenu() {
+    document.getElementById('panel-main-menu').classList.add('-translate-x-80');
+}
+
+function closeSidebar() {
+    document.getElementById('sidebar-tracks-right').classList.add('translate-x-96');
+}
+
+function closeStatsPanel() {
+    document.getElementById('panel-bottom-stats').classList.add('translate-y-60');
+    document.getElementById('btn-toggle-stats').classList.remove('bg-blue-600', 'text-white');
+    document.getElementById('btn-toggle-stats').classList.add('text-gray-300');
+}
+
+function closeOtherPanels(except) {
+    if (except !== 'main') closeMainMenu();
+    if (except !== 'sidebar') closeSidebar();
+    if (except !== 'stats') closeStatsPanel();
+    if (except !== 'print' && _disablePrintPlanning) _disablePrintPlanning();
+}
+
+export function syncMobileBackdrop() {
+    const backdrop = document.getElementById('mobile-panel-backdrop');
+    if (!backdrop) return;
+
+    if (!isCompactLayout()) {
+        backdrop.classList.add('hidden');
+        return;
+    }
+
+    const hasOpenPanel = isMainMenuOpen() || isSidebarOpen() || isStatsPanelOpen() || isPrintSetupOpen();
+    backdrop.classList.toggle('hidden', !hasOpenPanel);
 }
 
 // Debounce interno: evita di ricostruire il tree DOM ad ogni singola modifica
@@ -496,6 +618,7 @@ export function setTrackActive(trackId) {
     }
     if (_updateMapData) _updateMapData();
     updateActiveTracksHeader();
+    schedulePersistAppSession();
 }
 
 export function renameTrack(trackId, newName) {
@@ -613,6 +736,7 @@ export function setSegmentActive(trackId, segId) {
     setActiveSegmentId(segId);
     if (_updateMapData) _updateMapData();
     updateActiveTracksHeader();
+    schedulePersistAppSession();
 }
 
 export function deleteSegment(trackId, segId) {
@@ -720,32 +844,42 @@ export function showToast(message, type = 'info') {
 }
 
 export function setupEvents() {
-    initLocalLibrary();
+    document.getElementById('mobile-panel-backdrop').onclick = () => {
+        closeOtherPanels(null);
+        syncMobileBackdrop();
+    };
 
     document.getElementById('btn-main-menu').onclick = () => {
         const p = document.getElementById('panel-main-menu');
+        const willOpen = p.classList.contains('-translate-x-80');
+        if (willOpen && isCompactLayout()) closeOtherPanels('main');
         p.classList.toggle('-translate-x-80');
+        syncMobileBackdrop();
     };
     document.getElementById('btn-close-main-menu').onclick = () => {
-        document.getElementById('panel-main-menu').classList.add('-translate-x-80');
+        closeMainMenu();
+        syncMobileBackdrop();
     };
 
     document.getElementById('btn-open-sidebar-right').onclick = () => {
         const sb = document.getElementById('sidebar-tracks-right');
+        const willOpen = sb.classList.contains('translate-x-96');
+        if (willOpen && isCompactLayout()) closeOtherPanels('sidebar');
         sb.classList.toggle('translate-x-96');
         // Se l'abbiamo appena aperto e ci sono modifiche pendenti, rendi ora
         if (!sb.classList.contains('translate-x-96')) {
             flushGisTreeIfDirty();
         }
+        syncMobileBackdrop();
     };
     document.getElementById('btn-close-sidebar-right').onclick = () => {
-        document.getElementById('sidebar-tracks-right').classList.add('translate-x-96');
+        closeSidebar();
+        syncMobileBackdrop();
     };
 
     document.getElementById('btn-close-bottom').onclick = () => {
-        document.getElementById('panel-bottom-stats').classList.add('translate-y-60');
-        document.getElementById('btn-toggle-stats').classList.remove('bg-blue-600', 'text-white');
-        document.getElementById('btn-toggle-stats').classList.add('text-gray-300');
+        closeStatsPanel();
+        syncMobileBackdrop();
     };
 
     document.getElementById('btn-toggle-stats').onclick = () => {
@@ -753,16 +887,16 @@ export function setupEvents() {
         const btn = document.getElementById('btn-toggle-stats');
         const isOpen = !panel.classList.contains('translate-y-60');
         if (isOpen) {
-            panel.classList.add('translate-y-60');
-            btn.classList.remove('bg-blue-600', 'text-white');
-            btn.classList.add('text-gray-300');
+            closeStatsPanel();
         } else {
+            if (isCompactLayout()) closeOtherPanels('stats');
             panel.classList.remove('translate-y-60');
             btn.classList.add('bg-blue-600', 'text-white');
             btn.classList.remove('text-gray-300');
             // Forza un ricalcolo: il pannello era chiuso e abbiamo saltato i refresh
             forceUpdateStats();
         }
+        syncMobileBackdrop();
     };
 
     document.getElementById('map-style-osm').onclick = () => _setBaseMap('osm');
@@ -777,6 +911,7 @@ export function setupEvents() {
         if (!mapLoaded) return;
         const visible = e.target.checked ? 'visible' : 'none';
         map.setLayoutProperty('hiking-trails-layer', 'visibility', visible);
+        schedulePersistAppSession();
         showToast(e.target.checked ? "Sentieri OSM Visibili" : "Sentieri OSM Nascosti", "success");
     };
 
@@ -921,4 +1056,12 @@ export function setupEvents() {
     document.getElementById('btn-print-preview-confirm').onclick = () => {
         window.print();
     };
+
+    if (typeof _compactLayoutMedia.addEventListener === 'function') {
+        _compactLayoutMedia.addEventListener('change', syncMobileBackdrop);
+    } else if (typeof _compactLayoutMedia.addListener === 'function') {
+        _compactLayoutMedia.addListener(syncMobileBackdrop);
+    }
+
+    window.addEventListener('resize', syncMobileBackdrop);
 }

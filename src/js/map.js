@@ -27,6 +27,7 @@ import {
 import { renderGisTree, showToast, isGisTreeVisible } from './ui.js';
 import { updateStatsAndProfile } from './stats.js';
 import { setupWaypointLayers, updateWaypointsOnMap, bindWaypointInteractions } from './waypoints.js';
+import { schedulePersistAppSession } from './storage.js';
 
 // ─── RDP iterativo (no ricorsione, no stack overflow) ─────────────────────────
 function rdpIterative(points, tolerance) {
@@ -327,6 +328,7 @@ export function setBaseMap(style) {
     if (style === 'osm') {
         map.setStyle({
             version: 8,
+            glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
             sources: {
                 'osm-raster': {
                     type: 'raster',
@@ -355,10 +357,16 @@ export function setBaseMap(style) {
             };
             layers.push({ id: 'hybrid-ref-layer', type: 'raster', source: 'hybrid-ref' });
         }
-        map.setStyle({ version: 8, sources, layers });
+        map.setStyle({
+            version: 8,
+            glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+            sources,
+            layers
+        });
     } else if (style === 'topo') {
         map.setStyle({
             version: 8,
+            glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
             sources: {
                 'topo-raster': {
                     type: 'raster',
@@ -411,21 +419,27 @@ export function setBaseMap(style) {
 
     document.getElementById('sat-options-container').className =
         style === 'sat' ? "pt-1.5 flex items-center justify-between" : "hidden";
+
+    schedulePersistAppSession();
 }
 
-export function setDimensionMode(enable3D) {
+export function setDimensionMode(enable3D, options = {}) {
     setIs3D(enable3D);
     if (!mapLoaded) return;
 
     if (enable3D) {
         if (!map.getSource('terrain-nextzen')) {
-            showToast("Sorgente terreno non ancora pronta, riprova tra un momento.", "info");
+            if (!options.silent) {
+                showToast("Sorgente terreno non ancora pronta, riprova tra un momento.", "info");
+            }
             setIs3D(false);
             return;
         }
         map.setTerrain({ source: 'terrain-nextzen', exaggeration: 1.2 });
         map.easeTo({ pitch: 55, duration: 1000 });
-        showToast("Terreno 3D Attivato! Trascina con tasto destro per inclinare.", "info");
+        if (!options.silent) {
+            showToast("Terreno 3D Attivato! Trascina con tasto destro per inclinare.", "info");
+        }
     } else {
         map.setTerrain(null);
         map.easeTo({ pitch: 0, bearing: 0, duration: 800 });
@@ -437,6 +451,8 @@ export function setDimensionMode(enable3D) {
     document.getElementById('view-mode-3d').className = enable3D
         ? "text-xs font-medium py-1 px-2 rounded bg-blue-600 text-white"
         : "text-xs font-medium py-1 px-2 rounded text-gray-400 hover:text-white";
+
+    schedulePersistAppSession();
 }
 
 export function flyToPOI(lon, lat, alt, pitch, bearing) {

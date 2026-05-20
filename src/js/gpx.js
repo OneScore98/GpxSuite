@@ -4,7 +4,7 @@
 // per evitare di bloccare il main thread su file enormi. Se il Worker non è
 // disponibile (es. apertura via file://) si ricade sul parsing inline a chunk.
 
-import { tracks, map } from './state.js';
+import { tracks, map, setActiveSegmentId } from './state.js';
 import { createNewTrack, showToast } from './ui.js';
 import { saveHistoryState } from './tracks.js';
 import { updateMapData } from './map.js';
@@ -51,7 +51,15 @@ export async function importGPX(xmlText, fileName) {
         // Costruisci il nuovo track con i dati pre-parsati
         const newTrack = createNewTrack(fileName.replace('.gpx', ''));
         newTrack.localSource = 'imported';
-        newTrack.segments = result.segments;
+        newTrack.segments = result.segments.length > 0 ? result.segments : [{
+            id: 'seg_' + Date.now() + '_import',
+            name: 'Tracciato 1',
+            points: [],
+            visible: true
+        }];
+        newTrack.visible = true;
+        newTrack.waypointsVisible = true;
+        setActiveSegmentId(newTrack.segments[0].id);
         // I waypoint vengono aggiunti a quelli esistenti del nuovo track (se presenti)
         for (let i = 0; i < result.waypoints.length; i++) {
             newTrack.waypoints.push(result.waypoints[i]);
