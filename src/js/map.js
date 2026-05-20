@@ -21,10 +21,13 @@ import {
     mapLoaded,
     activeTrackId,
     activeSegmentId,
-    isDrawing
+    isDrawing,
+    isCutting,
+    isBoxDeleting,
+    isAddingWaypoint
 } from './state.js';
 
-import { renderGisTree, showToast, isGisTreeVisible } from './ui.js';
+import { renderGisTree, showToast, isGisTreeVisible, setTrackActive } from './ui.js';
 import { updateStatsAndProfile } from './stats.js';
 import { setupWaypointLayers, updateWaypointsOnMap, bindWaypointInteractions } from './waypoints.js';
 import { schedulePersistAppSession } from './storage.js';
@@ -118,7 +121,7 @@ function buildLodFeatures(lodIndex) {
             }
             features.push({
                 type: 'Feature',
-                properties: { color, width },
+                properties: { color, width, trackId: track.id, segmentId: seg.id },
                 geometry: { type: 'LineString', coordinates: coords }
             });
         }
@@ -291,6 +294,21 @@ export function setupLayers() {
         }
     });
 
+    map.on('click', 'gpx-lines-layer', (e) => {
+        const feature = e.features && e.features[0];
+        const trackId = feature && feature.properties ? feature.properties.trackId : null;
+        if (!trackId || isDrawing || isCutting || isBoxDeleting || isAddingWaypoint) return;
+        setTrackActive(trackId);
+    });
+
+    map.on('mouseenter', 'gpx-lines-layer', () => {
+        map.getCanvas().style.cursor = 'pointer';
+    });
+
+    map.on('mouseleave', 'gpx-lines-layer', () => {
+        map.getCanvas().style.cursor = '';
+    });
+
     map.addSource('gpx-edit-points', {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] }
@@ -438,7 +456,7 @@ export function setDimensionMode(enable3D, options = {}) {
         map.setTerrain({ source: 'terrain-nextzen', exaggeration: 1.2 });
         map.easeTo({ pitch: 55, duration: 1000 });
         if (!options.silent) {
-            showToast("Terreno 3D Attivato! Trascina con tasto destro per inclinare.", "info");
+            showToast("Terreno 3D attivato! Su PC usa Ctrl + trascinamento, su telefono trascina con due dita.", "info");
         }
     } else {
         map.setTerrain(null);

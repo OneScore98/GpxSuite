@@ -14,11 +14,11 @@ import {
     isAddingWaypoint, setIsAddingWaypoint,
     currentSnapProfile,
     currentStyle,
-    map, mapLoaded,
+    map, mapLoaded, is3D,
     activeWpForEdit, setActiveWpForEdit
 } from './state.js';
 
-import { escapeXml } from './utils.js';
+import { escapeXml, generateDistinctTrackColor } from './utils.js';
 import { forceUpdateStats } from './stats.js';
 import {
     listStoredTracks,
@@ -81,6 +81,7 @@ export function injectDeps(deps) {
 
 export function createNewTrack(name) {
     const trackName = name || `Traccia ${tracks.length + 1}`;
+    const color = generateDistinctTrackColor(tracks.map(track => track.color));
     const newTrack = {
         id: 'track_' + Date.now(),
         localFileId: 'local_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
@@ -89,7 +90,7 @@ export function createNewTrack(name) {
         localSource: 'created',
         name: trackName,
         desc: 'Nessuna descrizione',
-        color: '#3b82f6',
+        color,
         width: 3,
         visible: true,
         waypointsVisible: true,
@@ -110,6 +111,44 @@ export function createNewTrack(name) {
     renderGisTree();
     showToast(`Creata: ${trackName}`, 'info');
     return newTrack;
+}
+
+function focusTrackOnMap(track) {
+    if (!mapLoaded || !track) return;
+
+    let minLon = Infinity;
+    let minLat = Infinity;
+    let maxLon = -Infinity;
+    let maxLat = -Infinity;
+    let pointsCount = 0;
+    let firstPoint = null;
+
+    for (let si = 0; si < track.segments.length; si++) {
+        const seg = track.segments[si];
+        for (let pi = 0; pi < seg.points.length; pi++) {
+            const point = seg.points[pi];
+            if (!firstPoint) firstPoint = point;
+            if (point.lon < minLon) minLon = point.lon;
+            if (point.lon > maxLon) maxLon = point.lon;
+            if (point.lat < minLat) minLat = point.lat;
+            if (point.lat > maxLat) maxLat = point.lat;
+            pointsCount++;
+        }
+    }
+
+    if (!firstPoint) return;
+
+    if (pointsCount === 1 || (minLon === maxLon && minLat === maxLat)) {
+        map.flyTo({ center: [firstPoint.lon, firstPoint.lat], zoom: 15, pitch: 45 });
+        return;
+    }
+
+    map.fitBounds([[minLon, minLat], [maxLon, maxLat]], {
+        padding: 60,
+        duration: 900,
+        pitch: is3D ? map.getPitch() : 0,
+        bearing: is3D ? map.getBearing() : 0
+    });
 }
 
 function formatLibraryDate(ts) {
@@ -434,7 +473,7 @@ function _doRenderGisTree() {
                               title="Trascina per riordinare questo file GPX">
                         <i data-lucide="grip-vertical" class="w-4 h-4"></i>
                       </button>
-                      <div class="min-w-0">
+                      <div class="min-w-0 cursor-pointer" onclick="setTrackActive('${track.id}', true)">
                         <div class="flex items-center gap-1.5 min-w-0">
                           <i data-lucide="file-map" class="w-3.5 h-3.5 ${isActive ? 'text-blue-300' : 'text-gray-500'} shrink-0"></i>
                           <input type="text" value="${escapeXml(track.name)}" onchange="renameTrack('${track.id}', this.value)" class="bg-transparent text-xs font-bold ${track.visible === false ? 'text-gray-500 line-through' : 'text-white'} border-b border-transparent hover:border-gray-700 focus:border-blue-500 focus:outline-none min-w-0 w-36">
@@ -610,12 +649,15 @@ export function handleGisDrop(event, targetType, targetTrackId, targetSegId = nu
     finishGisTreeMove(sourceTrack.id === targetTrack.id ? "Segmento riordinato" : "Segmento spostato in un altro file");
 }
 
-export function setTrackActive(trackId) {
+export function setTrackActive(trackId, shouldFocus = false) {
+    const track = tracks.find(tr => tr.id === trackId);
+    if (!track) return;
+
     setActiveTrackId(trackId);
-    const t = tracks.find(tr => tr.id === trackId);
-    if (t && t.segments.length > 0) {
-        setActiveSegmentId(t.segments[t.segments.length - 1].id);
+    if (track.segments.length > 0) {
+        setActiveSegmentId(track.segments[track.segments.length - 1].id);
     }
+    if (shouldFocus) focusTrackOnMap(track);
     if (_updateMapData) _updateMapData();
     updateActiveTracksHeader();
     schedulePersistAppSession();

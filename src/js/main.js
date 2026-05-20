@@ -79,6 +79,18 @@ function updateViewportMetrics() {
     document.documentElement.style.setProperty('--app-height', `${Math.round(viewportHeight)}px`);
 }
 
+function configureMapInteractions(mapInstance) {
+    // Desktop: MapLibre usa il drag con Ctrl per rotazione/inclinazione.
+    if (mapInstance.dragRotate) {
+        mapInstance.dragRotate.enable();
+    }
+
+    // Touch: abilita il pitch con trascinamento a due dita in stile globe/mappe 3D.
+    if ((navigator.maxTouchPoints || 0) > 0 && mapInstance.touchPitch) {
+        mapInstance.touchPitch.enable();
+    }
+}
+
 window.onload = function() {
     updateViewportMetrics();
     window.addEventListener('resize', updateViewportMetrics);
@@ -125,6 +137,7 @@ window.onload = function() {
     });
 
     setMap(mapInstance);
+    configureMapInteractions(mapInstance);
     mapInstance.on('moveend', schedulePersistAppSession);
 
     const resizeObserver = new ResizeObserver(() => {
