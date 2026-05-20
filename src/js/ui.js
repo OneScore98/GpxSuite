@@ -119,32 +119,24 @@ export function createNewTrack(name) {
     return newTrack;
 }
 
-function focusTrackOnMap(track) {
-    if (!mapLoaded || !track) return;
+function focusPointsOnMap(points) {
+    if (!mapLoaded || !points || points.length === 0) return;
 
     let minLon = Infinity;
     let minLat = Infinity;
     let maxLon = -Infinity;
     let maxLat = -Infinity;
-    let pointsCount = 0;
-    let firstPoint = null;
+    const firstPoint = points[0];
 
-    for (let si = 0; si < track.segments.length; si++) {
-        const seg = track.segments[si];
-        for (let pi = 0; pi < seg.points.length; pi++) {
-            const point = seg.points[pi];
-            if (!firstPoint) firstPoint = point;
-            if (point.lon < minLon) minLon = point.lon;
-            if (point.lon > maxLon) maxLon = point.lon;
-            if (point.lat < minLat) minLat = point.lat;
-            if (point.lat > maxLat) maxLat = point.lat;
-            pointsCount++;
-        }
+    for (let pi = 0; pi < points.length; pi++) {
+        const point = points[pi];
+        if (point.lon < minLon) minLon = point.lon;
+        if (point.lon > maxLon) maxLon = point.lon;
+        if (point.lat < minLat) minLat = point.lat;
+        if (point.lat > maxLat) maxLat = point.lat;
     }
 
-    if (!firstPoint) return;
-
-    if (pointsCount === 1 || (minLon === maxLon && minLat === maxLat)) {
+    if (points.length === 1 || (minLon === maxLon && minLat === maxLat)) {
         map.flyTo({ center: [firstPoint.lon, firstPoint.lat], zoom: 15, pitch: 45 });
         return;
     }
@@ -155,6 +147,28 @@ function focusTrackOnMap(track) {
         pitch: is3D ? map.getPitch() : 0,
         bearing: is3D ? map.getBearing() : 0
     });
+}
+
+function focusTrackOnMap(track) {
+    if (!track) return;
+    const allPoints = [];
+
+    for (let si = 0; si < track.segments.length; si++) {
+        const seg = track.segments[si];
+        for (let pi = 0; pi < seg.points.length; pi++) {
+            allPoints.push(seg.points[pi]);
+        }
+    }
+
+    if (allPoints.length === 0) return;
+    focusPointsOnMap(allPoints);
+}
+
+function focusSegmentOnMap(trackId, segId) {
+    const track = tracks.find(tr => tr.id === trackId);
+    const segment = track?.segments.find(seg => seg.id === segId);
+    if (!segment || segment.points.length === 0) return;
+    focusPointsOnMap(segment.points);
 }
 
 function formatLibraryDate(ts) {
@@ -528,7 +542,7 @@ function _doRenderGisTree() {
                         <div class="flex items-center justify-between text-xs py-1.5 px-1.5 rounded border ${isSegActive ? 'bg-blue-950/40 text-blue-300 border-blue-900/60' : 'text-gray-400 border-transparent hover:bg-gray-800/45 hover:border-gray-800'} ${seg.visible === false ? 'opacity-55' : ''}"
                              ondragover="handleGisDragOver(event)"
                              ondrop="handleGisDrop(event, 'segment', '${track.id}', '${seg.id}')">
-                          <div class="flex items-center gap-1.5 min-w-0">
+                          <div class="flex items-center gap-1.5 min-w-0 cursor-pointer" onclick="setSegmentActive('${track.id}', '${seg.id}', true)">
                             <button draggable="true"
                                     ondragstart="handleGisDragStart(event, 'segment', '${track.id}', '${seg.id}')"
                                     ondragend="handleGisDragEnd(event)"
@@ -799,9 +813,10 @@ export function renameSegment(trackId, segId, newName) {
     }
 }
 
-export function setSegmentActive(trackId, segId) {
+export function setSegmentActive(trackId, segId, shouldFocus = false) {
     setActiveTrackId(trackId);
     setActiveSegmentId(segId);
+    if (shouldFocus) focusSegmentOnMap(trackId, segId);
     if (_updateMapData) _updateMapData();
     updateActiveTracksHeader();
     schedulePersistAppSession();
@@ -844,7 +859,7 @@ export function updateActiveTracksHeader() {
     list.innerHTML = tracks.map(t => {
         const isActive = t.id === activeTrackId;
         return `
-          <div onclick="setTrackActive('${t.id}')" class="cursor-pointer flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${isActive ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400 hover:text-white'} ${t.visible === false ? 'opacity-50' : ''}">
+          <div onclick="setTrackActive('${t.id}', true)" class="cursor-pointer flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${isActive ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400 hover:text-white'} ${t.visible === false ? 'opacity-50' : ''}">
             <span class="w-2 h-2 rounded-full" style="background-color: ${t.color}"></span>
             <span class="${t.visible === false ? 'line-through' : ''}">${t.name}</span>
           </div>

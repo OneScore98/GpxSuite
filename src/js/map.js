@@ -32,7 +32,7 @@ import {
     isAddingWaypoint
 } from './state.js';
 
-import { renderGisTree, showToast, isGisTreeVisible, setTrackActive } from './ui.js';
+import { renderGisTree, showToast, isGisTreeVisible, setSegmentActive, setTrackActive } from './ui.js';
 import { updateStatsAndProfile } from './stats.js';
 import { setupWaypointLayers, updateWaypointsOnMap, bindWaypointInteractions } from './waypoints.js';
 import { schedulePersistAppSession } from './storage.js';
@@ -311,7 +311,12 @@ export function setupLayers() {
     map.on('click', 'gpx-lines-layer', (e) => {
         const feature = e.features && e.features[0];
         const trackId = feature && feature.properties ? feature.properties.trackId : null;
+        const segmentId = feature && feature.properties ? feature.properties.segmentId : null;
         if (!trackId || isDrawing || isCutting || isBoxDeleting || isAddingWaypoint) return;
+        if (segmentId) {
+            setSegmentActive(trackId, segmentId);
+            return;
+        }
         setTrackActive(trackId);
     });
 
