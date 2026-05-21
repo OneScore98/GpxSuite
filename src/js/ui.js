@@ -57,6 +57,11 @@ let _setPrintPlanningOrientation = null;
 let _generateHighResPrintPreview = null;
 let _localLibraryBound = false;
 let _gisDragPayload = null;
+let _trackContextMenu = null;
+let _trackLongPressTimer = null;
+let _trackNameLongPressTimer = null;
+let _lastTrackNamePointer = { trackId: null, time: 0 };
+let _lastTrackNameClick = { trackId: null, time: 0 };
 const _compactLayoutMedia = window.matchMedia('(max-width: 767px)');
 const TOOL_CURSORS = {
     draw: createSvgCursor('<line x1="5" y1="19" x2="19" y2="5" stroke="#f8fafc" stroke-width="3" stroke-linecap="round"/><line x1="4" y1="20" x2="9" y2="19" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/><path d="M16 4l4 4" stroke="#f8fafc" stroke-width="2" stroke-linecap="round"/>', 4, 20),
@@ -246,6 +251,167 @@ function focusSegmentOnMap(trackId, segId) {
     const segment = track?.segments.find(seg => seg.id === segId);
     if (!segment || segment.points.length === 0) return;
     focusPointsOnMap(segment.points);
+}
+
+function isInteractiveTreeTarget(target) {
+    return Boolean(target?.closest('button, input, select, textarea, label, [data-tree-control="true"]'));
+}
+
+function closeTrackContextMenu() {
+    if (_trackContextMenu) {
+        _trackContextMenu.remove();
+        _trackContextMenu = null;
+    }
+    document.removeEventListener('pointerdown', handleOutsideTrackContextMenu);
+    document.removeEventListener('keydown', handleTrackContextMenuKeydown);
+}
+
+function handleOutsideTrackContextMenu(event) {
+    if (!_trackContextMenu || _trackContextMenu.contains(event.target)) return;
+    closeTrackContextMenu();
+}
+
+function handleTrackContextMenuKeydown(event) {
+    if (event.key === 'Escape') closeTrackContextMenu();
+}
+
+function openTrackContextMenuAt(trackId, clientX, clientY) {
+    const track = tracks.find(tr => tr.id === trackId);
+    if (!track) return;
+
+    closeTrackContextMenu();
+    const menu = document.createElement('div');
+    menu.className = 'gpx-track-context-menu fixed z-50 w-56 rounded-xl border border-gray-700 bg-gray-950/98 shadow-2xl p-2 text-xs text-gray-200';
+    menu.innerHTML = `
+      <div class="px-2 pb-2 border-b border-gray-800">
+        <div class="font-bold truncate">${escapeXml(track.name)}</div>
+        <div class="text-[10px] text-gray-500">File GPX selezionato</div>
+      </div>
+      <button onclick="openTrackNameEditor('${track.id}')" class="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-gray-800 text-left">
+        <i data-lucide="pencil" class="w-3.5 h-3.5"></i><span>Rinomina</span>
+      </button>
+      <label class="flex items-center justify-between gap-2 px-2 py-2 rounded-lg hover:bg-gray-800 cursor-pointer">
+        <span class="flex items-center gap-2"><i data-lucide="palette" class="w-3.5 h-3.5"></i> Colore</span>
+        <input type="color" value="${track.color || '#3b82f6'}" onchange="changeTrackColor('${track.id}', this.value)" class="w-6 h-6 rounded border-0 bg-transparent cursor-pointer">
+      </label>
+      <label class="block px-2 py-2 rounded-lg hover:bg-gray-800 cursor-pointer">
+        <span class="flex items-center justify-between mb-1">
+          <span class="flex items-center gap-2"><i data-lucide="minus" class="w-3.5 h-3.5"></i> Spessore</span>
+          <span class="text-gray-400">${track.width || 3}px</span>
+        </span>
+        <input type="range" min="1" max="12" step="1" value="${track.width || 3}" oninput="changeTrackWidth('${track.id}', this.value)" class="w-full accent-blue-500">
+      </label>
+      <button onclick="toggleTrackVisibility('${track.id}')" class="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-gray-800 text-left">
+        <i data-lucide="${track.visible === false ? 'eye' : 'eye-off'}" class="w-3.5 h-3.5"></i><span>${track.visible === false ? 'Mostra file' : 'Nascondi file'}</span>
+      </button>
+      <button onclick="deleteTrack('${track.id}')" class="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-red-950/60 text-red-300 text-left">
+        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i><span>Elimina file</span>
+      </button>`;
+    document.body.appendChild(menu);
+    lucide.createIcons();
+
+    const padding = 8;
+    const rect = menu.getBoundingClientRect();
+    menu.style.left = `${Math.max(padding, Math.min(clientX, window.innerWidth - rect.width - padding))}px`;
+    menu.style.top = `${Math.max(padding, Math.min(clientY, window.innerHeight - rect.height - padding))}px`;
+    _trackContextMenu = menu;
+    setTimeout(() => {
+        document.addEventListener('pointerdown', handleOutsideTrackContextMenu);
+        document.addEventListener('keydown', handleTrackContextMenuKeydown);
+    }, 0);
+}
+
+export function handleTrackContextMenu(event, trackId) {
+    event.preventDefault();
+    event.stopPropagation();
+    setTrackActive(trackId, false);
+    openTrackContextMenuAt(trackId, event.clientX, event.clientY);
+}
+
+export function handleTrackPointerDown(event, trackId) {
+    if (event.pointerType === 'mouse' || isInteractiveTreeTarget(event.target)) return;
+    clearTimeout(_trackLongPressTimer);
+    _trackLongPressTimer = setTimeout(() => {
+        setTrackActive(trackId, false);
+        openTrackContextMenuAt(trackId, event.clientX, event.clientY);
+    }, 650);
+}
+
+export function clearTrackLongPress() {
+    clearTimeout(_trackLongPressTimer);
+    _trackLongPressTimer = null;
+}
+
+export function handleTrackNamePointerDown(event, trackId) {
+    if (event.pointerType === 'mouse') {
+        const now = Date.now();
+        if (_lastTrackNamePointer.trackId === trackId && now - _lastTrackNamePointer.time < 450) {
+            event.preventDefault();
+            openTrackNameEditor(trackId);
+        }
+        _lastTrackNamePointer = { trackId, time: now };
+        return;
+    }
+    event.stopPropagation();
+    clearTimeout(_trackNameLongPressTimer);
+    _trackNameLongPressTimer = setTimeout(() => {
+        openTrackNameEditor(trackId);
+    }, 650);
+}
+
+export function clearTrackNameLongPress() {
+    clearTimeout(_trackNameLongPressTimer);
+    _trackNameLongPressTimer = null;
+}
+
+export function handleTrackNameClick(event, trackId) {
+    const now = Date.now();
+    const isSecondClick = _lastTrackNameClick.trackId === trackId && now - _lastTrackNameClick.time < 800;
+    _lastTrackNameClick = { trackId, time: now };
+    if (event.detail >= 2 || isSecondClick) {
+        event.preventDefault();
+        openTrackNameEditor(trackId);
+        return;
+    }
+    setTrackActive(trackId, true);
+}
+
+export function openTrackNameEditor(trackId) {
+    closeTrackContextMenu();
+    const nameEl = document.getElementById(`track-name-${trackId}`);
+    if (!nameEl) return;
+    nameEl.contentEditable = 'true';
+    nameEl.classList.remove('cursor-pointer');
+    nameEl.classList.add('cursor-text');
+    nameEl.focus();
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(nameEl);
+    selection.removeAllRanges();
+    selection.addRange(range);
+}
+
+export function finishTrackNameEditor(trackId, newName) {
+    const nameEl = document.getElementById(`track-name-${trackId}`);
+    if (nameEl) {
+        nameEl.contentEditable = 'false';
+        nameEl.classList.add('cursor-pointer');
+        nameEl.classList.remove('cursor-text');
+    }
+    renameTrack(trackId, newName);
+}
+
+export function handleTrackNameKeydown(event, trackId) {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        finishTrackNameEditor(trackId, event.currentTarget.textContent);
+        event.currentTarget.blur();
+    } else if (event.key === 'Escape') {
+        event.preventDefault();
+        const track = tracks.find(tr => tr.id === trackId);
+        if (track) event.currentTarget.textContent = track.name;
+        event.currentTarget.blur();
+    }
 }
 
 function formatLibraryDate(ts) {
@@ -572,10 +738,16 @@ function _doRenderGisTree() {
 
         tracks.forEach((track, trackIndex) => {
             const isActive = track.id === activeTrackId;
+            const isExpanded = isActive;
             const segmentCount = track.segments.length;
             const pointCount = track.segments.reduce((sum, seg) => sum + seg.points.length, 0);
             html += `
             <div class="group bg-gray-900/95 border ${isActive ? 'border-blue-500/60 shadow-blue-950/30' : 'border-gray-800'} rounded-xl overflow-hidden shadow-lg"
+                 oncontextmenu="handleTrackContextMenu(event, '${track.id}')"
+                 onpointerdown="handleTrackPointerDown(event, '${track.id}')"
+                 onpointerup="clearTrackLongPress()"
+                 onpointercancel="clearTrackLongPress()"
+                 onpointerleave="clearTrackLongPress()"
                  ondragover="handleGisDragOver(event)"
                  ondrop="handleGisDrop(event, 'track', '${track.id}')">
               <div class="flex items-stretch">
@@ -592,21 +764,25 @@ function _doRenderGisTree() {
                       </button>
                       <div class="min-w-0 cursor-pointer" onclick="setTrackActive('${track.id}', true)">
                         <div class="flex items-center gap-1.5 min-w-0">
+                          <i data-lucide="${isExpanded ? 'chevron-down' : 'chevron-right'}" class="w-3 h-3 ${isActive ? 'text-blue-300' : 'text-gray-500'} shrink-0"></i>
                           <i data-lucide="file-map" class="w-3.5 h-3.5 ${isActive ? 'text-blue-300' : 'text-gray-500'} shrink-0"></i>
-                          <input type="text" value="${escapeXml(track.name)}" onchange="renameTrack('${track.id}', this.value)" class="bg-transparent text-xs font-bold ${track.visible === false ? 'text-gray-500 line-through' : 'text-white'} border-b border-transparent hover:border-gray-700 focus:border-blue-500 focus:outline-none min-w-0 w-36">
+                          <span id="track-name-${track.id}" data-track-name-id="${track.id}" role="button" tabindex="0" contenteditable="false"
+                                class="track-name-label block text-xs font-bold ${track.visible === false ? 'text-gray-500 line-through' : 'text-white'} border-b border-transparent focus:border-blue-500 focus:outline-none min-w-0 w-36 truncate cursor-pointer select-none">${escapeXml(track.name)}</span>
                         </div>
                         <div class="text-[10px] text-gray-500 mt-0.5 pl-5">
-                          File ${trackIndex + 1} · ${segmentCount} segmenti · ${pointCount} pt · ${track.waypoints.length} wp
+                          File ${trackIndex + 1} · ${segmentCount} segmenti · ${pointCount} pt · ${track.waypoints.length} wp · ${track.width || 3}px
                         </div>
                       </div>
                     </div>
                     <div class="flex items-center gap-1.5 shrink-0">
                       <button onclick="toggleTrackVisibility('${track.id}')" class="text-gray-400 hover:text-white" title="Mostra/Nascondi File"><i data-lucide="${track.visible === false ? 'eye-off' : 'eye'}" class="w-3.5 h-3.5"></i></button>
                       <input type="color" value="${track.color}" onchange="changeTrackColor('${track.id}', this.value)" class="w-4 h-4 rounded border-0 bg-transparent cursor-pointer" title="Colore traccia">
+                      <button onclick="handleTrackContextMenu(event, '${track.id}')" class="text-gray-500 hover:text-white" title="Menu file"><i data-lucide="more-vertical" class="w-3.5 h-3.5"></i></button>
                       <button onclick="deleteTrack('${track.id}')" class="text-gray-500 hover:text-red-400" title="Elimina file"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
                     </div>
                   </div>
 
+                  ${isExpanded ? `
                   <div class="ml-5 pl-3 border-l border-gray-800/90 space-y-1"
                        ondragover="handleGisDragOver(event)"
                        ondrop="handleGisDrop(event, 'track-segments', '${track.id}')">
@@ -666,7 +842,7 @@ function _doRenderGisTree() {
                       `).join('')}
                     </div>
                   </div>
-                ` : '') + `
+                ` : '') : ''}
                 </div>
               </div>
             </div>`;
@@ -675,6 +851,20 @@ function _doRenderGisTree() {
     }
     container.innerHTML = html;
     lucide.createIcons();
+    container.querySelectorAll('[data-track-name-id]').forEach(nameEl => {
+        const trackId = nameEl.dataset.trackNameId;
+        nameEl.addEventListener('click', event => handleTrackNameClick(event, trackId));
+        nameEl.addEventListener('dblclick', event => {
+            event.preventDefault();
+            openTrackNameEditor(trackId);
+        });
+        nameEl.addEventListener('pointerdown', event => handleTrackNamePointerDown(event, trackId));
+        nameEl.addEventListener('pointerup', clearTrackNameLongPress);
+        nameEl.addEventListener('pointercancel', clearTrackNameLongPress);
+        nameEl.addEventListener('pointerleave', clearTrackNameLongPress);
+        nameEl.addEventListener('keydown', event => handleTrackNameKeydown(event, trackId));
+        nameEl.addEventListener('blur', event => finishTrackNameEditor(trackId, event.currentTarget.textContent));
+    });
 }
 
 function getDropPosition(event) {
@@ -770,6 +960,7 @@ export function setTrackActive(trackId, shouldFocus = false) {
     const track = tracks.find(tr => tr.id === trackId);
     if (!track) return;
 
+    const wasActive = activeTrackId === trackId;
     setActiveTrackId(trackId);
     if (track.segments.length > 0) {
         setActiveSegmentId(track.segments[track.segments.length - 1].id);
@@ -777,13 +968,15 @@ export function setTrackActive(trackId, shouldFocus = false) {
     if (shouldFocus) focusTrackOnMap(track);
     if (_updateMapData) _updateMapData();
     updateActiveTracksHeader();
+    if (!wasActive) renderGisTree();
     schedulePersistAppSession();
 }
 
 export function renameTrack(trackId, newName) {
     const t = tracks.find(tr => tr.id === trackId);
-    if (t) {
-        t.name = newName;
+    const cleanName = String(newName || '').trim();
+    if (t && cleanName && t.name !== cleanName) {
+        t.name = cleanName;
         if (_saveHistoryState) _saveHistoryState();
         updateActiveTracksHeader();
         renderGisTree();
@@ -796,6 +989,18 @@ export function changeTrackColor(trackId, newColor) {
         t.color = newColor;
         if (_saveHistoryState) _saveHistoryState();
         if (_updateMapData) _updateMapData();
+        renderGisTree();
+    }
+}
+
+export function changeTrackWidth(trackId, newWidth) {
+    const t = tracks.find(tr => tr.id === trackId);
+    const width = Math.max(1, Math.min(12, Number(newWidth) || 3));
+    if (t && t.width !== width) {
+        t.width = width;
+        if (_saveHistoryState) _saveHistoryState();
+        if (_updateMapData) _updateMapData();
+        renderGisTree();
     }
 }
 
@@ -805,6 +1010,7 @@ export function toggleTrackVisibility(trackId) {
         t.visible = t.visible === false ? true : false;
         if (_saveHistoryState) _saveHistoryState();
         if (_updateMapData) _updateMapData();
+        renderGisTree();
     }
 }
 
@@ -896,6 +1102,7 @@ export function setSegmentActive(trackId, segId, shouldFocus = false) {
     if (shouldFocus) focusSegmentOnMap(trackId, segId);
     if (_updateMapData) _updateMapData();
     updateActiveTracksHeader();
+    renderGisTree();
     schedulePersistAppSession();
 }
 

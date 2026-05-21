@@ -22,7 +22,10 @@ import {
     openStoredTrackFromLibrary, deleteStoredTrackFromLibrary,
     handleGisDragStart, handleGisDragOver, handleGisDrop, handleGisDragEnd,
     updateActiveTracksHeader, showToast,
-    setTrackActive, renameTrack, changeTrackColor, toggleTrackVisibility,
+    setTrackActive, renameTrack, changeTrackColor, changeTrackWidth, toggleTrackVisibility,
+    handleTrackContextMenu, handleTrackPointerDown, clearTrackLongPress,
+    handleTrackNamePointerDown, clearTrackNameLongPress,
+    handleTrackNameClick, openTrackNameEditor, finishTrackNameEditor, handleTrackNameKeydown,
     toggleAllWaypointsVisibility, toggleWaypointVisibility, toggleSegmentVisibility,
     deleteTrack, addNewSegmentToTrack, renameSegment, setSegmentActive, deleteSegment,
     zoomToWaypoint, deleteWaypoint, searchNominatim
@@ -60,7 +63,17 @@ window.flyToPOI = flyToPOI;
 window.setTrackActive = setTrackActive;
 window.renameTrack = renameTrack;
 window.changeTrackColor = changeTrackColor;
+window.changeTrackWidth = changeTrackWidth;
 window.toggleTrackVisibility = toggleTrackVisibility;
+window.handleTrackContextMenu = handleTrackContextMenu;
+window.handleTrackPointerDown = handleTrackPointerDown;
+window.clearTrackLongPress = clearTrackLongPress;
+window.handleTrackNamePointerDown = handleTrackNamePointerDown;
+window.clearTrackNameLongPress = clearTrackNameLongPress;
+window.handleTrackNameClick = handleTrackNameClick;
+window.openTrackNameEditor = openTrackNameEditor;
+window.finishTrackNameEditor = finishTrackNameEditor;
+window.handleTrackNameKeydown = handleTrackNameKeydown;
 window.toggleAllWaypointsVisibility = toggleAllWaypointsVisibility;
 window.toggleWaypointVisibility = toggleWaypointVisibility;
 window.toggleSegmentVisibility = toggleSegmentVisibility;
