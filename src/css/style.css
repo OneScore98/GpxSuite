@@ -28,15 +28,17 @@ html {
 
 #panel-mapillary-viewer {
     resize: both;
-    min-width: 18rem;
-    min-height: 17rem;
+    width: min(48rem, calc(100vw - 2rem));
+    height: min(62vh, 36rem);
+    min-width: 28rem;
+    min-height: 24rem;
     max-width: calc(100vw - 1.5rem);
     max-height: calc(var(--app-height) - 1.5rem);
 }
 
 #panel-mapillary-viewer .mapillary-media {
     flex: 1 1 auto;
-    min-height: 10rem;
+    min-height: 16rem;
     aspect-ratio: auto;
 }
 
@@ -556,6 +558,26 @@ label {
 
     #panel-bottom-stats.translate-y-60 {
         transform: translateY(calc(100vh + 2rem));
+    }
+
+    #panel-mapillary-viewer {
+        left: calc(var(--safe-left) + 0.6rem);
+        right: calc(var(--safe-right) + 0.6rem);
+        bottom: calc(var(--safe-bottom) + 0.6rem);
+        width: auto;
+        height: min(68vh, calc(var(--app-height) - var(--safe-top) - var(--safe-bottom) - 1.2rem));
+        min-width: 0;
+        min-height: min(24rem, calc(var(--app-height) - var(--safe-top) - var(--safe-bottom) - 1.2rem));
+        max-width: none;
+        max-height: calc(var(--app-height) - var(--safe-top) - var(--safe-bottom) - 1.2rem);
+        transform: none;
+        resize: vertical;
+        border-radius: 1rem;
+        z-index: 35;
+    }
+
+    #panel-mapillary-viewer .mapillary-media {
+        min-height: 15rem;
     }
 
     #panel-main-menu.-translate-x-80,

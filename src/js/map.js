@@ -114,7 +114,34 @@ let _mapillaryPlayTimer = null;
 let _mapillaryRequestSerial = 0;
 let _mapillaryJsViewer = null;
 let _mapillaryJsResizeObserver = null;
+let _mapillaryCurrentLngLat = null;
+let _mapillaryCurrentBearing = 0;
 const _mapillarySequenceCache = new Map();
+const APPLICATION_LAYER_ORDER = [
+    'mapillary-sequences-layer',
+    'mapillary-images-layer',
+    'gpx-lines-layer',
+    'box-delete-preview-fill',
+    'box-delete-preview-line',
+    'gpx-waypoints-cluster-halo-layer',
+    'gpx-waypoints-cluster-layer',
+    'gpx-waypoints-cluster-count-layer',
+    'gpx-waypoints-hit-layer',
+    'gpx-waypoints-circle-layer',
+    'gpx-waypoints-ring-layer',
+    'gpx-waypoints-symbol-layer',
+    'gpx-edit-points-layer',
+    'mapillary-current-image-halo-layer',
+    'mapillary-current-image-layer',
+    'mapillary-current-image-direction-layer'
+];
+
+function ensureApplicationLayersAboveMap() {
+    if (!mapLoaded) return;
+    for (const layerId of APPLICATION_LAYER_ORDER) {
+        if (map.getLayer(layerId)) map.moveLayer(layerId);
+    }
+}
 
 function buildLodFeatures(lodIndex) {
     const tol = LOD_LEVELS[lodIndex].tol;
@@ -387,6 +414,8 @@ export function setupLayers() {
 
     // Sincronizza il LOD anche al primo idle (raro caso in cui zoomend non scatta)
     map.once('idle', () => applyLodToMap());
+
+    ensureApplicationLayersAboveMap();
 }
 
 export function updateBoxDeletePreview(startLngLat, endLngLat) {
@@ -428,6 +457,88 @@ function hasMapillaryToken() {
 
 function mapillaryVisibility() {
     return isMapillaryVisible && hasMapillaryToken() ? 'visible' : 'none';
+}
+
+function emptyMapillaryCurrentFeatureCollection() {
+    return { type: 'FeatureCollection', features: [] };
+}
+
+function buildMapillaryCurrentFeatureCollection() {
+    if (!_mapillaryCurrentLngLat) return emptyMapillaryCurrentFeatureCollection();
+    return {
+        type: 'FeatureCollection',
+        features: [{
+            type: 'Feature',
+            properties: {
+                imageId: _mapillaryCurrentImageId || '',
+                bearing: Number.isFinite(_mapillaryCurrentBearing) ? _mapillaryCurrentBearing : 0
+            },
+            geometry: { type: 'Point', coordinates: [_mapillaryCurrentLngLat.lng, _mapillaryCurrentLngLat.lat] }
+        }]
+    };
+}
+
+function normalizeMapillaryLngLat(value) {
+    if (!value) return null;
+    if (Array.isArray(value) && value.length >= 2) {
+        return { lng: Number(value[0]), lat: Number(value[1]) };
+    }
+    if (Array.isArray(value.coordinates) && value.coordinates.length >= 2) {
+        return { lng: Number(value.coordinates[0]), lat: Number(value.coordinates[1]) };
+    }
+    if (typeof value.lng === 'number' && typeof value.lat === 'number') {
+        return { lng: value.lng, lat: value.lat };
+    }
+    if (typeof value.lon === 'number' && typeof value.lat === 'number') {
+        return { lng: value.lon, lat: value.lat };
+    }
+    if (value.type === 'Point' && Array.isArray(value.coordinates) && value.coordinates.length >= 2) {
+        return { lng: Number(value.coordinates[0]), lat: Number(value.coordinates[1]) };
+    }
+    return null;
+}
+
+function normalizeMapillaryBearing(value) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return null;
+    return ((num % 360) + 360) % 360;
+}
+
+function getMapillaryImageLngLat(image) {
+    return image?.lngLat
+        || image?.computedLngLat
+        || image?.originalLngLat
+        || image?.computed_geometry
+        || image?.computedGeometry
+        || image?.geometry;
+}
+
+function getMapillaryImageBearing(image) {
+    return normalizeMapillaryBearing(
+        image?.computed_compass_angle
+        ?? image?.computedCompassAngle
+        ?? image?.compass_angle
+        ?? image?.compassAngle
+        ?? image?.bearing
+    );
+}
+
+function updateMapillaryCurrentMarker(value, imageId, bearing = null) {
+    const lngLat = normalizeMapillaryLngLat(value);
+    if (!lngLat || !Number.isFinite(lngLat.lng) || !Number.isFinite(lngLat.lat)) return;
+    _mapillaryCurrentLngLat = lngLat;
+    if (imageId) _mapillaryCurrentImageId = String(imageId);
+    const normalizedBearing = normalizeMapillaryBearing(bearing);
+    _mapillaryCurrentBearing = normalizedBearing !== null ? normalizedBearing : 0;
+    const source = mapLoaded ? map.getSource('mapillary-current-image') : null;
+    if (source) source.setData(buildMapillaryCurrentFeatureCollection());
+}
+
+function clearMapillaryCurrentMarker() {
+    _mapillaryCurrentLngLat = null;
+    _mapillaryCurrentBearing = 0;
+    const source = mapLoaded ? map.getSource('mapillary-current-image') : null;
+    if (source) source.setData(emptyMapillaryCurrentFeatureCollection());
 }
 
 function setupMapillaryLayers() {
@@ -481,13 +592,83 @@ function setupMapillaryLayers() {
         });
     }
 
+    if (!map.getSource('mapillary-current-image')) {
+        map.addSource('mapillary-current-image', {
+            type: 'geojson',
+            data: buildMapillaryCurrentFeatureCollection()
+        });
+    }
+
+    if (!map.getLayer('mapillary-current-image-halo-layer')) {
+        map.addLayer({
+            id: 'mapillary-current-image-halo-layer',
+            type: 'circle',
+            source: 'mapillary-current-image',
+            layout: { visibility: mapillaryVisibility() },
+            paint: {
+                'circle-radius': 15,
+                'circle-color': '#ffffff',
+                'circle-opacity': 0.92,
+                'circle-stroke-color': '#05cb63',
+                'circle-stroke-width': 3
+            }
+        });
+    }
+
+    if (!map.getLayer('mapillary-current-image-layer')) {
+        map.addLayer({
+            id: 'mapillary-current-image-layer',
+            type: 'circle',
+            source: 'mapillary-current-image',
+            layout: { visibility: mapillaryVisibility() },
+            paint: {
+                'circle-radius': 7,
+                'circle-color': '#f97316',
+                'circle-opacity': 1,
+                'circle-stroke-color': '#111827',
+                'circle-stroke-width': 1.5
+            }
+        });
+    }
+
+    if (!map.getLayer('mapillary-current-image-direction-layer')) {
+        map.addLayer({
+            id: 'mapillary-current-image-direction-layer',
+            type: 'symbol',
+            source: 'mapillary-current-image',
+            layout: {
+                visibility: mapillaryVisibility(),
+                'text-field': '▲',
+                'text-size': 24,
+                'text-allow-overlap': true,
+                'text-ignore-placement': true,
+                'text-rotation-alignment': 'map',
+                'text-pitch-alignment': 'map',
+                'text-rotate': ['get', 'bearing'],
+                'text-offset': [0, -1.05]
+            },
+            paint: {
+                'text-color': '#f97316',
+                'text-halo-color': '#111827',
+                'text-halo-width': 1.4
+            }
+        });
+    }
+
     bindMapillaryInteractions();
+    ensureApplicationLayersAboveMap();
 }
 
 function applyMapillaryLayerVisibility() {
     if (!mapLoaded) return;
     const visibility = mapillaryVisibility();
-    ['mapillary-sequences-layer', 'mapillary-images-layer'].forEach(layerId => {
+    [
+        'mapillary-sequences-layer',
+        'mapillary-images-layer',
+        'mapillary-current-image-halo-layer',
+        'mapillary-current-image-layer',
+        'mapillary-current-image-direction-layer'
+    ].forEach(layerId => {
         if (map.getLayer(layerId)) map.setLayoutProperty(layerId, 'visibility', visibility);
     });
 }
@@ -517,6 +698,7 @@ function bindMapillaryInteractions() {
             return;
         }
         e.preventDefault();
+        updateMapillaryCurrentMarker(feature.geometry, imageId, feature.properties?.computed_compass_angle || feature.properties?.compass_angle);
         openMapillaryImage(String(imageId));
     });
 }
@@ -570,6 +752,11 @@ function bindMapillaryJsEvents() {
         try {
             const image = await _mapillaryJsViewer.getImage();
             updateMapillaryViewerHeader(image?.id || _mapillaryCurrentImageId);
+            updateMapillaryCurrentMarker(
+                getMapillaryImageLngLat(image),
+                image?.id,
+                getMapillaryImageBearing(image)
+            );
         } catch {
             // MapillaryJS può emettere eventi intermedi durante il cambio immagine.
         }
@@ -622,6 +809,16 @@ async function openMapillaryJsViewer(imageId) {
 
     await _mapillaryJsViewer.moveTo(String(imageId));
     updateMapillaryViewerHeader(imageId);
+    try {
+        const image = await _mapillaryJsViewer.getImage();
+        updateMapillaryCurrentMarker(
+            getMapillaryImageLngLat(image),
+            image?.id || imageId,
+            getMapillaryImageBearing(image)
+        );
+    } catch {
+        // L'evento `image` aggiornerà comunque il marker appena disponibile.
+    }
     if (typeof _mapillaryJsViewer.resize === 'function') {
         _mapillaryJsViewer.resize();
     }
@@ -818,7 +1015,7 @@ async function openMapillaryImageFallback(imageId, options = {}) {
     const keepCurrentVisible = _mapillarySequenceIds.includes(stringImageId) || options.keepPlayback === true;
     setMapillaryPanelLoading(stringImageId, { keepCurrentVisible });
     const requestSerial = ++_mapillaryRequestSerial;
-    const fields = 'id,captured_at,thumb_1024_url,thumb_2048_url,computed_geometry,creator,sequence';
+    const fields = 'id,captured_at,thumb_1024_url,thumb_2048_url,computed_geometry,geometry,computed_compass_angle,compass_angle,creator,sequence';
     try {
         const response = await fetch(`${MAPILLARY_GRAPH_URL}${encodeURIComponent(imageId)}?fields=${fields}`, {
             headers: { Authorization: `OAuth ${mapillaryToken.trim()}` }
@@ -837,11 +1034,13 @@ async function openMapillaryImageFallback(imageId, options = {}) {
             image.classList.remove('hidden');
             placeholder.classList.add('hidden');
             _mapillaryCurrentImageId = String(data.id || imageId);
+            updateMapillaryCurrentMarker(data.computed_geometry || data.geometry, data.id || imageId, data.computed_compass_angle ?? data.compass_angle);
         } else {
             image.classList.add('hidden');
             placeholder.classList.remove('hidden');
             placeholder.textContent = 'Anteprima non disponibile per questa immagine.';
             _mapillaryCurrentImageId = String(data.id || imageId);
+            updateMapillaryCurrentMarker(data.computed_geometry || data.geometry, data.id || imageId, data.computed_compass_angle ?? data.compass_angle);
         }
         document.getElementById('mapillary-title').textContent = `Mapillary ${data.id || imageId}`;
         document.getElementById('mapillary-date').textContent = formatMapillaryDate(data.captured_at);
@@ -891,6 +1090,7 @@ export function configureMapillaryToken(token) {
     setMapillaryToken(cleanToken);
     if (previousToken !== cleanToken) {
         resetMapillaryJsViewer();
+        clearMapillaryCurrentMarker();
     }
     if (cleanToken) {
         localStorage.setItem(MAPILLARY_TOKEN_KEY, cleanToken);
@@ -934,6 +1134,7 @@ export function setMapillaryCoverageVisible(visible, options = {}) {
 
 export function closeMapillaryViewer() {
     stopMapillaryPlayback();
+    clearMapillaryCurrentMarker();
     const panel = document.getElementById('panel-mapillary-viewer');
     if (panel) panel.classList.add('hidden');
 }
@@ -999,8 +1200,6 @@ export function setBaseMap(style) {
     }
 
     map.once('style.load', () => {
-        setupLayers();
-
         map.addSource('terrain-nextzen', {
             type: 'raster-dem',
             tiles: [NEXTZEN_TERRAIN_SOURCE],
@@ -1021,6 +1220,8 @@ export function setBaseMap(style) {
             paint: { 'raster-opacity': 0.8 },
             layout: { visibility: document.getElementById('toggle-hiking-trails').checked ? 'visible' : 'none' }
         });
+
+        setupLayers();
 
         if (is3D) {
             map.setTerrain({ source: 'terrain-nextzen', exaggeration: 1.2 });
