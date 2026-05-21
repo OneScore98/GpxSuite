@@ -62,6 +62,9 @@ let _trackLongPressTimer = null;
 let _trackNameLongPressTimer = null;
 let _lastTrackNamePointer = { trackId: null, time: 0 };
 let _lastTrackNameClick = { trackId: null, time: 0 };
+let _treeSelection = [];
+let _treeLastSelected = null;
+let _treeClipboard = null;
 const _compactLayoutMedia = window.matchMedia('(max-width: 767px)');
 const TOOL_CURSORS = {
     draw: createSvgCursor('<line x1="5" y1="19" x2="19" y2="5" stroke="#f8fafc" stroke-width="3" stroke-linecap="round"/><line x1="4" y1="20" x2="9" y2="19" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/><path d="M16 4l4 4" stroke="#f8fafc" stroke-width="2" stroke-linecap="round"/>', 4, 20),
@@ -253,8 +256,242 @@ function focusSegmentOnMap(trackId, segId) {
     focusPointsOnMap(segment.points);
 }
 
+function makeTreeKey(type, trackId, segId = null) {
+    return type === 'segment' ? `segment:${trackId}:${segId}` : `track:${trackId}`;
+}
+
+function parseTreeKey(key) {
+    const parts = String(key || '').split(':');
+    return {
+        type: parts[0],
+        trackId: parts[1] || null,
+        segId: parts[2] || null
+    };
+}
+
+function getTreeItemOrder() {
+    const order = [];
+    tracks.forEach(track => {
+        order.push(makeTreeKey('track', track.id));
+        track.segments.forEach(seg => order.push(makeTreeKey('segment', track.id, seg.id)));
+    });
+    return order;
+}
+
+function selectionHas(key) {
+    return _treeSelection.includes(key);
+}
+
+function normalizeTreeSelection() {
+    const valid = new Set(getTreeItemOrder());
+    _treeSelection = _treeSelection.filter(key => valid.has(key));
+    if (_treeLastSelected && !valid.has(_treeLastSelected)) _treeLastSelected = _treeSelection[_treeSelection.length - 1] || null;
+}
+
+function setTreeSelection(keys, lastKey = null) {
+    const valid = new Set(getTreeItemOrder());
+    _treeSelection = [...new Set(keys.filter(key => valid.has(key)))];
+    _treeLastSelected = lastKey && valid.has(lastKey) ? lastKey : (_treeSelection[_treeSelection.length - 1] || null);
+}
+
+function selectTreeItem(type, trackId, segId, event = null) {
+    const key = makeTreeKey(type, trackId, segId);
+    const isRange = event && event.shiftKey && _treeLastSelected;
+    const isToggle = event && (event.ctrlKey || event.metaKey);
+
+    if (isRange) {
+        const order = getTreeItemOrder();
+        const start = order.indexOf(_treeLastSelected);
+        const end = order.indexOf(key);
+        if (start !== -1 && end !== -1) {
+            const range = order.slice(Math.min(start, end), Math.max(start, end) + 1);
+            setTreeSelection(isToggle ? [..._treeSelection, ...range] : range, key);
+            return;
+        }
+    }
+
+    if (isToggle) {
+        const next = selectionHas(key)
+            ? _treeSelection.filter(item => item !== key)
+            : [..._treeSelection, key];
+        setTreeSelection(next, key);
+        return;
+    }
+
+    setTreeSelection([key], key);
+}
+
+function ensureTreeItemSelected(type, trackId, segId = null) {
+    const key = makeTreeKey(type, trackId, segId);
+    if (!selectionHas(key)) setTreeSelection([key], key);
+}
+
+function getSelectedItems() {
+    normalizeTreeSelection();
+    return _treeSelection.map(parseTreeKey);
+}
+
+function getSelectedTracks() {
+    return getSelectedItems()
+        .filter(item => item.type === 'track')
+        .map(item => tracks.find(track => track.id === item.trackId))
+        .filter(Boolean);
+}
+
+function getSelectedSegments() {
+    return getSelectedItems()
+        .filter(item => item.type === 'segment')
+        .map(item => {
+            const track = tracks.find(tr => tr.id === item.trackId);
+            const segment = track?.segments.find(seg => seg.id === item.segId);
+            return track && segment ? { track, segment } : null;
+        })
+        .filter(Boolean);
+}
+
+function uid(prefix) {
+    return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function cloneSegmentForPaste(segment, suffix = ' copia') {
+    return {
+        ...JSON.parse(JSON.stringify(segment)),
+        id: uid('seg'),
+        name: `${segment.name || 'Tracciato'}${suffix}`
+    };
+}
+
+function cloneTrackForPaste(track, suffix = ' copia') {
+    const cloned = JSON.parse(JSON.stringify(track));
+    cloned.id = uid('track');
+    cloned.localFileId = uid('local');
+    cloned.localCreatedAt = Date.now();
+    cloned.localUpdatedAt = Date.now();
+    cloned.localSource = 'created';
+    cloned.name = `${track.name || 'Traccia'}${suffix}`;
+    cloned.segments = (cloned.segments || []).map(seg => ({
+        ...seg,
+        id: uid('seg')
+    }));
+    cloned.waypoints = (cloned.waypoints || []).map(wp => ({
+        ...wp,
+        id: uid('wp')
+    }));
+    return cloned;
+}
+
+function getClipboardPayloadFromSelection() {
+    const selectedTracks = getSelectedTracks();
+    const selectedTrackIds = new Set(selectedTracks.map(track => track.id));
+    const selectedSegments = getSelectedSegments()
+        .filter(item => !selectedTrackIds.has(item.track.id));
+    if (selectedTracks.length === 0 && selectedSegments.length === 0) return null;
+    return {
+        tracks: selectedTracks.map(track => JSON.parse(JSON.stringify(track))),
+        segments: selectedSegments.map(item => ({
+            sourceTrackId: item.track.id,
+            segment: JSON.parse(JSON.stringify(item.segment))
+        }))
+    };
+}
+
+function refreshAfterTreeClipboardMutation(message) {
+    if (_saveHistoryState) _saveHistoryState();
+    if (_updateMapData) _updateMapData(true);
+    updateActiveTracksHeader();
+    renderGisTree();
+    renderLocalGpxLibrary();
+    schedulePersistAppSession();
+    if (message) showToast(message, 'success');
+}
+
+function removeSelectionForCut() {
+    const selectedTrackIds = new Set(getSelectedTracks().map(track => track.id));
+    const selectedSegments = getSelectedSegments()
+        .filter(item => !selectedTrackIds.has(item.track.id));
+
+    if (selectedSegments.length > 0) {
+        selectedSegments.forEach(({ track, segment }) => {
+            track.segments = track.segments.filter(seg => seg.id !== segment.id);
+        });
+    }
+
+    if (selectedTrackIds.size > 0) {
+        setTracks(tracks.filter(track => !selectedTrackIds.has(track.id)));
+    }
+
+    if (!tracks.some(track => track.id === activeTrackId)) {
+        const nextTrack = tracks[0] || null;
+        setActiveTrackId(nextTrack?.id || null);
+        setActiveSegmentId(nextTrack?.segments[0]?.id || null);
+    } else {
+        const activeTrack = tracks.find(track => track.id === activeTrackId);
+        if (activeTrack && !activeTrack.segments.some(seg => seg.id === activeSegmentId)) {
+            setActiveSegmentId(activeTrack.segments[0]?.id || null);
+        }
+    }
+    setTreeSelection([]);
+}
+
+function pasteTreeClipboard(target = {}) {
+    if (!_treeClipboard || ((_treeClipboard.tracks || []).length === 0 && (_treeClipboard.segments || []).length === 0)) {
+        showToast('Niente da incollare', 'info');
+        return;
+    }
+
+    const pastedKeys = [];
+    const trackTargetIndex = target.trackId ? tracks.findIndex(track => track.id === target.trackId) : -1;
+    let insertTrackIndex = trackTargetIndex === -1 ? tracks.length : trackTargetIndex + 1;
+
+    (_treeClipboard.tracks || []).forEach(trackData => {
+        const cloned = cloneTrackForPaste(trackData, _treeClipboard.mode === 'cut' ? '' : ' copia');
+        tracks.splice(insertTrackIndex, 0, cloned);
+        insertTrackIndex++;
+        pastedKeys.push(makeTreeKey('track', cloned.id));
+        setActiveTrackId(cloned.id);
+        setActiveSegmentId(cloned.segments[0]?.id || null);
+    });
+
+    if ((_treeClipboard.segments || []).length > 0) {
+        const targetTrack = tracks.find(track => track.id === target.trackId)
+            || tracks.find(track => track.id === activeTrackId)
+            || tracks[0];
+        if (!targetTrack) return;
+
+        let insertSegmentIndex = target.segId
+            ? targetTrack.segments.findIndex(seg => seg.id === target.segId) + 1
+            : targetTrack.segments.length;
+        if (insertSegmentIndex < 0) insertSegmentIndex = targetTrack.segments.length;
+
+        _treeClipboard.segments.forEach(item => {
+            const cloned = cloneSegmentForPaste(item.segment, _treeClipboard.mode === 'cut' ? '' : ' copia');
+            targetTrack.segments.splice(insertSegmentIndex, 0, cloned);
+            insertSegmentIndex++;
+            pastedKeys.push(makeTreeKey('segment', targetTrack.id, cloned.id));
+            setActiveTrackId(targetTrack.id);
+            setActiveSegmentId(cloned.id);
+        });
+    }
+
+    setTreeSelection(pastedKeys);
+    if (_treeClipboard.mode === 'cut') _treeClipboard = null;
+    refreshAfterTreeClipboardMutation('Elementi incollati');
+}
+
+function createTreeContextMenuButton(icon, label, action, disabled = false, danger = false) {
+    return `
+      <button onclick="${action}" ${disabled ? 'disabled' : ''}
+              class="w-full flex items-center gap-2 px-2 py-2 rounded-lg text-left ${danger ? 'text-red-300 hover:bg-red-950' : 'hover:bg-gray-800'} ${disabled ? 'opacity-40 cursor-not-allowed hover:bg-transparent' : ''}">
+        <i data-lucide="${icon}" class="w-3.5 h-3.5"></i><span>${label}</span>
+      </button>`;
+}
+
 function isInteractiveTreeTarget(target) {
     return Boolean(target?.closest('button, input, select, textarea, label, [data-tree-control="true"]'));
+}
+
+function isTextEditingTarget(target) {
+    return Boolean(target?.closest('input, textarea, select, [contenteditable="true"]'));
 }
 
 function closeTrackContextMenu() {
@@ -278,15 +515,24 @@ function handleTrackContextMenuKeydown(event) {
 function openTrackContextMenuAt(trackId, clientX, clientY) {
     const track = tracks.find(tr => tr.id === trackId);
     if (!track) return;
+    ensureTreeItemSelected('track', trackId);
+    normalizeTreeSelection();
+    const selectedCount = _treeSelection.length;
+    const hasClipboard = !!_treeClipboard && (((_treeClipboard.tracks || []).length + (_treeClipboard.segments || []).length) > 0);
 
     closeTrackContextMenu();
     const menu = document.createElement('div');
-    menu.className = 'gpx-track-context-menu fixed z-50 w-56 rounded-xl border border-gray-700 bg-gray-950/98 shadow-2xl p-2 text-xs text-gray-200';
+    menu.className = 'gpx-track-context-menu fixed z-50 w-60 rounded-xl border border-gray-700 bg-gray-950 shadow-2xl p-2 text-xs text-gray-200';
     menu.innerHTML = `
       <div class="px-2 pb-2 border-b border-gray-800">
         <div class="font-bold truncate">${escapeXml(track.name)}</div>
-        <div class="text-[10px] text-gray-500">File GPX selezionato</div>
+        <div class="text-[10px] text-gray-500">${selectedCount > 1 ? `${selectedCount} elementi selezionati` : 'File GPX selezionato'}</div>
       </div>
+      ${createTreeContextMenuButton('copy', 'Copia', 'copyTreeSelection()')}
+      ${createTreeContextMenuButton('clipboard-paste', 'Incolla', `pasteTreeSelection('${track.id}')`, !hasClipboard)}
+      ${createTreeContextMenuButton('scissors', 'Taglia', 'cutTreeSelection()')}
+      ${createTreeContextMenuButton('copy-plus', 'Duplica', `duplicateTreeSelection('${track.id}')`)}
+      <div class="my-1 border-t border-gray-800"></div>
       <button onclick="openTrackNameEditor('${track.id}')" class="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-gray-800 text-left">
         <i data-lucide="pencil" class="w-3.5 h-3.5"></i><span>Rinomina</span>
       </button>
@@ -304,9 +550,7 @@ function openTrackContextMenuAt(trackId, clientX, clientY) {
       <button onclick="toggleTrackVisibility('${track.id}')" class="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-gray-800 text-left">
         <i data-lucide="${track.visible === false ? 'eye' : 'eye-off'}" class="w-3.5 h-3.5"></i><span>${track.visible === false ? 'Mostra file' : 'Nascondi file'}</span>
       </button>
-      <button onclick="deleteTrack('${track.id}')" class="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-red-950/60 text-red-300 text-left">
-        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i><span>Elimina file</span>
-      </button>`;
+      ${createTreeContextMenuButton('trash-2', selectedCount > 1 ? 'Elimina selezione' : 'Elimina file', selectedCount > 1 ? 'deleteTreeSelection()' : `deleteTrack('${track.id}')`, false, true)}`;
     document.body.appendChild(menu);
     lucide.createIcons();
 
@@ -324,6 +568,7 @@ function openTrackContextMenuAt(trackId, clientX, clientY) {
 export function handleTrackContextMenu(event, trackId) {
     event.preventDefault();
     event.stopPropagation();
+    if (!selectionHas(makeTreeKey('track', trackId))) selectTreeItem('track', trackId, null, event);
     setTrackActive(trackId, false);
     openTrackContextMenuAt(trackId, event.clientX, event.clientY);
 }
@@ -332,14 +577,180 @@ export function handleTrackPointerDown(event, trackId) {
     if (event.pointerType === 'mouse' || isInteractiveTreeTarget(event.target)) return;
     clearTimeout(_trackLongPressTimer);
     _trackLongPressTimer = setTimeout(() => {
+        selectTreeItem('track', trackId);
         setTrackActive(trackId, false);
         openTrackContextMenuAt(trackId, event.clientX, event.clientY);
+    }, 650);
+}
+
+function openSegmentContextMenuAt(trackId, segId, clientX, clientY) {
+    const track = tracks.find(tr => tr.id === trackId);
+    const segment = track?.segments.find(seg => seg.id === segId);
+    if (!track || !segment) return;
+    ensureTreeItemSelected('segment', trackId, segId);
+    normalizeTreeSelection();
+    const selectedCount = _treeSelection.length;
+    const hasClipboard = !!_treeClipboard && (((_treeClipboard.tracks || []).length + (_treeClipboard.segments || []).length) > 0);
+
+    closeTrackContextMenu();
+    const menu = document.createElement('div');
+    menu.className = 'gpx-track-context-menu fixed z-50 w-60 rounded-xl border border-gray-700 bg-gray-950 shadow-2xl p-2 text-xs text-gray-200';
+    menu.innerHTML = `
+      <div class="px-2 pb-2 border-b border-gray-800">
+        <div class="font-bold truncate">${escapeXml(segment.name)}</div>
+        <div class="text-[10px] text-gray-500">${selectedCount > 1 ? `${selectedCount} elementi selezionati` : 'Segmento selezionato'}</div>
+      </div>
+      ${createTreeContextMenuButton('copy', 'Copia', 'copyTreeSelection()')}
+      ${createTreeContextMenuButton('clipboard-paste', 'Incolla', `pasteTreeSelection('${trackId}', '${segId}')`, !hasClipboard)}
+      ${createTreeContextMenuButton('scissors', 'Taglia', 'cutTreeSelection()')}
+      ${createTreeContextMenuButton('copy-plus', 'Duplica', `duplicateTreeSelection('${trackId}', '${segId}')`)}
+      <div class="my-1 border-t border-gray-800"></div>
+      <button onclick="renameSegmentFromMenu('${trackId}', '${segId}')" class="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-gray-800 text-left">
+        <i data-lucide="pencil" class="w-3.5 h-3.5"></i><span>Rinomina</span>
+      </button>
+      <button onclick="toggleSegmentVisibility('${trackId}', '${segId}')" class="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-gray-800 text-left">
+        <i data-lucide="${segment.visible === false ? 'eye' : 'eye-off'}" class="w-3.5 h-3.5"></i><span>${segment.visible === false ? 'Mostra segmento' : 'Nascondi segmento'}</span>
+      </button>
+      ${createTreeContextMenuButton('trash-2', selectedCount > 1 ? 'Elimina selezione' : 'Elimina segmento', selectedCount > 1 ? 'deleteTreeSelection()' : `deleteSegment('${trackId}', '${segId}')`, false, true)}`;
+    document.body.appendChild(menu);
+    lucide.createIcons();
+
+    const padding = 8;
+    const rect = menu.getBoundingClientRect();
+    menu.style.left = `${Math.max(padding, Math.min(clientX, window.innerWidth - rect.width - padding))}px`;
+    menu.style.top = `${Math.max(padding, Math.min(clientY, window.innerHeight - rect.height - padding))}px`;
+    _trackContextMenu = menu;
+    setTimeout(() => {
+        document.addEventListener('pointerdown', handleOutsideTrackContextMenu);
+        document.addEventListener('keydown', handleTrackContextMenuKeydown);
+    }, 0);
+}
+
+export function handleSegmentContextMenu(event, trackId, segId) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!selectionHas(makeTreeKey('segment', trackId, segId))) selectTreeItem('segment', trackId, segId, event);
+    setSegmentActive(trackId, segId, false);
+    openSegmentContextMenuAt(trackId, segId, event.clientX, event.clientY);
+}
+
+export function handleSegmentPointerDown(event, trackId, segId) {
+    if (event.pointerType === 'mouse' || isInteractiveTreeTarget(event.target)) return;
+    clearTimeout(_trackLongPressTimer);
+    _trackLongPressTimer = setTimeout(() => {
+        selectTreeItem('segment', trackId, segId);
+        setSegmentActive(trackId, segId, false);
+        openSegmentContextMenuAt(trackId, segId, event.clientX, event.clientY);
     }, 650);
 }
 
 export function clearTrackLongPress() {
     clearTimeout(_trackLongPressTimer);
     _trackLongPressTimer = null;
+}
+
+export function handleTrackTreeClick(event, trackId, shouldFocus = false) {
+    if (isInteractiveTreeTarget(event.target)) return;
+    selectTreeItem('track', trackId, null, event);
+    setTrackActive(trackId, shouldFocus);
+}
+
+export function handleSegmentTreeClick(event, trackId, segId, shouldFocus = false) {
+    if (isInteractiveTreeTarget(event.target)) return;
+    event.stopPropagation();
+    selectTreeItem('segment', trackId, segId, event);
+    setSegmentActive(trackId, segId, shouldFocus);
+}
+
+export function copyTreeSelection() {
+    const payload = getClipboardPayloadFromSelection();
+    if (!payload) {
+        showToast('Nessun elemento selezionato', 'info');
+        return;
+    }
+    _treeClipboard = { ...payload, mode: 'copy' };
+    closeTrackContextMenu();
+    showToast('Selezione copiata', 'success');
+}
+
+export function cutTreeSelection() {
+    const payload = getClipboardPayloadFromSelection();
+    if (!payload) {
+        showToast('Nessun elemento selezionato', 'info');
+        return;
+    }
+    _treeClipboard = { ...payload, mode: 'cut' };
+    removeSelectionForCut();
+    closeTrackContextMenu();
+    refreshAfterTreeClipboardMutation('Selezione tagliata');
+}
+
+export function pasteTreeSelection(trackId = null, segId = null) {
+    closeTrackContextMenu();
+    pasteTreeClipboard({ trackId, segId });
+}
+
+export function duplicateTreeSelection(trackId = null, segId = null) {
+    const payload = getClipboardPayloadFromSelection();
+    if (!payload) {
+        showToast('Nessun elemento selezionato', 'info');
+        return;
+    }
+    const previousClipboard = _treeClipboard;
+    _treeClipboard = { ...payload, mode: 'copy' };
+    pasteTreeClipboard({ trackId, segId });
+    _treeClipboard = previousClipboard;
+}
+
+export function deleteTreeSelection() {
+    if (_treeSelection.length === 0) {
+        showToast('Nessun elemento selezionato', 'info');
+        return;
+    }
+    removeSelectionForCut();
+    closeTrackContextMenu();
+    refreshAfterTreeClipboardMutation('Selezione eliminata');
+}
+
+export function selectAllTreeItems() {
+    setTreeSelection(getTreeItemOrder());
+    renderGisTree();
+    showToast('Tutti gli elementi del tree selezionati', 'info');
+}
+
+export function handleTreeKeyboardShortcuts(event) {
+    if (!isSidebarOpen() || isTextEditingTarget(event.target)) return;
+    const key = event.key.toLowerCase();
+    const hasModifier = event.ctrlKey || event.metaKey;
+    if (!hasModifier && event.key !== 'Delete' && event.key !== 'Backspace') return;
+
+    if (hasModifier && key === 'a') {
+        event.preventDefault();
+        selectAllTreeItems();
+    } else if (hasModifier && key === 'c') {
+        event.preventDefault();
+        copyTreeSelection();
+    } else if (hasModifier && key === 'x') {
+        event.preventDefault();
+        cutTreeSelection();
+    } else if (hasModifier && key === 'v') {
+        event.preventDefault();
+        pasteTreeSelection(activeTrackId, activeSegmentId);
+    } else if (hasModifier && key === 'd') {
+        event.preventDefault();
+        duplicateTreeSelection(activeTrackId, activeSegmentId);
+    } else if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault();
+        deleteTreeSelection();
+    }
+}
+
+export function renameSegmentFromMenu(trackId, segId) {
+    closeTrackContextMenu();
+    const input = document.getElementById(`segment-name-${segId}`);
+    if (!input) return;
+    input.focus();
+    input.select();
 }
 
 export function handleTrackNamePointerDown(event, trackId) {
@@ -365,6 +776,7 @@ export function clearTrackNameLongPress() {
 }
 
 export function handleTrackNameClick(event, trackId) {
+    event.stopPropagation();
     const now = Date.now();
     const isSecondClick = _lastTrackNameClick.trackId === trackId && now - _lastTrackNameClick.time < 800;
     _lastTrackNameClick = { trackId, time: now };
@@ -720,6 +1132,7 @@ export function flushGisTreeIfDirty() {
 function _doRenderGisTree() {
     _gisTreeDirty = false;
     const container = document.getElementById('gis-file-tree');
+    normalizeTreeSelection();
     if (tracks.length === 0) {
         container.innerHTML = `
           <div class="text-center py-6 text-gray-500 text-xs italic">
@@ -738,11 +1151,13 @@ function _doRenderGisTree() {
 
         tracks.forEach((track, trackIndex) => {
             const isActive = track.id === activeTrackId;
+            const isSelected = selectionHas(makeTreeKey('track', track.id));
             const isExpanded = isActive;
             const segmentCount = track.segments.length;
             const pointCount = track.segments.reduce((sum, seg) => sum + seg.points.length, 0);
             html += `
-            <div class="group bg-gray-900/95 border ${isActive ? 'border-blue-500/60 shadow-blue-950/30' : 'border-gray-800'} rounded-xl overflow-hidden shadow-lg"
+            <div class="group bg-gray-900/95 border ${isSelected ? 'border-cyan-400/80 bg-cyan-950/20' : (isActive ? 'border-blue-500/60 shadow-blue-950/30' : 'border-gray-800')} rounded-xl overflow-hidden shadow-lg"
+                 onclick="handleTrackTreeClick(event, '${track.id}', true)"
                  oncontextmenu="handleTrackContextMenu(event, '${track.id}')"
                  onpointerdown="handleTrackPointerDown(event, '${track.id}')"
                  onpointerup="clearTrackLongPress()"
@@ -762,7 +1177,7 @@ function _doRenderGisTree() {
                               title="Trascina per riordinare questo file GPX">
                         <i data-lucide="grip-vertical" class="w-4 h-4"></i>
                       </button>
-                      <div class="min-w-0 cursor-pointer" onclick="setTrackActive('${track.id}', true)">
+                      <div class="min-w-0 cursor-pointer">
                         <div class="flex items-center gap-1.5 min-w-0">
                           <i data-lucide="${isExpanded ? 'chevron-down' : 'chevron-right'}" class="w-3 h-3 ${isActive ? 'text-blue-300' : 'text-gray-500'} shrink-0"></i>
                           <i data-lucide="file-map" class="w-3.5 h-3.5 ${isActive ? 'text-blue-300' : 'text-gray-500'} shrink-0"></i>
@@ -791,11 +1206,18 @@ function _doRenderGisTree() {
                     </div>
                     ${track.segments.map((seg, segIndex) => {
                         const isSegActive = seg.id === activeSegmentId;
+                        const isSegSelected = selectionHas(makeTreeKey('segment', track.id, seg.id));
                         return `
-                        <div class="flex items-center justify-between text-xs py-1.5 px-1.5 rounded border ${isSegActive ? 'bg-blue-950/40 text-blue-300 border-blue-900/60' : 'text-gray-400 border-transparent hover:bg-gray-800/45 hover:border-gray-800'} ${seg.visible === false ? 'opacity-55' : ''}"
+                        <div class="flex items-center justify-between text-xs py-1.5 px-1.5 rounded border ${isSegSelected ? 'bg-cyan-950/45 text-cyan-200 border-cyan-700/70' : (isSegActive ? 'bg-blue-950/40 text-blue-300 border-blue-900/60' : 'text-gray-400 border-transparent hover:bg-gray-800/45 hover:border-gray-800')} ${seg.visible === false ? 'opacity-55' : ''}"
+                             onclick="handleSegmentTreeClick(event, '${track.id}', '${seg.id}', true)"
+                             oncontextmenu="handleSegmentContextMenu(event, '${track.id}', '${seg.id}')"
+                             onpointerdown="handleSegmentPointerDown(event, '${track.id}', '${seg.id}')"
+                             onpointerup="clearTrackLongPress()"
+                             onpointercancel="clearTrackLongPress()"
+                             onpointerleave="clearTrackLongPress()"
                              ondragover="handleGisDragOver(event)"
                              ondrop="handleGisDrop(event, 'segment', '${track.id}', '${seg.id}')">
-                          <div class="flex items-center gap-1.5 min-w-0 cursor-pointer" onclick="setSegmentActive('${track.id}', '${seg.id}', true)">
+                          <div class="flex items-center gap-1.5 min-w-0 cursor-pointer">
                             <button draggable="true"
                                     ondragstart="handleGisDragStart(event, 'segment', '${track.id}', '${seg.id}')"
                                     ondragend="handleGisDragEnd(event)"
@@ -804,7 +1226,7 @@ function _doRenderGisTree() {
                               <i data-lucide="grip-vertical" class="w-3.5 h-3.5"></i>
                             </button>
                             <i data-lucide="milestone" class="w-3 h-3 text-gray-500 shrink-0"></i>
-                            <input type="text" value="${escapeXml(seg.name)}" onchange="renameSegment('${track.id}', '${seg.id}', this.value)" class="bg-transparent text-[11px] border-b border-transparent hover:border-gray-700 focus:border-blue-500 focus:outline-none min-w-0 w-24 ${seg.visible === false ? 'line-through' : ''}">
+                            <input id="segment-name-${seg.id}" type="text" value="${escapeXml(seg.name)}" onchange="renameSegment('${track.id}', '${seg.id}', this.value)" onclick="event.stopPropagation()" class="bg-transparent text-[11px] border-b border-transparent hover:border-gray-700 focus:border-blue-500 focus:outline-none min-w-0 w-24 ${seg.visible === false ? 'line-through' : ''}">
                           </div>
                           <div class="flex items-center gap-1.5 shrink-0">
                             <span class="text-[10px] text-gray-500">${segIndex + 1}/${seg.points.length} pt</span>
@@ -1436,7 +1858,9 @@ export function setupEvents() {
         if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
             e.preventDefault();
             _triggerUndo();
+            return;
         }
+        handleTreeKeyboardShortcuts(e);
     });
 
     document.getElementById('file-import-gpx').onchange = (e) => {

@@ -24,10 +24,12 @@ import {
     updateActiveTracksHeader, showToast,
     setTrackActive, renameTrack, changeTrackColor, changeTrackWidth, toggleTrackVisibility,
     handleTrackContextMenu, handleTrackPointerDown, clearTrackLongPress,
+    handleTrackTreeClick, handleSegmentTreeClick, handleSegmentContextMenu, handleSegmentPointerDown,
+    copyTreeSelection, cutTreeSelection, pasteTreeSelection, duplicateTreeSelection, deleteTreeSelection,
     handleTrackNamePointerDown, clearTrackNameLongPress,
     handleTrackNameClick, openTrackNameEditor, finishTrackNameEditor, handleTrackNameKeydown,
     toggleAllWaypointsVisibility, toggleWaypointVisibility, toggleSegmentVisibility,
-    deleteTrack, addNewSegmentToTrack, renameSegment, setSegmentActive, deleteSegment,
+    deleteTrack, addNewSegmentToTrack, renameSegment, renameSegmentFromMenu, setSegmentActive, deleteSegment,
     zoomToWaypoint, deleteWaypoint, searchNominatim
 } from './ui.js';
 
@@ -68,6 +70,15 @@ window.toggleTrackVisibility = toggleTrackVisibility;
 window.handleTrackContextMenu = handleTrackContextMenu;
 window.handleTrackPointerDown = handleTrackPointerDown;
 window.clearTrackLongPress = clearTrackLongPress;
+window.handleTrackTreeClick = handleTrackTreeClick;
+window.handleSegmentTreeClick = handleSegmentTreeClick;
+window.handleSegmentContextMenu = handleSegmentContextMenu;
+window.handleSegmentPointerDown = handleSegmentPointerDown;
+window.copyTreeSelection = copyTreeSelection;
+window.cutTreeSelection = cutTreeSelection;
+window.pasteTreeSelection = pasteTreeSelection;
+window.duplicateTreeSelection = duplicateTreeSelection;
+window.deleteTreeSelection = deleteTreeSelection;
 window.handleTrackNamePointerDown = handleTrackNamePointerDown;
 window.clearTrackNameLongPress = clearTrackNameLongPress;
 window.handleTrackNameClick = handleTrackNameClick;
@@ -80,6 +91,7 @@ window.toggleSegmentVisibility = toggleSegmentVisibility;
 window.deleteTrack = deleteTrack;
 window.addNewSegmentToTrack = addNewSegmentToTrack;
 window.renameSegment = renameSegment;
+window.renameSegmentFromMenu = renameSegmentFromMenu;
 window.setSegmentActive = setSegmentActive;
 window.deleteSegment = deleteSegment;
 window.zoomToWaypoint = zoomToWaypoint;
