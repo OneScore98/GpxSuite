@@ -753,6 +753,10 @@ function updateMapillaryViewerHeader(imageId, options = {}) {
     _mapillaryCurrentImageId = id;
 }
 
+function setMapillaryViewerOpen(isOpen) {
+    document.body.classList.toggle('mapillary-viewer-open', Boolean(isOpen));
+}
+
 function resetMapillaryJsViewer() {
     if (_mapillaryJsResizeObserver) {
         _mapillaryJsResizeObserver.disconnect();
@@ -811,6 +815,7 @@ async function openMapillaryJsViewer(imageId) {
     if (!panel || !jsContainer) throw new Error('Container MapillaryJS non disponibile');
 
     panel.classList.remove('hidden');
+    setMapillaryViewerOpen(true);
     jsContainer.classList.remove('hidden');
     image?.classList.add('hidden');
     placeholder?.classList.add('hidden');
@@ -1001,6 +1006,7 @@ function setMapillaryPanelLoading(imageId, options = {}) {
     if (!panel) return;
     bindMapillaryViewerControls();
     panel.classList.remove('hidden');
+    setMapillaryViewerOpen(true);
     document.getElementById('mapillary-js-viewer')?.classList.add('hidden');
     document.getElementById('mapillary-fallback-controls')?.classList.remove('hidden');
     const image = document.getElementById('mapillary-image');
@@ -1160,6 +1166,7 @@ export function setMapillaryCoverageVisible(visible, options = {}) {
 export function closeMapillaryViewer() {
     stopMapillaryPlayback();
     clearMapillaryCurrentMarker();
+    setMapillaryViewerOpen(false);
     const panel = document.getElementById('panel-mapillary-viewer');
     if (panel) panel.classList.add('hidden');
 }

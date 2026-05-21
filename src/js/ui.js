@@ -1073,6 +1073,7 @@ function closeSidebar() {
 
 function closeStatsPanel() {
     document.getElementById('panel-bottom-stats').classList.add('translate-y-60');
+    document.body.classList.remove('stats-panel-open');
     document.getElementById('btn-toggle-stats').classList.remove('bg-blue-600', 'text-white');
     document.getElementById('btn-toggle-stats').classList.add('text-gray-300');
     document.getElementById('btn-mobile-stats')?.classList.remove('bg-blue-600', 'text-white');
@@ -1694,6 +1695,7 @@ export function setupEvents() {
             if (isCompactLayout()) closeOtherPanels('stats');
             else closeMobileToolbar();
             panel.classList.remove('translate-y-60');
+            document.body.classList.add('stats-panel-open');
             btn.classList.add('bg-blue-600', 'text-white');
             btn.classList.remove('text-gray-300');
             document.getElementById('btn-mobile-stats')?.classList.add('bg-blue-600', 'text-white');
