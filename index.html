@@ -22,6 +22,10 @@
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 
+    <!-- MapillaryJS viewer ufficiale -->
+    <script src="https://unpkg.com/mapillary-js@4.1.2/dist/mapillary.js"></script>
+    <link href="https://unpkg.com/mapillary-js@4.1.2/dist/mapillary.css" rel="stylesheet" />
+
     <!-- CSS Custom & Print Rules -->
     <link rel="stylesheet" href="src/css/style.css">
 
@@ -493,10 +497,11 @@
             </div>
         </div>
         <div class="mapillary-media relative bg-gray-900 aspect-video">
+            <div id="mapillary-js-viewer" class="hidden absolute inset-0"></div>
             <img id="mapillary-image" class="hidden w-full h-full object-cover" alt="">
             <div id="mapillary-placeholder" class="absolute inset-0 flex items-center justify-center text-[11px] text-gray-500 px-5 text-center">Seleziona un punto Mapillary sulla mappa.</div>
         </div>
-        <div class="px-3 py-2 border-t border-gray-800 flex items-center justify-between gap-2">
+        <div id="mapillary-fallback-controls" class="hidden px-3 py-2 border-t border-gray-800 flex items-center justify-between gap-2">
             <div class="flex items-center gap-1">
                 <button id="btn-mapillary-prev" class="w-8 h-8 rounded-lg bg-gray-900 hover:bg-gray-800 disabled:opacity-35 disabled:hover:bg-gray-900 flex items-center justify-center text-gray-300" disabled title="Foto precedente">
           <i data-lucide="skip-back" class="w-4 h-4"></i>
