@@ -707,6 +707,42 @@ function getMapillaryJsApi() {
     return window.mapillary?.Viewer ? window.mapillary : (window.Mapillary?.Viewer ? window.Mapillary : null);
 }
 
+function getMapillaryComponentOptions() {
+    return {
+        attribution: true,
+        bearing: true,
+        cache: {
+            depth: {
+                sequence: 4,
+                spherical: 2,
+                step: 3,
+                turn: 1
+            }
+        },
+        cover: false,
+        direction: true,
+        fallback: {
+            image: true,
+            navigation: true
+        },
+        image: true,
+        keyboard: true,
+        marker: true,
+        pointer: true,
+        popup: true,
+        sequence: {
+            maxWidth: 180,
+            minWidth: 96,
+            playing: false,
+            visible: true
+        },
+        slider: true,
+        spatial: true,
+        tag: true,
+        zoom: true
+    };
+}
+
 function updateMapillaryViewerHeader(imageId, options = {}) {
     const id = String(imageId || '');
     if (!id) return;
@@ -787,18 +823,7 @@ async function openMapillaryJsViewer(imageId) {
             accessToken: mapillaryToken.trim(),
             container: jsContainer,
             imageId: null,
-            component: {
-                attribution: true,
-                bearing: true,
-                cache: true,
-                cover: false,
-                direction: true,
-                image: true,
-                keyboard: true,
-                pointer: true,
-                sequence: true,
-                zoom: true
-            },
+            component: getMapillaryComponentOptions(),
             trackResize: true
         });
         bindMapillaryJsEvents();
