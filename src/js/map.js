@@ -830,24 +830,7 @@ function getMapillaryJsApi() {
 
 function getMapillaryComponentOptions() {
     return {
-        attribution: true,
-        bearing: true,
-        cache: true,
-        cover: false,
-        direction: true,
-        fallback: {
-            image: true,
-            navigation: true
-        },
-        image: true,
-        keyboard: true,
-        pointer: {
-            dragPan: true,
-            scrollZoom: true,
-            touchZoom: true
-        },
-        sequence: true,
-        zoom: true
+        cover: false
     };
 }
 
