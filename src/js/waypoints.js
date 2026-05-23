@@ -95,12 +95,10 @@ export async function addWaypointAtCoords(lon, lat) {
 }
 
 export function setupWaypointLayers() {
-    const initialWpData = buildWaypointFeatureCollection();
-
     if (!map.getSource('gpx-waypoints')) {
         map.addSource('gpx-waypoints', {
             type: 'geojson',
-            data: initialWpData,
+            data: { type: 'FeatureCollection', features: [] },
             cluster: true,
             clusterMaxZoom: 11,
             clusterRadius: 42
