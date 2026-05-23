@@ -105,7 +105,6 @@ let _cacheDataVersion = 0;   // incrementato ogni volta che i dati cambiano
 let _cacheBuildVersion = -1; // versione che la cache ha attualmente
 let _idleHandle = null;
 let _mapillaryInteractionsBound = false;
-let _mapillaryViewerControlsBound = false;
 let _mapillaryCurrentImageId = null;
 let _mapillarySequenceId = null;
 let _mapillarySequenceIds = [];
@@ -114,12 +113,10 @@ let _mapillaryPlayTimer = null;
 let _mapillaryRequestSerial = 0;
 let _mapillaryJsViewer = null;
 let _mapillaryJsResizeObserver = null;
-let _mapillaryUsingJsViewer = false;
-let _mapillaryJsMoveInFlight = false;
+let _mapillaryJsWindowResizeHandler = null;
 let _mapillaryCurrentLngLat = null;
 let _mapillaryCurrentBearing = 0;
-let _mapillaryFallbackScale = 1;
-let _mapillaryFallbackOffset = { x: 0, y: 0 };
+let _mapillaryCurrentFov = 70;
 const _mapillarySequenceCache = new Map();
 const APPLICATION_LAYER_ORDER = [
     'mapillary-sequences-layer',
@@ -135,6 +132,8 @@ const APPLICATION_LAYER_ORDER = [
     'gpx-waypoints-ring-layer',
     'gpx-waypoints-symbol-layer',
     'gpx-edit-points-layer',
+    'mapillary-current-fov-fill-layer',
+    'mapillary-current-fov-line-layer',
     'mapillary-current-image-halo-layer',
     'mapillary-current-image-layer',
     'mapillary-current-image-direction-layer'
@@ -482,6 +481,74 @@ function buildMapillaryCurrentFeatureCollection() {
     };
 }
 
+function mapillaryDestination(lngLat, bearingDeg, distanceMeters) {
+    const radius = 6378137;
+    const bearing = bearingDeg * Math.PI / 180;
+    const lat1 = lngLat.lat * Math.PI / 180;
+    const lon1 = lngLat.lng * Math.PI / 180;
+    const angularDistance = distanceMeters / radius;
+    const lat2 = Math.asin(
+        Math.sin(lat1) * Math.cos(angularDistance)
+        + Math.cos(lat1) * Math.sin(angularDistance) * Math.cos(bearing)
+    );
+    const lon2 = lon1 + Math.atan2(
+        Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(lat1),
+        Math.cos(angularDistance) - Math.sin(lat1) * Math.sin(lat2)
+    );
+    return [lon2 * 180 / Math.PI, lat2 * 180 / Math.PI];
+}
+
+function getMapillaryHorizontalFov() {
+    const verticalFov = Number.isFinite(_mapillaryCurrentFov) ? _mapillaryCurrentFov : 70;
+    const container = document.getElementById('mapillary-js-viewer');
+    const width = container?.offsetWidth || 1;
+    const height = container?.offsetHeight || 1;
+    const aspect = height === 0 ? 1 : width / height;
+    const verticalRad = verticalFov * Math.PI / 180;
+    return Math.atan(aspect * Math.tan(0.5 * verticalRad)) * 2 * 180 / Math.PI;
+}
+
+function buildMapillaryCurrentFovFeatureCollection() {
+    if (!_mapillaryCurrentLngLat) return emptyMapillaryCurrentFeatureCollection();
+    const bearing = Number.isFinite(_mapillaryCurrentBearing) ? _mapillaryCurrentBearing : 0;
+    const fov = Math.min(140, Math.max(20, getMapillaryHorizontalFov()));
+    const radius = 70;
+    const start = bearing - fov / 2;
+    const steps = 18;
+    const coordinates = [[_mapillaryCurrentLngLat.lng, _mapillaryCurrentLngLat.lat]];
+    for (let i = 0; i <= steps; i++) {
+        coordinates.push(mapillaryDestination(_mapillaryCurrentLngLat, start + (fov * i / steps), radius));
+    }
+    coordinates.push([_mapillaryCurrentLngLat.lng, _mapillaryCurrentLngLat.lat]);
+    return {
+        type: 'FeatureCollection',
+        features: [{
+            type: 'Feature',
+            properties: {
+                imageId: _mapillaryCurrentImageId || '',
+                bearing,
+                fov
+            },
+            geometry: { type: 'Polygon', coordinates: [coordinates] }
+        }]
+    };
+}
+
+function refreshMapillaryCurrentSources() {
+    const markerSource = mapLoaded ? map.getSource('mapillary-current-image') : null;
+    if (markerSource) markerSource.setData(buildMapillaryCurrentFeatureCollection());
+    const fovSource = mapLoaded ? map.getSource('mapillary-current-fov') : null;
+    if (fovSource) fovSource.setData(buildMapillaryCurrentFovFeatureCollection());
+}
+
+function centerMapOnMapillaryIfNeeded(lngLat) {
+    if (!mapLoaded || !lngLat || !Number.isFinite(lngLat.lng) || !Number.isFinite(lngLat.lat)) return;
+    const bounds = map.getBounds?.();
+    if (bounds && !bounds.contains([lngLat.lng, lngLat.lat])) {
+        map.easeTo({ center: [lngLat.lng, lngLat.lat], duration: 450 });
+    }
+}
+
 function normalizeMapillaryLngLat(value) {
     if (!value) return null;
     if (Array.isArray(value) && value.length >= 2) {
@@ -534,15 +601,29 @@ function updateMapillaryCurrentMarker(value, imageId, bearing = null) {
     if (imageId) _mapillaryCurrentImageId = String(imageId);
     const normalizedBearing = normalizeMapillaryBearing(bearing);
     _mapillaryCurrentBearing = normalizedBearing !== null ? normalizedBearing : 0;
-    const source = mapLoaded ? map.getSource('mapillary-current-image') : null;
-    if (source) source.setData(buildMapillaryCurrentFeatureCollection());
+    refreshMapillaryCurrentSources();
+    centerMapOnMapillaryIfNeeded(lngLat);
+}
+
+function updateMapillaryCurrentBearing(value) {
+    const normalizedBearing = normalizeMapillaryBearing(value);
+    if (normalizedBearing === null) return;
+    _mapillaryCurrentBearing = normalizedBearing;
+    refreshMapillaryCurrentSources();
+}
+
+function updateMapillaryCurrentFov(value) {
+    const fov = Number(value);
+    if (!Number.isFinite(fov)) return;
+    _mapillaryCurrentFov = fov;
+    refreshMapillaryCurrentSources();
 }
 
 function clearMapillaryCurrentMarker() {
     _mapillaryCurrentLngLat = null;
     _mapillaryCurrentBearing = 0;
-    const source = mapLoaded ? map.getSource('mapillary-current-image') : null;
-    if (source) source.setData(emptyMapillaryCurrentFeatureCollection());
+    _mapillaryCurrentFov = 70;
+    refreshMapillaryCurrentSources();
 }
 
 function setupMapillaryLayers() {
@@ -600,6 +681,40 @@ function setupMapillaryLayers() {
         map.addSource('mapillary-current-image', {
             type: 'geojson',
             data: buildMapillaryCurrentFeatureCollection()
+        });
+    }
+
+    if (!map.getSource('mapillary-current-fov')) {
+        map.addSource('mapillary-current-fov', {
+            type: 'geojson',
+            data: buildMapillaryCurrentFovFeatureCollection()
+        });
+    }
+
+    if (!map.getLayer('mapillary-current-fov-fill-layer')) {
+        map.addLayer({
+            id: 'mapillary-current-fov-fill-layer',
+            type: 'fill',
+            source: 'mapillary-current-fov',
+            layout: { visibility: mapillaryVisibility() },
+            paint: {
+                'fill-color': '#facc15',
+                'fill-opacity': 0.34
+            }
+        });
+    }
+
+    if (!map.getLayer('mapillary-current-fov-line-layer')) {
+        map.addLayer({
+            id: 'mapillary-current-fov-line-layer',
+            type: 'line',
+            source: 'mapillary-current-fov',
+            layout: { visibility: mapillaryVisibility() },
+            paint: {
+                'line-color': '#111827',
+                'line-width': 1.1,
+                'line-opacity': 0.75
+            }
         });
     }
 
@@ -669,6 +784,8 @@ function applyMapillaryLayerVisibility() {
     [
         'mapillary-sequences-layer',
         'mapillary-images-layer',
+        'mapillary-current-fov-fill-layer',
+        'mapillary-current-fov-line-layer',
         'mapillary-current-image-halo-layer',
         'mapillary-current-image-layer',
         'mapillary-current-image-direction-layer'
@@ -715,30 +832,22 @@ function getMapillaryComponentOptions() {
     return {
         attribution: true,
         bearing: true,
-        cache: {
-            depth: {
-                sequence: 4,
-                spherical: 2,
-                step: 3,
-                turn: 1
-            }
-        },
+        cache: true,
         cover: false,
-        direction: false,
+        direction: true,
         fallback: {
             image: true,
             navigation: true
         },
         image: true,
         keyboard: true,
-        marker: true,
-        pointer: true,
-        popup: true,
-        sequence: false,
-        slider: false,
-        spatial: true,
-        tag: true,
-        zoom: false
+        pointer: {
+            dragPan: true,
+            scrollZoom: true,
+            touchZoom: true
+        },
+        sequence: true,
+        zoom: true
     };
 }
 
@@ -756,54 +865,19 @@ function setMapillaryViewerOpen(isOpen) {
     document.body.classList.toggle('mapillary-viewer-open', Boolean(isOpen));
 }
 
-function clampMapillaryValue(value, min, max) {
-    return Math.min(max, Math.max(min, value));
-}
-
-function isMapillaryJsViewerActive() {
-    const container = document.getElementById('mapillary-js-viewer');
-    return Boolean(_mapillaryUsingJsViewer && _mapillaryJsViewer && container && !container.classList.contains('hidden'));
-}
-
-function getMapillaryNavigationDirection(name) {
-    const api = getMapillaryJsApi();
-    const direction = api?.NavigationDirection;
-    const fallback = {
-        Next: 0,
-        Prev: 1,
-        StepLeft: 2,
-        StepRight: 3,
-        StepForward: 4,
-        StepBackward: 5,
-        TurnLeft: 6,
-        TurnRight: 7
-    };
-    return direction && name in direction ? direction[name] : fallback[name];
-}
-
-function applyMapillaryFallbackTransform() {
-    const image = document.getElementById('mapillary-image');
-    if (!image) return;
-    image.style.transform = `translate(${_mapillaryFallbackOffset.x}px, ${_mapillaryFallbackOffset.y}px) scale(${_mapillaryFallbackScale})`;
-}
-
-function resetMapillaryFallbackView() {
-    _mapillaryFallbackScale = 1;
-    _mapillaryFallbackOffset = { x: 0, y: 0 };
-    applyMapillaryFallbackTransform();
-}
-
 function resetMapillaryJsViewer() {
     if (_mapillaryJsResizeObserver) {
         _mapillaryJsResizeObserver.disconnect();
         _mapillaryJsResizeObserver = null;
     }
+    if (_mapillaryJsWindowResizeHandler) {
+        window.removeEventListener('resize', _mapillaryJsWindowResizeHandler);
+        _mapillaryJsWindowResizeHandler = null;
+    }
     if (_mapillaryJsViewer && typeof _mapillaryJsViewer.remove === 'function') {
         try { _mapillaryJsViewer.remove(); } catch (err) { console.error('Errore chiusura MapillaryJS:', err); }
     }
     _mapillaryJsViewer = null;
-    _mapillaryUsingJsViewer = false;
-    _mapillaryJsMoveInFlight = false;
     const container = document.getElementById('mapillary-js-viewer');
     if (container) {
         container.replaceChildren();
@@ -823,23 +897,68 @@ function ensureMapillaryJsResizeObserver() {
     _mapillaryJsResizeObserver.observe(panel);
 }
 
+async function syncMapillaryViewerImage(image = null) {
+    if (!_mapillaryJsViewer) return;
+    try {
+        const currentImage = image || await _mapillaryJsViewer.getImage();
+        updateMapillaryViewerHeader(currentImage?.id || _mapillaryCurrentImageId);
+        updateMapillaryCurrentMarker(
+            getMapillaryImageLngLat(currentImage),
+            currentImage?.id,
+            getMapillaryImageBearing(currentImage)
+        );
+    } catch {
+        // MapillaryJS può emettere eventi intermedi durante il cambio immagine.
+    }
+}
+
+async function syncMapillaryViewerPosition() {
+    if (!_mapillaryJsViewer || typeof _mapillaryJsViewer.getPosition !== 'function') return;
+    try {
+        const position = await _mapillaryJsViewer.getPosition();
+        updateMapillaryCurrentMarker(position, _mapillaryCurrentImageId, _mapillaryCurrentBearing);
+    } catch {
+        // La posizione non è disponibile finché il viewer non è navigabile.
+    }
+}
+
+async function syncMapillaryViewerPov() {
+    if (!_mapillaryJsViewer || typeof _mapillaryJsViewer.getPointOfView !== 'function') return;
+    try {
+        const pov = await _mapillaryJsViewer.getPointOfView();
+        updateMapillaryCurrentBearing(pov?.bearing);
+    } catch {
+        // Il punto di vista non è disponibile durante alcune transizioni.
+    }
+}
+
+async function syncMapillaryViewerFov() {
+    if (!_mapillaryJsViewer || typeof _mapillaryJsViewer.getFieldOfView !== 'function') return;
+    try {
+        const fov = await _mapillaryJsViewer.getFieldOfView();
+        updateMapillaryCurrentFov(fov);
+    } catch {
+        // Il field-of-view viene aggiornato appena MapillaryJS lo rende disponibile.
+    }
+}
+
+async function syncMapillaryViewerToMap(image = null) {
+    await syncMapillaryViewerImage(image);
+    await syncMapillaryViewerFov();
+    await syncMapillaryViewerPov();
+    await syncMapillaryViewerPosition();
+}
+
 function bindMapillaryJsEvents() {
     if (!_mapillaryJsViewer || _mapillaryJsViewer._gpxSuiteEventsBound) return;
     _mapillaryJsViewer._gpxSuiteEventsBound = true;
-    _mapillaryJsViewer.on('image', async() => {
-        try {
-            const image = await _mapillaryJsViewer.getImage();
-            updateMapillaryViewerHeader(image?.id || _mapillaryCurrentImageId);
-            updateMapillaryCurrentMarker(
-                getMapillaryImageLngLat(image),
-                image?.id,
-                getMapillaryImageBearing(image)
-            );
-            updateMapillaryControls();
-        } catch {
-            // MapillaryJS può emettere eventi intermedi durante il cambio immagine.
-        }
-    });
+    _mapillaryJsViewer.on('load', () => { syncMapillaryViewerToMap(); });
+    _mapillaryJsViewer.on('image', event => { syncMapillaryViewerToMap(event?.image); });
+    _mapillaryJsViewer.on('position', syncMapillaryViewerPosition);
+    _mapillaryJsViewer.on('pov', syncMapillaryViewerPov);
+    _mapillaryJsViewer.on('fov', syncMapillaryViewerFov);
+    _mapillaryJsWindowResizeHandler = () => { syncMapillaryViewerFov(); };
+    window.addEventListener('resize', _mapillaryJsWindowResizeHandler);
 }
 
 async function openMapillaryJsViewer(imageId) {
@@ -850,20 +969,14 @@ async function openMapillaryJsViewer(imageId) {
     const jsContainer = document.getElementById('mapillary-js-viewer');
     const image = document.getElementById('mapillary-image');
     const placeholder = document.getElementById('mapillary-placeholder');
-    const controlPanel = document.getElementById('mapillary-controls');
     if (!panel || !jsContainer) throw new Error('Container MapillaryJS non disponibile');
 
-    bindMapillaryViewerControls();
     panel.classList.remove('hidden');
     setMapillaryViewerOpen(true);
-    _mapillaryUsingJsViewer = true;
     jsContainer.classList.remove('hidden');
     image?.classList.add('hidden');
     placeholder?.classList.add('hidden');
-    controlPanel?.classList.remove('hidden');
-    resetMapillaryFallbackView();
     updateMapillaryViewerHeader(imageId);
-    updateMapillaryControls();
 
     if (!_mapillaryJsViewer) {
         jsContainer.replaceChildren();
@@ -895,7 +1008,6 @@ async function openMapillaryJsViewer(imageId) {
     if (typeof _mapillaryJsViewer.resize === 'function') {
         _mapillaryJsViewer.resize();
     }
-    updateMapillaryControls();
 }
 
 function formatMapillaryDate(value) {
@@ -905,240 +1017,17 @@ function formatMapillaryDate(value) {
     return date.toLocaleDateString('it-IT', { year: 'numeric', month: 'short', day: '2-digit' });
 }
 
-function updateMapillaryPlayIcon() {
-    const playBtn = document.getElementById('btn-mapillary-play');
-    if (!playBtn) return;
-    playBtn.innerHTML = _mapillaryPlayTimer
-        ? '<i data-lucide="pause" class="w-4 h-4"></i>'
-        : '<i data-lucide="play" class="w-4 h-4"></i>';
-    playBtn.title = _mapillaryPlayTimer ? 'Metti in pausa' : 'Riproduci sequenza';
-    if (window.lucide) window.lucide.createIcons();
-}
-
 function stopMapillaryPlayback() {
     if (_mapillaryPlayTimer) {
         clearInterval(_mapillaryPlayTimer);
         _mapillaryPlayTimer = null;
     }
-    updateMapillaryPlayIcon();
-    updateMapillaryControls();
-}
-
-function updateMapillaryControls() {
-    const prevBtn = document.getElementById('btn-mapillary-prev');
-    const nextBtn = document.getElementById('btn-mapillary-next');
-    const playBtn = document.getElementById('btn-mapillary-play');
-    const status = document.getElementById('mapillary-sequence-status');
-    const image = document.getElementById('mapillary-image');
-    const jsActive = isMapillaryJsViewerActive();
-    const fallbackImageVisible = Boolean(image?.src && !image.classList.contains('hidden'));
-    const hasCameraControls = jsActive || fallbackImageVisible;
-    const total = _mapillarySequenceIds.length;
-    const hasSequence = total > 1 && _mapillaryCurrentIndex >= 0;
-    const setDisabled = (id, disabled) => {
-        const btn = document.getElementById(id);
-        if (btn) btn.disabled = Boolean(disabled);
-    };
-
-    if (prevBtn) prevBtn.disabled = jsActive ? _mapillaryJsMoveInFlight : (!hasSequence || _mapillaryCurrentIndex <= 0);
-    if (nextBtn) nextBtn.disabled = jsActive ? _mapillaryJsMoveInFlight : (!hasSequence || _mapillaryCurrentIndex >= total - 1);
-    if (playBtn) playBtn.disabled = jsActive ? false : !hasSequence;
-
-    [
-        'btn-mapillary-pan-left',
-        'btn-mapillary-pan-right',
-        'btn-mapillary-tilt-up',
-        'btn-mapillary-tilt-down',
-        'btn-mapillary-zoom-in',
-        'btn-mapillary-zoom-out',
-        'btn-mapillary-reset-view'
-    ].forEach(id => setDisabled(id, !hasCameraControls));
-
-    [
-        'btn-mapillary-step-back',
-        'btn-mapillary-step-forward',
-        'btn-mapillary-turn-left',
-        'btn-mapillary-turn-right'
-    ].forEach(id => setDisabled(id, !jsActive || _mapillaryJsMoveInFlight));
-
-    if (status) {
-        if (jsActive) {
-            status.textContent = _mapillaryPlayTimer ? 'Riproduzione 3D...' : 'Viewer 3D pronto';
-        } else if (!_mapillarySequenceId) {
-            status.textContent = 'Sequenza non disponibile';
-        } else if (total === 0) {
-            status.textContent = 'Caricamento sequenza...';
-        } else if (!hasSequence) {
-            status.textContent = 'Singola foto';
-        } else {
-            status.textContent = `${_mapillaryCurrentIndex + 1} / ${total}`;
-        }
-    }
-    updateMapillaryPlayIcon();
-}
-
-async function moveMapillaryJsDirection(directionName, options = {}) {
-    if (!isMapillaryJsViewerActive() || _mapillaryJsMoveInFlight) return false;
-    const direction = getMapillaryNavigationDirection(directionName);
-    if (direction === undefined) return false;
-
-    _mapillaryJsMoveInFlight = true;
-    updateMapillaryControls();
-    try {
-        const image = await _mapillaryJsViewer.moveDir(direction);
-        updateMapillaryViewerHeader(image?.id || _mapillaryCurrentImageId);
-        updateMapillaryCurrentMarker(
-            getMapillaryImageLngLat(image),
-            image?.id,
-            getMapillaryImageBearing(image)
-        );
-        return true;
-    } catch (err) {
-        if (!options.keepPlayback) {
-            showToast("Direzione Mapillary non disponibile da questa foto", "info");
-        }
-        return false;
-    } finally {
-        _mapillaryJsMoveInFlight = false;
-        updateMapillaryControls();
-    }
-}
-
-async function panMapillaryView(dx, dy) {
-    if (isMapillaryJsViewerActive() && typeof _mapillaryJsViewer.getCenter === 'function') {
-        try {
-            const center = await _mapillaryJsViewer.getCenter();
-            const nextCenter = [
-                clampMapillaryValue((center?.[0] ?? 0.5) + dx, 0, 1),
-                clampMapillaryValue((center?.[1] ?? 0.5) + dy, 0, 1)
-            ];
-            _mapillaryJsViewer.setCenter(nextCenter);
-        } catch (err) {
-            console.error('Errore pan/tilt Mapillary:', err);
-        }
-        return;
-    }
-
-    const image = document.getElementById('mapillary-image');
-    if (!image?.src || image.classList.contains('hidden')) return;
-    _mapillaryFallbackOffset.x -= dx * 420;
-    _mapillaryFallbackOffset.y -= dy * 420;
-    applyMapillaryFallbackTransform();
-}
-
-async function zoomMapillaryView(delta) {
-    if (isMapillaryJsViewerActive() && typeof _mapillaryJsViewer.getFieldOfView === 'function') {
-        try {
-            const fov = await _mapillaryJsViewer.getFieldOfView();
-            _mapillaryJsViewer.setFieldOfView(clampMapillaryValue(fov + delta, 20, 100));
-        } catch (err) {
-            console.error('Errore zoom Mapillary:', err);
-        }
-        return;
-    }
-
-    const image = document.getElementById('mapillary-image');
-    if (!image?.src || image.classList.contains('hidden')) return;
-    _mapillaryFallbackScale = clampMapillaryValue(_mapillaryFallbackScale + (delta < 0 ? 0.2 : -0.2), 1, 3);
-    applyMapillaryFallbackTransform();
-}
-
-function resetMapillaryView() {
-    if (isMapillaryJsViewerActive()) {
-        if (typeof _mapillaryJsViewer.setCenter === 'function') _mapillaryJsViewer.setCenter([0.5, 0.5]);
-        if (typeof _mapillaryJsViewer.setFieldOfView === 'function') _mapillaryJsViewer.setFieldOfView(70);
-        return;
-    }
-    resetMapillaryFallbackView();
-}
-
-function bindMapillaryViewerControls() {
-    if (_mapillaryViewerControlsBound) return;
-    _mapillaryViewerControlsBound = true;
-
-    document.getElementById('btn-mapillary-prev')?.addEventListener('click', () => {
-        stopMapillaryPlayback();
-        if (isMapillaryJsViewerActive()) {
-            moveMapillaryJsDirection('Prev');
-        } else {
-            openMapillarySequenceOffset(-1);
-        }
-    });
-    document.getElementById('btn-mapillary-next')?.addEventListener('click', () => {
-        stopMapillaryPlayback();
-        if (isMapillaryJsViewerActive()) {
-            moveMapillaryJsDirection('Next');
-        } else {
-            openMapillarySequenceOffset(1);
-        }
-    });
-    document.getElementById('btn-mapillary-play')?.addEventListener('click', toggleMapillaryPlayback);
-    document.getElementById('btn-mapillary-pan-left')?.addEventListener('click', () => panMapillaryView(-0.08, 0));
-    document.getElementById('btn-mapillary-pan-right')?.addEventListener('click', () => panMapillaryView(0.08, 0));
-    document.getElementById('btn-mapillary-tilt-up')?.addEventListener('click', () => panMapillaryView(0, -0.08));
-    document.getElementById('btn-mapillary-tilt-down')?.addEventListener('click', () => panMapillaryView(0, 0.08));
-    document.getElementById('btn-mapillary-zoom-in')?.addEventListener('click', () => zoomMapillaryView(-10));
-    document.getElementById('btn-mapillary-zoom-out')?.addEventListener('click', () => zoomMapillaryView(10));
-    document.getElementById('btn-mapillary-reset-view')?.addEventListener('click', resetMapillaryView);
-    document.getElementById('btn-mapillary-step-back')?.addEventListener('click', () => {
-        stopMapillaryPlayback();
-        moveMapillaryJsDirection('StepBackward');
-    });
-    document.getElementById('btn-mapillary-step-forward')?.addEventListener('click', () => {
-        stopMapillaryPlayback();
-        moveMapillaryJsDirection('StepForward');
-    });
-    document.getElementById('btn-mapillary-turn-left')?.addEventListener('click', () => {
-        stopMapillaryPlayback();
-        moveMapillaryJsDirection('TurnLeft');
-    });
-    document.getElementById('btn-mapillary-turn-right')?.addEventListener('click', () => {
-        stopMapillaryPlayback();
-        moveMapillaryJsDirection('TurnRight');
-    });
-}
-
-function openMapillarySequenceOffset(offset, options = {}) {
-    const nextIndex = _mapillaryCurrentIndex + offset;
-    if (nextIndex < 0 || nextIndex >= _mapillarySequenceIds.length) {
-        if (_mapillaryPlayTimer) stopMapillaryPlayback();
-        return;
-    }
-    openMapillaryImage(_mapillarySequenceIds[nextIndex], { keepPlayback: options.keepPlayback === true });
-}
-
-function toggleMapillaryPlayback() {
-    if (_mapillaryPlayTimer) {
-        stopMapillaryPlayback();
-        return;
-    }
-    if (isMapillaryJsViewerActive()) {
-        _mapillaryPlayTimer = setInterval(async() => {
-            if (_mapillaryJsMoveInFlight) return;
-            const moved = await moveMapillaryJsDirection('Next', { keepPlayback: true });
-            if (!moved) stopMapillaryPlayback();
-        }, 1700);
-        updateMapillaryPlayIcon();
-        updateMapillaryControls();
-        return;
-    }
-    if (_mapillarySequenceIds.length < 2 || _mapillaryCurrentIndex < 0) return;
-    _mapillaryPlayTimer = setInterval(() => {
-        if (_mapillaryCurrentIndex >= _mapillarySequenceIds.length - 1) {
-            stopMapillaryPlayback();
-            return;
-        }
-        openMapillarySequenceOffset(1, { keepPlayback: true });
-    }, 1600);
-    updateMapillaryPlayIcon();
-    updateMapillaryControls();
 }
 
 function setMapillarySequenceState(sequenceId, ids, imageId) {
     _mapillarySequenceId = sequenceId || null;
     _mapillarySequenceIds = Array.isArray(ids) ? ids.map(String) : [];
     _mapillaryCurrentIndex = _mapillarySequenceIds.indexOf(String(imageId));
-    updateMapillaryControls();
 }
 
 async function fetchMapillarySequenceIds(sequenceId) {
@@ -1193,13 +1082,9 @@ function preloadMapillaryImage(imageUrl) {
 function setMapillaryPanelLoading(imageId, options = {}) {
     const panel = document.getElementById('panel-mapillary-viewer');
     if (!panel) return;
-    bindMapillaryViewerControls();
     panel.classList.remove('hidden');
     setMapillaryViewerOpen(true);
-    _mapillaryUsingJsViewer = false;
-    _mapillaryJsMoveInFlight = false;
     document.getElementById('mapillary-js-viewer')?.classList.add('hidden');
-    document.getElementById('mapillary-controls')?.classList.remove('hidden');
     const image = document.getElementById('mapillary-image');
     const placeholder = document.getElementById('mapillary-placeholder');
     const keepCurrentVisible = options.keepCurrentVisible === true && image?.src && !image.classList.contains('hidden');
@@ -1208,7 +1093,6 @@ function setMapillaryPanelLoading(imageId, options = {}) {
         placeholder.classList.add('hidden');
     } else {
         image.classList.add('hidden');
-        resetMapillaryFallbackView();
         placeholder.classList.remove('hidden');
         placeholder.textContent = 'Caricamento immagine Mapillary...';
         document.getElementById('mapillary-title').textContent = `Mapillary ${imageId}`;
@@ -1219,11 +1103,6 @@ function setMapillaryPanelLoading(imageId, options = {}) {
         _mapillarySequenceId = null;
         _mapillarySequenceIds = [];
         _mapillaryCurrentIndex = -1;
-    }
-    updateMapillaryControls();
-    if (keepCurrentVisible) {
-        const status = document.getElementById('mapillary-sequence-status');
-        if (status) status.textContent = 'Caricamento foto...';
     }
 }
 
@@ -1276,7 +1155,6 @@ async function openMapillaryImageFallback(imageId, options = {}) {
         const placeholder = document.getElementById('mapillary-placeholder');
         if (keepCurrentVisible) {
             placeholder.classList.add('hidden');
-            updateMapillaryControls();
         } else {
             document.getElementById('mapillary-image').classList.add('hidden');
             placeholder.classList.remove('hidden');
@@ -1361,7 +1239,6 @@ export function closeMapillaryViewer() {
     setMapillaryViewerOpen(false);
     const panel = document.getElementById('panel-mapillary-viewer');
     if (panel) panel.classList.add('hidden');
-    document.getElementById('mapillary-controls')?.classList.add('hidden');
 }
 
 export function setBaseMap(style) {

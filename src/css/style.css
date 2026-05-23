@@ -48,77 +48,6 @@ html {
     height: 100%;
 }
 
-#mapillary-image {
-    transform-origin: center;
-    transition: transform 160ms ease;
-}
-
-.mapillary-controls {
-    display: grid;
-    grid-template-columns: minmax(9rem, 1fr) auto auto;
-    gap: 0.45rem;
-    padding: 0.55rem 0.65rem;
-    background: rgba(3, 7, 18, 0.96);
-}
-
-.mapillary-controls.hidden {
-    display: none;
-}
-
-.mapillary-control-group {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    min-width: 0;
-}
-
-.mapillary-view-controls {
-    display: grid;
-    grid-template-columns: repeat(3, 2.35rem);
-    grid-auto-rows: 2.25rem;
-    place-items: center;
-}
-
-.mapillary-control-btn {
-    width: 2.25rem;
-    height: 2.25rem;
-    border-radius: 0.55rem;
-    background: rgb(17, 24, 39);
-    color: rgb(209, 213, 219);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background 120ms ease, color 120ms ease, opacity 120ms ease;
-}
-
-.mapillary-control-btn:hover:not(:disabled) {
-    background: rgb(31, 41, 55);
-    color: white;
-}
-
-.mapillary-control-btn:disabled {
-    opacity: 0.35;
-    cursor: not-allowed;
-}
-
-.mapillary-control-primary {
-    background: rgb(4, 120, 87);
-    color: white;
-}
-
-.mapillary-control-primary:hover:not(:disabled) {
-    background: rgb(5, 150, 105);
-}
-
-.mapillary-control-status {
-    min-width: 0;
-    color: rgb(107, 114, 128);
-    font-size: 0.66rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
 body.stats-panel-open #cursor-coordinates,
 body.mapillary-viewer-open #cursor-coordinates {
     display: none;
@@ -655,30 +584,6 @@ label {
 
     #panel-mapillary-viewer .mapillary-media {
         min-height: 12rem;
-    }
-
-    .mapillary-controls {
-        grid-template-columns: 1fr;
-        gap: 0.5rem;
-        max-height: 13rem;
-        overflow-y: auto;
-        padding: 0.55rem;
-    }
-
-    .mapillary-sequence-controls,
-    .mapillary-zoom-controls {
-        justify-content: center;
-    }
-
-    .mapillary-view-controls {
-        grid-template-columns: repeat(3, minmax(2.4rem, 3rem));
-        grid-auto-rows: 2.45rem;
-        justify-content: center;
-    }
-
-    .mapillary-control-btn {
-        width: 2.45rem;
-        height: 2.45rem;
     }
 
     #panel-main-menu.-translate-x-80,
