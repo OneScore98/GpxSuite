@@ -117,6 +117,9 @@ let _mapillaryJsWindowResizeHandler = null;
 let _mapillaryCurrentLngLat = null;
 let _mapillaryCurrentBearing = 0;
 let _mapillaryCurrentFov = 70;
+let _trackInteractionsBound = false;
+let _lodInteractionsBound = false;
+let _styleReloadSerial = 0;
 const _mapillarySequenceCache = new Map();
 const APPLICATION_LAYER_ORDER = [
     'mapillary-sequences-layer',
@@ -318,102 +321,123 @@ function _doUpdateMapData() {
 }
 
 export function setupLayers() {
-    map.addSource('gpx-lines', {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] },
-        // tolleranza interna MapLibre: lasciamo il default (0.375).
-        // Il nostro LOD fa già il lavoro pesante; un valore alto qui causerebbe
-        // ulteriori distorsioni a zoom alti (effetto "spigoli" visibili).
-        buffer: 4,
-        tolerance: 0.375
-    });
+    if (!map.getSource('gpx-lines')) {
+        map.addSource('gpx-lines', {
+            type: 'geojson',
+            data: { type: 'FeatureCollection', features: [] },
+            // tolleranza interna MapLibre: lasciamo il default (0.375).
+            // Il nostro LOD fa già il lavoro pesante; un valore alto qui causerebbe
+            // ulteriori distorsioni a zoom alti (effetto "spigoli" visibili).
+            buffer: 4,
+            tolerance: 0.375
+        });
+    }
 
-    map.addLayer({
-        id: 'gpx-lines-layer',
-        type: 'line',
-        source: 'gpx-lines',
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: {
-            'line-color': ['get', 'color'],
-            'line-width': ['get', 'width'],
-            'line-opacity': 0.85
-        }
-    });
+    if (!map.getLayer('gpx-lines-layer')) {
+        map.addLayer({
+            id: 'gpx-lines-layer',
+            type: 'line',
+            source: 'gpx-lines',
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: {
+                'line-color': ['get', 'color'],
+                'line-width': ['get', 'width'],
+                'line-opacity': 0.85
+            }
+        });
+    }
 
-    map.on('click', 'gpx-lines-layer', (e) => {
-        const feature = e.features && e.features[0];
-        const trackId = feature && feature.properties ? feature.properties.trackId : null;
-        const segmentId = feature && feature.properties ? feature.properties.segmentId : null;
-        if (!trackId || isDrawing || isCutting || isBoxDeleting || isAddingWaypoint) return;
-        if (segmentId) {
-            setSegmentActive(trackId, segmentId);
-            return;
-        }
-        setTrackActive(trackId);
-    });
+    if (!_trackInteractionsBound) {
+        _trackInteractionsBound = true;
 
-    map.on('mouseenter', 'gpx-lines-layer', () => {
-        if (!isDrawing && !isCutting && !isBoxDeleting && !isAddingWaypoint) {
-            map.getCanvas().style.cursor = 'pointer';
-        }
-    });
+        map.on('click', 'gpx-lines-layer', (e) => {
+            const feature = e.features && e.features[0];
+            const trackId = feature && feature.properties ? feature.properties.trackId : null;
+            const segmentId = feature && feature.properties ? feature.properties.segmentId : null;
+            if (!trackId || isDrawing || isCutting || isBoxDeleting || isAddingWaypoint) return;
+            if (segmentId) {
+                setSegmentActive(trackId, segmentId);
+                return;
+            }
+            setTrackActive(trackId);
+        });
 
-    map.on('mouseleave', 'gpx-lines-layer', () => {
-        if (!isDrawing && !isCutting && !isBoxDeleting && !isAddingWaypoint) {
-            map.getCanvas().style.cursor = '';
-        }
-    });
+        map.on('mouseenter', 'gpx-lines-layer', () => {
+            if (!isDrawing && !isCutting && !isBoxDeleting && !isAddingWaypoint) {
+                map.getCanvas().style.cursor = 'pointer';
+            }
+        });
 
-    map.addSource('gpx-edit-points', {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] }
-    });
+        map.on('mouseleave', 'gpx-lines-layer', () => {
+            if (!isDrawing && !isCutting && !isBoxDeleting && !isAddingWaypoint) {
+                map.getCanvas().style.cursor = '';
+            }
+        });
+    }
 
-    map.addLayer({
-        id: 'gpx-edit-points-layer',
-        type: 'circle',
-        source: 'gpx-edit-points',
-        paint: {
-            'circle-radius': 5,
-            'circle-color': '#ff3b30',
-            'circle-stroke-width': 1.5,
-            'circle-stroke-color': '#ffffff'
-        }
-    });
+    if (!map.getSource('gpx-edit-points')) {
+        map.addSource('gpx-edit-points', {
+            type: 'geojson',
+            data: { type: 'FeatureCollection', features: [] }
+        });
+    }
+
+    if (!map.getLayer('gpx-edit-points-layer')) {
+        map.addLayer({
+            id: 'gpx-edit-points-layer',
+            type: 'circle',
+            source: 'gpx-edit-points',
+            paint: {
+                'circle-radius': 5,
+                'circle-color': '#ff3b30',
+                'circle-stroke-width': 1.5,
+                'circle-stroke-color': '#ffffff'
+            }
+        });
+    }
 
     setupWaypointLayers();
     bindWaypointInteractions();
     setupMapillaryLayers();
 
-    map.addSource('box-delete-preview', {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] }
-    });
+    if (!map.getSource('box-delete-preview')) {
+        map.addSource('box-delete-preview', {
+            type: 'geojson',
+            data: { type: 'FeatureCollection', features: [] }
+        });
+    }
 
-    map.addLayer({
-        id: 'box-delete-preview-fill',
-        type: 'fill',
-        source: 'box-delete-preview',
-        paint: {
-            'fill-color': '#ef4444',
-            'fill-opacity': 0.16
-        }
-    });
+    if (!map.getLayer('box-delete-preview-fill')) {
+        map.addLayer({
+            id: 'box-delete-preview-fill',
+            type: 'fill',
+            source: 'box-delete-preview',
+            paint: {
+                'fill-color': '#ef4444',
+                'fill-opacity': 0.16
+            }
+        });
+    }
 
-    map.addLayer({
-        id: 'box-delete-preview-line',
-        type: 'line',
-        source: 'box-delete-preview',
-        paint: {
-            'line-color': '#ef4444',
-            'line-width': 2,
-            'line-dasharray': [2, 1]
-        }
-    });
+    if (!map.getLayer('box-delete-preview-line')) {
+        map.addLayer({
+            id: 'box-delete-preview-line',
+            type: 'line',
+            source: 'box-delete-preview',
+            paint: {
+                'line-color': '#ef4444',
+                'line-width': 2,
+                'line-dasharray': [2, 1]
+            }
+        });
+    }
 
     // Switch LOD solo al termine del gesto (no lavoro durante pan/zoom inerziale)
     // `zoomend` scatta quando l'utente smette di interagire e la mappa è stabile.
-    map.on('zoomend', () => applyLodToMap());
+    if (!_lodInteractionsBound) {
+        _lodInteractionsBound = true;
+        map.on('zoomend', () => applyLodToMap());
+    }
 
     // Sincronizza il LOD anche al primo idle (raro caso in cui zoomend non scatta)
     map.once('idle', () => applyLodToMap());
@@ -1224,67 +1248,57 @@ export function closeMapillaryViewer() {
     if (panel) panel.classList.add('hidden');
 }
 
-export function setBaseMap(style) {
-    setCurrentStyle(style);
-    if (!mapLoaded) return;
+function createBaseMapStyle(style, isHybrid) {
+    const baseStyle = {
+        version: 8,
+        glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+        sources: {},
+        layers: []
+    };
 
-    const isHybrid = document.getElementById('toggle-hybrid').checked;
-
-    if (style === 'osm') {
-        map.setStyle({
-            version: 8,
-            glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-            sources: {
-                'osm-raster': {
-                    type: 'raster',
-                    tiles: ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png'],
-                    tileSize: 256,
-                    attribution: '&copy; OpenStreetMap contributors'
-                }
-            },
-            layers: [{ id: 'osm-layer', type: 'raster', source: 'osm-raster' }]
-        });
-    } else if (style === 'sat') {
-        const sources = {
-            'sat-raster': {
-                type: 'raster',
-                tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
-                tileSize: 256,
-                attribution: 'Tiles &copy; Esri'
-            }
+    if (style === 'sat') {
+        baseStyle.sources['sat-raster'] = {
+            type: 'raster',
+            tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+            tileSize: 256,
+            attribution: 'Tiles &copy; Esri'
         };
-        const layers = [{ id: 'sat-layer', type: 'raster', source: 'sat-raster' }];
+        baseStyle.layers.push({ id: 'sat-layer', type: 'raster', source: 'sat-raster' });
+
         if (isHybrid) {
-            sources['hybrid-ref'] = {
+            baseStyle.sources['hybrid-ref'] = {
                 type: 'raster',
                 tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'],
                 tileSize: 256
             };
-            layers.push({ id: 'hybrid-ref-layer', type: 'raster', source: 'hybrid-ref' });
+            baseStyle.layers.push({ id: 'hybrid-ref-layer', type: 'raster', source: 'hybrid-ref' });
         }
-        map.setStyle({
-            version: 8,
-            glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-            sources,
-            layers
-        });
-    } else if (style === 'topo') {
-        map.setStyle({
-            version: 8,
-            glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-            sources: {
-                'topo-raster': {
-                    type: 'raster',
-                    tiles: ['https://a.tile.opentopomap.org/{z}/{x}/{y}.png'],
-                    tileSize: 256,
-                    attribution: 'Map data &copy; OpenTopoMap'
-                }
-            },
-            layers: [{ id: 'topo-layer', type: 'raster', source: 'topo-raster' }]
-        });
+        return baseStyle;
     }
 
-    map.once('style.load', () => {
+    if (style === 'topo') {
+        baseStyle.sources['topo-raster'] = {
+            type: 'raster',
+            tiles: ['https://a.tile.opentopomap.org/{z}/{x}/{y}.png'],
+            tileSize: 256,
+            attribution: 'Map data &copy; OpenTopoMap'
+        };
+        baseStyle.layers.push({ id: 'topo-layer', type: 'raster', source: 'topo-raster' });
+        return baseStyle;
+    }
+
+    baseStyle.sources['osm-raster'] = {
+        type: 'raster',
+        tiles: ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        attribution: '&copy; OpenStreetMap contributors'
+    };
+    baseStyle.layers.push({ id: 'osm-layer', type: 'raster', source: 'osm-raster' });
+    return baseStyle;
+}
+
+function setupStyleDependentLayers() {
+    if (!map.getSource('terrain-nextzen')) {
         map.addSource('terrain-nextzen', {
             type: 'raster-dem',
             tiles: [NEXTZEN_TERRAIN_SOURCE],
@@ -1292,28 +1306,50 @@ export function setBaseMap(style) {
             maxzoom: 14,
             encoding: 'terrarium'
         });
+    }
 
+    if (!map.getSource('waymarked-hiking')) {
         map.addSource('waymarked-hiking', {
             type: 'raster',
             tiles: ['https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png'],
             tileSize: 256
         });
+    }
+
+    if (!map.getLayer('hiking-trails-layer')) {
+        const hikingToggle = document.getElementById('toggle-hiking-trails');
         map.addLayer({
             id: 'hiking-trails-layer',
             type: 'raster',
             source: 'waymarked-hiking',
             paint: { 'raster-opacity': 0.8 },
-            layout: { visibility: document.getElementById('toggle-hiking-trails').checked ? 'visible' : 'none' }
+            layout: { visibility: hikingToggle?.checked ? 'visible' : 'none' }
         });
+    }
+}
 
-        setupLayers();
+function restoreApplicationLayersAfterStyleLoad(reloadSerial) {
+    if (reloadSerial !== _styleReloadSerial) return;
 
-        if (is3D) {
-            map.setTerrain({ source: 'terrain-nextzen', exaggeration: 1.2 });
-        }
+    setupStyleDependentLayers();
+    setupLayers();
 
-        updateMapData(true);
-    });
+    if (is3D && map.getSource('terrain-nextzen')) {
+        map.setTerrain({ source: 'terrain-nextzen', exaggeration: 1.2 });
+    }
+
+    updateMapData(true);
+}
+
+export function setBaseMap(style) {
+    setCurrentStyle(style);
+    if (!mapLoaded) return;
+
+    const isHybrid = document.getElementById('toggle-hybrid').checked;
+    const reloadSerial = ++_styleReloadSerial;
+
+    map.once('style.load', () => restoreApplicationLayersAfterStyleLoad(reloadSerial));
+    map.setStyle(createBaseMapStyle(style, isHybrid), { diff: false });
 
     ['osm', 'sat', 'topo'].forEach(s => {
         const el = document.getElementById(`map-style-${s}`);
