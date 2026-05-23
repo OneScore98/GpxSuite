@@ -4,8 +4,10 @@
 import {
     tracks,
     activeTrackId,
-    activeWpForEdit, setActiveWpForEdit,
-    isAddingWaypoint, setIsAddingWaypoint,
+    activeWpForEdit,
+    setActiveWpForEdit,
+    isAddingWaypoint,
+    setIsAddingWaypoint,
     isDrawing,
     isCutting,
     isBoxDeleting,
@@ -57,8 +59,8 @@ function findWaypoint(trackId, wpId) {
 }
 
 function getWaypointFeatureFromEvent(e) {
-    const feature = e?.features?.[0];
-    if (!feature?.properties) return null;
+    const feature = e ? .features ? .[0];
+    if (!feature ? .properties) return null;
     const trackId = feature.properties.trackId;
     const wpId = feature.properties.wpId;
     if (!trackId || !wpId) return null;
@@ -93,10 +95,12 @@ export async function addWaypointAtCoords(lon, lat) {
 }
 
 export function setupWaypointLayers() {
+    const initialWpData = buildWaypointFeatureCollection();
+
     if (!map.getSource('gpx-waypoints')) {
         map.addSource('gpx-waypoints', {
             type: 'geojson',
-            data: { type: 'FeatureCollection', features: [] },
+            data: initialWpData,
             cluster: true,
             clusterMaxZoom: 11,
             clusterRadius: 42
@@ -111,16 +115,14 @@ export function setupWaypointLayers() {
             filter: ['has', 'point_count'],
             paint: {
                 'circle-radius': [
-                    'step',
-                    ['get', 'point_count'],
+                    'step', ['get', 'point_count'],
                     14,
                     10, 17,
                     50, 21,
                     200, 25
                 ],
                 'circle-color': [
-                    'step',
-                    ['get', 'point_count'],
+                    'step', ['get', 'point_count'],
                     '#38bdf8',
                     10, '#22c55e',
                     50, '#f59e0b',
@@ -140,16 +142,14 @@ export function setupWaypointLayers() {
             filter: ['has', 'point_count'],
             paint: {
                 'circle-radius': [
-                    'step',
-                    ['get', 'point_count'],
+                    'step', ['get', 'point_count'],
                     10,
                     10, 12,
                     50, 15,
                     200, 18
                 ],
                 'circle-color': [
-                    'step',
-                    ['get', 'point_count'],
+                    'step', ['get', 'point_count'],
                     '#0284c7',
                     10, '#16a34a',
                     50, '#d97706',
@@ -157,8 +157,7 @@ export function setupWaypointLayers() {
                 ],
                 'circle-opacity': 0.94,
                 'circle-stroke-width': [
-                    'interpolate',
-                    ['linear'],
+                    'interpolate', ['linear'],
                     ['zoom'],
                     4, 1.5,
                     12, 2.5
@@ -177,8 +176,7 @@ export function setupWaypointLayers() {
             layout: {
                 'text-field': ['get', 'point_count_abbreviated'],
                 'text-size': [
-                    'step',
-                    ['get', 'point_count'],
+                    'step', ['get', 'point_count'],
                     11,
                     50, 12,
                     200, 13
@@ -219,8 +217,7 @@ export function setupWaypointLayers() {
             minzoom: 12,
             paint: {
                 'circle-radius': [
-                    'interpolate',
-                    ['linear'],
+                    'interpolate', ['linear'],
                     ['zoom'],
                     12, 5,
                     14, 7,
@@ -229,8 +226,7 @@ export function setupWaypointLayers() {
                 'circle-color': ['get', 'color'],
                 'circle-opacity': 0.95,
                 'circle-stroke-width': [
-                    'interpolate',
-                    ['linear'],
+                    'interpolate', ['linear'],
                     ['zoom'],
                     6, 1.2,
                     14, 2,
@@ -250,8 +246,7 @@ export function setupWaypointLayers() {
             minzoom: 13,
             paint: {
                 'circle-radius': [
-                    'interpolate',
-                    ['linear'],
+                    'interpolate', ['linear'],
                     ['zoom'],
                     13, 9,
                     14, 11,
@@ -259,8 +254,7 @@ export function setupWaypointLayers() {
                 ],
                 'circle-color': 'rgba(255,255,255,0)',
                 'circle-stroke-width': [
-                    'interpolate',
-                    ['linear'],
+                    'interpolate', ['linear'],
                     ['zoom'],
                     8, 0.5,
                     14, 1.4,
@@ -282,8 +276,7 @@ export function setupWaypointLayers() {
             layout: {
                 'text-field': ['get', 'symbol'],
                 'text-size': [
-                    'interpolate',
-                    ['linear'],
+                    'interpolate', ['linear'],
                     ['zoom'],
                     13, 11,
                     17, 14
@@ -323,9 +316,9 @@ export function bindWaypointInteractions() {
     });
 
     map.on('click', 'gpx-waypoints-cluster-layer', (e) => {
-        const feature = e?.features?.[0];
-        const clusterId = feature?.properties?.cluster_id;
-        const coords = feature?.geometry?.coordinates;
+        const feature = e ? .features ? .[0];
+        const clusterId = feature ? .properties ? .cluster_id;
+        const coords = feature ? .geometry ? .coordinates;
         const src = map.getSource('gpx-waypoints');
         if (!src || clusterId === undefined || !coords) return;
         src.getClusterExpansionZoom(clusterId, (err, zoom) => {

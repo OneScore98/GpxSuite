@@ -18,10 +18,14 @@ import {
     MAPILLARY_TILES_URL,
     MAPILLARY_TOKEN_KEY,
     map,
-    is3D, setIs3D,
-    currentStyle, setCurrentStyle,
-    isMapillaryVisible, setIsMapillaryVisible,
-    mapillaryToken, setMapillaryToken,
+    is3D,
+    setIs3D,
+    currentStyle,
+    setCurrentStyle,
+    isMapillaryVisible,
+    setIsMapillaryVisible,
+    mapillaryToken,
+    setMapillaryToken,
     tracks,
     mapLoaded,
     activeTrackId,
@@ -45,40 +49,51 @@ function rdpIterative(points, tolerance) {
     const keep = new Uint8Array(n);
     keep[0] = 1;
     keep[n - 1] = 1;
-    const stack = [[0, n - 1]];
+    const stack = [
+        [0, n - 1]
+    ];
     while (stack.length) {
         const [start, end] = stack.pop();
-        const x1 = points[start].lon, y1 = points[start].lat;
-        const x2 = points[end].lon,   y2 = points[end].lat;
-        const dx = x2 - x1, dy = y2 - y1;
+        const x1 = points[start].lon,
+            y1 = points[start].lat;
+        const x2 = points[end].lon,
+            y2 = points[end].lat;
+        const dx = x2 - x1,
+            dy = y2 - y1;
         const lenSq = dx * dx + dy * dy;
-        let dmax = 0, index = start;
+        let dmax = 0,
+            index = start;
         for (let i = start + 1; i < end; i++) {
-            const px = points[i].lon - x1, py = points[i].lat - y1;
+            const px = points[i].lon - x1,
+                py = points[i].lat - y1;
             let d;
             if (lenSq === 0) {
                 d = px * px + py * py;
             } else {
                 const t = Math.max(0, Math.min(1, (px * dx + py * dy) / lenSq));
-                const ex = px - t * dx, ey = py - t * dy;
+                const ex = px - t * dx,
+                    ey = py - t * dy;
                 d = ex * ex + ey * ey;
             }
-            if (d > dmax) { dmax = d; index = i; }
+            if (d > dmax) { dmax = d;
+                index = i; }
         }
         if (dmax > tol2) {
             keep[index] = 1;
             if (index - start > 1) stack.push([start, index]);
-            if (end - index > 1)   stack.push([index, end]);
+            if (end - index > 1) stack.push([index, end]);
         }
     }
     // Bypass: se stiamo riducendo poco (es. <10%), restituiamo l'array originale
     // per evitare un'allocazione completa
     let kept = 0;
-    for (let i = 0; i < n; i++) if (keep[i]) kept++;
+    for (let i = 0; i < n; i++)
+        if (keep[i]) kept++;
     if (kept === n) return points;
     const result = new Array(kept);
     let j = 0;
-    for (let i = 0; i < n; i++) if (keep[i]) result[j++] = points[i];
+    for (let i = 0; i < n; i++)
+        if (keep[i]) result[j++] = points[i];
     return result;
 }
 
@@ -92,16 +107,16 @@ function rdpIterative(points, tolerance) {
 //   LOD 4 (z 14+)   : nessuna decimazione  — tutti i punti
 
 const LOD_LEVELS = [
-    { tol: 0.005,    minZoom: 0  },
-    { tol: 0.0015,   minZoom: 7  },
-    { tol: 0.0005,   minZoom: 10 },
-    { tol: 0.00015,  minZoom: 12 },
-    { tol: 0,        minZoom: 14 }
+    { tol: 0.005, minZoom: 0 },
+    { tol: 0.0015, minZoom: 7 },
+    { tol: 0.0005, minZoom: 10 },
+    { tol: 0.00015, minZoom: 12 },
+    { tol: 0, minZoom: 14 }
 ];
 
 let _lodCache = new Array(LOD_LEVELS.length).fill(null);
 let _currentLod = -1;
-let _cacheDataVersion = 0;   // incrementato ogni volta che i dati cambiano
+let _cacheDataVersion = 0; // incrementato ogni volta che i dati cambiano
 let _cacheBuildVersion = -1; // versione che la cache ha attualmente
 let _idleHandle = null;
 let _mapillaryInteractionsBound = false;
@@ -249,11 +264,11 @@ function schedulePrebuildOtherLods(skipIndex) {
 function applyLodToMap(forceReload = false) {
     if (!mapLoaded) return;
     const zoom = map.getZoom();
-    const lod  = lodForZoom(zoom);
+    const lod = lodForZoom(zoom);
     if (!forceReload && lod === _currentLod && _cacheBuildVersion === _cacheDataVersion) return;
     _currentLod = lod;
     const data = ensureLodBuilt(lod);
-    const src  = map.getSource('gpx-lines');
+    const src = map.getSource('gpx-lines');
     if (src) src.setData(data);
     schedulePrebuildOtherLods(lod);
 }
@@ -321,10 +336,17 @@ function _doUpdateMapData() {
 }
 
 export function setupLayers() {
+    let initialGpxData = { type: 'FeatureCollection', features: [] };
+    if (mapLoaded) {
+        const zoom = map.getZoom();
+        const lod = lodForZoom(zoom);
+        initialGpxData = ensureLodBuilt(lod);
+    }
+
     if (!map.getSource('gpx-lines')) {
         map.addSource('gpx-lines', {
             type: 'geojson',
-            data: { type: 'FeatureCollection', features: [] },
+            data: initialGpxData,
             // tolleranza interna MapLibre: lasciamo il default (0.375).
             // Il nostro LOD fa già il lavoro pesante; un valore alto qui causerebbe
             // ulteriori distorsioni a zoom alti (effetto "spigoli" visibili).
@@ -375,10 +397,35 @@ export function setupLayers() {
         });
     }
 
+    let initialEditData = { type: 'FeatureCollection', features: [] };
+    if (mapLoaded && isDrawing) {
+        const pointsFeatures = [];
+        for (let ti = 0; ti < tracks.length; ti++) {
+            const track = tracks[ti];
+            if (track.id !== activeTrackId) continue;
+            for (let si = 0; si < track.segments.length; si++) {
+                const seg = track.segments[si];
+                if (seg.id !== activeSegmentId) continue;
+                const pts = seg.points;
+                for (let i = 0; i < pts.length; i++) {
+                    const p = pts[i];
+                    if (p.isUserClicked) {
+                        pointsFeatures.push({
+                            type: 'Feature',
+                            properties: { pointIndex: i, segmentId: seg.id, trackId: track.id },
+                            geometry: { type: 'Point', coordinates: [p.lon, p.lat] }
+                        });
+                    }
+                }
+            }
+        }
+        initialEditData.features = pointsFeatures;
+    }
+
     if (!map.getSource('gpx-edit-points')) {
         map.addSource('gpx-edit-points', {
             type: 'geojson',
-            data: { type: 'FeatureCollection', features: [] }
+            data: initialEditData
         });
     }
 
@@ -466,13 +513,15 @@ export function updateBoxDeletePreview(startLngLat, endLngLat) {
             properties: {},
             geometry: {
                 type: 'Polygon',
-                coordinates: [[
-                    [minLng, minLat],
-                    [maxLng, minLat],
-                    [maxLng, maxLat],
-                    [minLng, maxLat],
-                    [minLng, minLat]
-                ]]
+                coordinates: [
+                    [
+                        [minLng, minLat],
+                        [maxLng, minLat],
+                        [maxLng, maxLat],
+                        [minLng, maxLat],
+                        [minLng, minLat]
+                    ]
+                ]
             }
         }]
     });
@@ -512,8 +561,8 @@ function mapillaryDestination(lngLat, bearingDeg, distanceMeters) {
     const lon1 = lngLat.lng * Math.PI / 180;
     const angularDistance = distanceMeters / radius;
     const lat2 = Math.asin(
-        Math.sin(lat1) * Math.cos(angularDistance)
-        + Math.cos(lat1) * Math.sin(angularDistance) * Math.cos(bearing)
+        Math.sin(lat1) * Math.cos(angularDistance) +
+        Math.cos(lat1) * Math.sin(angularDistance) * Math.cos(bearing)
     );
     const lon2 = lon1 + Math.atan2(
         Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(lat1),
@@ -525,8 +574,8 @@ function mapillaryDestination(lngLat, bearingDeg, distanceMeters) {
 function getMapillaryHorizontalFov() {
     const verticalFov = Number.isFinite(_mapillaryCurrentFov) ? _mapillaryCurrentFov : 70;
     const container = document.getElementById('mapillary-js-viewer');
-    const width = container?.offsetWidth || 1;
-    const height = container?.offsetHeight || 1;
+    const width = container ? .offsetWidth || 1;
+    const height = container ? .offsetHeight || 1;
     const aspect = height === 0 ? 1 : width / height;
     const verticalRad = verticalFov * Math.PI / 180;
     return Math.atan(aspect * Math.tan(0.5 * verticalRad)) * 2 * 180 / Math.PI;
@@ -539,7 +588,9 @@ function buildMapillaryCurrentFovFeatureCollection() {
     const radius = 70;
     const start = bearing - fov / 2;
     const steps = 18;
-    const coordinates = [[_mapillaryCurrentLngLat.lng, _mapillaryCurrentLngLat.lat]];
+    const coordinates = [
+        [_mapillaryCurrentLngLat.lng, _mapillaryCurrentLngLat.lat]
+    ];
     for (let i = 0; i <= steps; i++) {
         coordinates.push(mapillaryDestination(_mapillaryCurrentLngLat, start + (fov * i / steps), radius));
     }
@@ -567,7 +618,7 @@ function refreshMapillaryCurrentSources() {
 
 function centerMapOnMapillaryIfNeeded(lngLat) {
     if (!mapLoaded || !lngLat || !Number.isFinite(lngLat.lng) || !Number.isFinite(lngLat.lat)) return;
-    const bounds = map.getBounds?.();
+    const bounds = map.getBounds ? .();
     if (bounds && !bounds.contains([lngLat.lng, lngLat.lat])) {
         map.easeTo({ center: [lngLat.lng, lngLat.lat], duration: 450 });
     }
@@ -600,21 +651,21 @@ function normalizeMapillaryBearing(value) {
 }
 
 function getMapillaryImageLngLat(image) {
-    return image?.lngLat
-        || image?.computedLngLat
-        || image?.originalLngLat
-        || image?.computed_geometry
-        || image?.computedGeometry
-        || image?.geometry;
+    return image ? .lngLat ||
+        image ? .computedLngLat ||
+        image ? .originalLngLat ||
+        image ? .computed_geometry ||
+        image ? .computedGeometry ||
+        image ? .geometry;
 }
 
 function getMapillaryImageBearing(image) {
     return normalizeMapillaryBearing(
-        image?.computed_compass_angle
-        ?? image?.computedCompassAngle
-        ?? image?.compass_angle
-        ?? image?.compassAngle
-        ?? image?.bearing
+        image ? .computed_compass_angle ?
+        ? image ? .computedCompassAngle ?
+        ? image ? .compass_angle ?
+        ? image ? .compassAngle ?
+        ? image ? .bearing
     );
 }
 
@@ -677,7 +728,9 @@ function setupMapillaryLayers() {
             },
             paint: {
                 'line-color': '#05cb63',
-                'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.2, 14, 3],
+                'line-width': ['interpolate', ['linear'],
+                    ['zoom'], 6, 1.2, 14, 3
+                ],
                 'line-opacity': 0.72
             }
         });
@@ -692,7 +745,9 @@ function setupMapillaryLayers() {
             minzoom: 13,
             layout: { visibility: mapillaryVisibility() },
             paint: {
-                'circle-radius': ['interpolate', ['linear'], ['zoom'], 13, 2.5, 17, 5.5],
+                'circle-radius': ['interpolate', ['linear'],
+                    ['zoom'], 13, 2.5, 17, 5.5
+                ],
                 'circle-color': '#05cb63',
                 'circle-stroke-color': '#042f1a',
                 'circle-stroke-width': 1,
@@ -837,19 +892,19 @@ function bindMapillaryInteractions() {
     map.on('click', 'mapillary-images-layer', (e) => {
         if (!isMapillaryVisible || isDrawing || isCutting || isBoxDeleting || isAddingWaypoint) return;
         const feature = e.features && e.features[0];
-        const imageId = feature?.properties?.id || feature?.properties?.image_id || feature?.properties?.key;
+        const imageId = feature ? .properties ? .id || feature ? .properties ? .image_id || feature ? .properties ? .key;
         if (!imageId) {
             showToast("Immagine Mapillary senza ID interrogabile", "error");
             return;
         }
         e.preventDefault();
-        updateMapillaryCurrentMarker(feature.geometry, imageId, feature.properties?.computed_compass_angle || feature.properties?.compass_angle);
+        updateMapillaryCurrentMarker(feature.geometry, imageId, feature.properties ? .computed_compass_angle || feature.properties ? .compass_angle);
         openMapillaryImage(String(imageId));
     });
 }
 
 function getMapillaryJsApi() {
-    return window.mapillary?.Viewer ? window.mapillary : (window.Mapillary?.Viewer ? window.Mapillary : null);
+    return window.mapillary ? .Viewer ? window.mapillary : (window.Mapillary ? .Viewer ? window.Mapillary : null);
 }
 
 function getMapillaryComponentOptions() {
@@ -908,10 +963,10 @@ async function syncMapillaryViewerImage(image = null) {
     if (!_mapillaryJsViewer) return;
     try {
         const currentImage = image || await _mapillaryJsViewer.getImage();
-        updateMapillaryViewerHeader(currentImage?.id || _mapillaryCurrentImageId);
+        updateMapillaryViewerHeader(currentImage ? .id || _mapillaryCurrentImageId);
         updateMapillaryCurrentMarker(
             getMapillaryImageLngLat(currentImage),
-            currentImage?.id,
+            currentImage ? .id,
             getMapillaryImageBearing(currentImage)
         );
     } catch {
@@ -933,7 +988,7 @@ async function syncMapillaryViewerPov() {
     if (!_mapillaryJsViewer || typeof _mapillaryJsViewer.getPointOfView !== 'function') return;
     try {
         const pov = await _mapillaryJsViewer.getPointOfView();
-        updateMapillaryCurrentBearing(pov?.bearing);
+        updateMapillaryCurrentBearing(pov ? .bearing);
     } catch {
         // Il punto di vista non è disponibile durante alcune transizioni.
     }
@@ -960,7 +1015,7 @@ function bindMapillaryJsEvents() {
     if (!_mapillaryJsViewer || _mapillaryJsViewer._gpxSuiteEventsBound) return;
     _mapillaryJsViewer._gpxSuiteEventsBound = true;
     _mapillaryJsViewer.on('load', () => { syncMapillaryViewerToMap(); });
-    _mapillaryJsViewer.on('image', event => { syncMapillaryViewerToMap(event?.image); });
+    _mapillaryJsViewer.on('image', event => { syncMapillaryViewerToMap(event ? .image); });
     _mapillaryJsViewer.on('position', syncMapillaryViewerPosition);
     _mapillaryJsViewer.on('pov', syncMapillaryViewerPov);
     _mapillaryJsViewer.on('fov', syncMapillaryViewerFov);
@@ -970,7 +1025,7 @@ function bindMapillaryJsEvents() {
 
 async function openMapillaryJsViewer(imageId) {
     const api = getMapillaryJsApi();
-    if (!api?.Viewer) throw new Error('MapillaryJS non disponibile');
+    if (!api ? .Viewer) throw new Error('MapillaryJS non disponibile');
 
     const panel = document.getElementById('panel-mapillary-viewer');
     const jsContainer = document.getElementById('mapillary-js-viewer');
@@ -981,8 +1036,8 @@ async function openMapillaryJsViewer(imageId) {
     panel.classList.remove('hidden');
     setMapillaryViewerOpen(true);
     jsContainer.classList.remove('hidden');
-    image?.classList.add('hidden');
-    placeholder?.classList.add('hidden');
+    image ? .classList.add('hidden');
+    placeholder ? .classList.add('hidden');
     updateMapillaryViewerHeader(imageId);
 
     if (!_mapillaryJsViewer) {
@@ -1006,7 +1061,7 @@ async function openMapillaryJsViewer(imageId) {
         const image = await _mapillaryJsViewer.getImage();
         updateMapillaryCurrentMarker(
             getMapillaryImageLngLat(image),
-            image?.id || imageId,
+            image ? .id || imageId,
             getMapillaryImageBearing(image)
         );
     } catch {
@@ -1051,11 +1106,11 @@ async function fetchMapillarySequenceIds(sequenceId) {
         const data = await response.json();
         if (Array.isArray(data.data)) {
             for (let i = 0; i < data.data.length; i++) {
-                const id = data.data[i]?.id || data.data[i]?.image_id;
+                const id = data.data[i] ? .id || data.data[i] ? .image_id;
                 if (id) ids.push(String(id));
             }
         }
-        url = data.paging?.next || '';
+        url = data.paging ? .next || '';
     }
 
     _mapillarySequenceCache.set(sequenceId, ids);
@@ -1091,10 +1146,10 @@ function setMapillaryPanelLoading(imageId, options = {}) {
     if (!panel) return;
     panel.classList.remove('hidden');
     setMapillaryViewerOpen(true);
-    document.getElementById('mapillary-js-viewer')?.classList.add('hidden');
+    document.getElementById('mapillary-js-viewer') ? .classList.add('hidden');
     const image = document.getElementById('mapillary-image');
     const placeholder = document.getElementById('mapillary-placeholder');
-    const keepCurrentVisible = options.keepCurrentVisible === true && image?.src && !image.classList.contains('hidden');
+    const keepCurrentVisible = options.keepCurrentVisible === true && image ? .src && !image.classList.contains('hidden');
 
     if (keepCurrentVisible) {
         placeholder.classList.add('hidden');
@@ -1143,17 +1198,17 @@ async function openMapillaryImageFallback(imageId, options = {}) {
             image.classList.remove('hidden');
             placeholder.classList.add('hidden');
             _mapillaryCurrentImageId = String(data.id || imageId);
-            updateMapillaryCurrentMarker(data.computed_geometry || data.geometry, data.id || imageId, data.computed_compass_angle ?? data.compass_angle);
+            updateMapillaryCurrentMarker(data.computed_geometry || data.geometry, data.id || imageId, data.computed_compass_angle ? ? data.compass_angle);
         } else {
             image.classList.add('hidden');
             placeholder.classList.remove('hidden');
             placeholder.textContent = 'Anteprima non disponibile per questa immagine.';
             _mapillaryCurrentImageId = String(data.id || imageId);
-            updateMapillaryCurrentMarker(data.computed_geometry || data.geometry, data.id || imageId, data.computed_compass_angle ?? data.compass_angle);
+            updateMapillaryCurrentMarker(data.computed_geometry || data.geometry, data.id || imageId, data.computed_compass_angle ? ? data.compass_angle);
         }
         document.getElementById('mapillary-title').textContent = `Mapillary ${data.id || imageId}`;
         document.getElementById('mapillary-date').textContent = formatMapillaryDate(data.captured_at);
-        document.getElementById('mapillary-author').textContent = data.creator?.username ? `di ${data.creator.username}` : '';
+        document.getElementById('mapillary-author').textContent = data.creator ? .username ? `di ${data.creator.username}` : '';
         document.getElementById('mapillary-open-link').href = `https://www.mapillary.com/app/?pKey=${encodeURIComponent(data.id || imageId)}`;
         await loadMapillarySequence(data.sequence, String(data.id || imageId), requestSerial);
     } catch (err) {
@@ -1178,7 +1233,7 @@ async function openMapillaryImage(imageId, options = {}) {
         return;
     }
 
-    if (!options.forceFallback && getMapillaryJsApi()?.Viewer) {
+    if (!options.forceFallback && getMapillaryJsApi() ? .Viewer) {
         try {
             stopMapillaryPlayback();
             await openMapillaryJsViewer(imageId);
@@ -1323,7 +1378,7 @@ function setupStyleDependentLayers() {
             type: 'raster',
             source: 'waymarked-hiking',
             paint: { 'raster-opacity': 0.8 },
-            layout: { visibility: hikingToggle?.checked ? 'visible' : 'none' }
+            layout: { visibility: hikingToggle ? .checked ? 'visible' : 'none' }
         });
     }
 }
@@ -1338,7 +1393,13 @@ function restoreApplicationLayersAfterStyleLoad(reloadSerial) {
         map.setTerrain({ source: 'terrain-nextzen', exaggeration: 1.2 });
     }
 
-    updateMapData(true);
+    // Timeout necessario per aggirare la race condition di MapLibre WebWorker 
+    // dove le chiamate a setData sincrone dopo addSource vengono scartate
+    setTimeout(() => {
+        if (reloadSerial === _styleReloadSerial) {
+            updateMapData(true);
+        }
+    }, 50);
 }
 
 export function setBaseMap(style) {
@@ -1353,9 +1414,9 @@ export function setBaseMap(style) {
 
     ['osm', 'sat', 'topo'].forEach(s => {
         const el = document.getElementById(`map-style-${s}`);
-        el.className = s === style
-            ? "text-[10px] font-bold py-1.5 px-1 rounded-md text-center bg-blue-600 text-white transition-all"
-            : "text-[10px] font-medium py-1.5 px-1 rounded-md text-center text-gray-400 hover:text-white transition-all";
+        el.className = s === style ?
+            "text-[10px] font-bold py-1.5 px-1 rounded-md text-center bg-blue-600 text-white transition-all" :
+            "text-[10px] font-medium py-1.5 px-1 rounded-md text-center text-gray-400 hover:text-white transition-all";
     });
 
     document.getElementById('sat-options-container').className =
@@ -1388,12 +1449,12 @@ export function setDimensionMode(enable3D, options = {}) {
         map.easeTo({ pitch: 0, bearing: 0, duration: 800 });
     }
 
-    document.getElementById('view-mode-2d').className = !enable3D
-        ? "text-xs font-medium py-1 px-2 rounded bg-blue-600 text-white"
-        : "text-xs font-medium py-1 px-2 rounded text-gray-400 hover:text-white";
-    document.getElementById('view-mode-3d').className = enable3D
-        ? "text-xs font-medium py-1 px-2 rounded bg-blue-600 text-white"
-        : "text-xs font-medium py-1 px-2 rounded text-gray-400 hover:text-white";
+    document.getElementById('view-mode-2d').className = !enable3D ?
+        "text-xs font-medium py-1 px-2 rounded bg-blue-600 text-white" :
+        "text-xs font-medium py-1 px-2 rounded text-gray-400 hover:text-white";
+    document.getElementById('view-mode-3d').className = enable3D ?
+        "text-xs font-medium py-1 px-2 rounded bg-blue-600 text-white" :
+        "text-xs font-medium py-1 px-2 rounded text-gray-400 hover:text-white";
 
     schedulePersistAppSession();
 }
