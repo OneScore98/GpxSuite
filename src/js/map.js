@@ -114,8 +114,12 @@ let _mapillaryPlayTimer = null;
 let _mapillaryRequestSerial = 0;
 let _mapillaryJsViewer = null;
 let _mapillaryJsResizeObserver = null;
+let _mapillaryUsingJsViewer = false;
+let _mapillaryJsMoveInFlight = false;
 let _mapillaryCurrentLngLat = null;
 let _mapillaryCurrentBearing = 0;
+let _mapillaryFallbackScale = 1;
+let _mapillaryFallbackOffset = { x: 0, y: 0 };
 const _mapillarySequenceCache = new Map();
 const APPLICATION_LAYER_ORDER = [
     'mapillary-sequences-layer',
@@ -720,7 +724,7 @@ function getMapillaryComponentOptions() {
             }
         },
         cover: false,
-        direction: true,
+        direction: false,
         fallback: {
             image: true,
             navigation: true
@@ -730,16 +734,11 @@ function getMapillaryComponentOptions() {
         marker: true,
         pointer: true,
         popup: true,
-        sequence: {
-            maxWidth: 180,
-            minWidth: 96,
-            playing: false,
-            visible: true
-        },
-        slider: true,
+        sequence: false,
+        slider: false,
         spatial: true,
         tag: true,
-        zoom: true
+        zoom: false
     };
 }
 
@@ -757,6 +756,43 @@ function setMapillaryViewerOpen(isOpen) {
     document.body.classList.toggle('mapillary-viewer-open', Boolean(isOpen));
 }
 
+function clampMapillaryValue(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+}
+
+function isMapillaryJsViewerActive() {
+    const container = document.getElementById('mapillary-js-viewer');
+    return Boolean(_mapillaryUsingJsViewer && _mapillaryJsViewer && container && !container.classList.contains('hidden'));
+}
+
+function getMapillaryNavigationDirection(name) {
+    const api = getMapillaryJsApi();
+    const direction = api?.NavigationDirection;
+    const fallback = {
+        Next: 0,
+        Prev: 1,
+        StepLeft: 2,
+        StepRight: 3,
+        StepForward: 4,
+        StepBackward: 5,
+        TurnLeft: 6,
+        TurnRight: 7
+    };
+    return direction && name in direction ? direction[name] : fallback[name];
+}
+
+function applyMapillaryFallbackTransform() {
+    const image = document.getElementById('mapillary-image');
+    if (!image) return;
+    image.style.transform = `translate(${_mapillaryFallbackOffset.x}px, ${_mapillaryFallbackOffset.y}px) scale(${_mapillaryFallbackScale})`;
+}
+
+function resetMapillaryFallbackView() {
+    _mapillaryFallbackScale = 1;
+    _mapillaryFallbackOffset = { x: 0, y: 0 };
+    applyMapillaryFallbackTransform();
+}
+
 function resetMapillaryJsViewer() {
     if (_mapillaryJsResizeObserver) {
         _mapillaryJsResizeObserver.disconnect();
@@ -766,6 +802,8 @@ function resetMapillaryJsViewer() {
         try { _mapillaryJsViewer.remove(); } catch (err) { console.error('Errore chiusura MapillaryJS:', err); }
     }
     _mapillaryJsViewer = null;
+    _mapillaryUsingJsViewer = false;
+    _mapillaryJsMoveInFlight = false;
     const container = document.getElementById('mapillary-js-viewer');
     if (container) {
         container.replaceChildren();
@@ -797,6 +835,7 @@ function bindMapillaryJsEvents() {
                 image?.id,
                 getMapillaryImageBearing(image)
             );
+            updateMapillaryControls();
         } catch {
             // MapillaryJS può emettere eventi intermedi durante il cambio immagine.
         }
@@ -811,16 +850,20 @@ async function openMapillaryJsViewer(imageId) {
     const jsContainer = document.getElementById('mapillary-js-viewer');
     const image = document.getElementById('mapillary-image');
     const placeholder = document.getElementById('mapillary-placeholder');
-    const fallbackControls = document.getElementById('mapillary-fallback-controls');
+    const controlPanel = document.getElementById('mapillary-controls');
     if (!panel || !jsContainer) throw new Error('Container MapillaryJS non disponibile');
 
+    bindMapillaryViewerControls();
     panel.classList.remove('hidden');
     setMapillaryViewerOpen(true);
+    _mapillaryUsingJsViewer = true;
     jsContainer.classList.remove('hidden');
     image?.classList.add('hidden');
     placeholder?.classList.add('hidden');
-    fallbackControls?.classList.add('hidden');
+    controlPanel?.classList.remove('hidden');
+    resetMapillaryFallbackView();
     updateMapillaryViewerHeader(imageId);
+    updateMapillaryControls();
 
     if (!_mapillaryJsViewer) {
         jsContainer.replaceChildren();
@@ -852,6 +895,7 @@ async function openMapillaryJsViewer(imageId) {
     if (typeof _mapillaryJsViewer.resize === 'function') {
         _mapillaryJsViewer.resize();
     }
+    updateMapillaryControls();
 }
 
 function formatMapillaryDate(value) {
@@ -877,6 +921,7 @@ function stopMapillaryPlayback() {
         _mapillaryPlayTimer = null;
     }
     updateMapillaryPlayIcon();
+    updateMapillaryControls();
 }
 
 function updateMapillaryControls() {
@@ -884,15 +929,42 @@ function updateMapillaryControls() {
     const nextBtn = document.getElementById('btn-mapillary-next');
     const playBtn = document.getElementById('btn-mapillary-play');
     const status = document.getElementById('mapillary-sequence-status');
+    const image = document.getElementById('mapillary-image');
+    const jsActive = isMapillaryJsViewerActive();
+    const fallbackImageVisible = Boolean(image?.src && !image.classList.contains('hidden'));
+    const hasCameraControls = jsActive || fallbackImageVisible;
     const total = _mapillarySequenceIds.length;
     const hasSequence = total > 1 && _mapillaryCurrentIndex >= 0;
+    const setDisabled = (id, disabled) => {
+        const btn = document.getElementById(id);
+        if (btn) btn.disabled = Boolean(disabled);
+    };
 
-    if (prevBtn) prevBtn.disabled = !hasSequence || _mapillaryCurrentIndex <= 0;
-    if (nextBtn) nextBtn.disabled = !hasSequence || _mapillaryCurrentIndex >= total - 1;
-    if (playBtn) playBtn.disabled = !hasSequence;
+    if (prevBtn) prevBtn.disabled = jsActive ? _mapillaryJsMoveInFlight : (!hasSequence || _mapillaryCurrentIndex <= 0);
+    if (nextBtn) nextBtn.disabled = jsActive ? _mapillaryJsMoveInFlight : (!hasSequence || _mapillaryCurrentIndex >= total - 1);
+    if (playBtn) playBtn.disabled = jsActive ? false : !hasSequence;
+
+    [
+        'btn-mapillary-pan-left',
+        'btn-mapillary-pan-right',
+        'btn-mapillary-tilt-up',
+        'btn-mapillary-tilt-down',
+        'btn-mapillary-zoom-in',
+        'btn-mapillary-zoom-out',
+        'btn-mapillary-reset-view'
+    ].forEach(id => setDisabled(id, !hasCameraControls));
+
+    [
+        'btn-mapillary-step-back',
+        'btn-mapillary-step-forward',
+        'btn-mapillary-turn-left',
+        'btn-mapillary-turn-right'
+    ].forEach(id => setDisabled(id, !jsActive || _mapillaryJsMoveInFlight));
 
     if (status) {
-        if (!_mapillarySequenceId) {
+        if (jsActive) {
+            status.textContent = _mapillaryPlayTimer ? 'Riproduzione 3D...' : 'Viewer 3D pronto';
+        } else if (!_mapillarySequenceId) {
             status.textContent = 'Sequenza non disponibile';
         } else if (total === 0) {
             status.textContent = 'Caricamento sequenza...';
@@ -905,19 +977,125 @@ function updateMapillaryControls() {
     updateMapillaryPlayIcon();
 }
 
+async function moveMapillaryJsDirection(directionName, options = {}) {
+    if (!isMapillaryJsViewerActive() || _mapillaryJsMoveInFlight) return false;
+    const direction = getMapillaryNavigationDirection(directionName);
+    if (direction === undefined) return false;
+
+    _mapillaryJsMoveInFlight = true;
+    updateMapillaryControls();
+    try {
+        const image = await _mapillaryJsViewer.moveDir(direction);
+        updateMapillaryViewerHeader(image?.id || _mapillaryCurrentImageId);
+        updateMapillaryCurrentMarker(
+            getMapillaryImageLngLat(image),
+            image?.id,
+            getMapillaryImageBearing(image)
+        );
+        return true;
+    } catch (err) {
+        if (!options.keepPlayback) {
+            showToast("Direzione Mapillary non disponibile da questa foto", "info");
+        }
+        return false;
+    } finally {
+        _mapillaryJsMoveInFlight = false;
+        updateMapillaryControls();
+    }
+}
+
+async function panMapillaryView(dx, dy) {
+    if (isMapillaryJsViewerActive() && typeof _mapillaryJsViewer.getCenter === 'function') {
+        try {
+            const center = await _mapillaryJsViewer.getCenter();
+            const nextCenter = [
+                clampMapillaryValue((center?.[0] ?? 0.5) + dx, 0, 1),
+                clampMapillaryValue((center?.[1] ?? 0.5) + dy, 0, 1)
+            ];
+            _mapillaryJsViewer.setCenter(nextCenter);
+        } catch (err) {
+            console.error('Errore pan/tilt Mapillary:', err);
+        }
+        return;
+    }
+
+    const image = document.getElementById('mapillary-image');
+    if (!image?.src || image.classList.contains('hidden')) return;
+    _mapillaryFallbackOffset.x -= dx * 420;
+    _mapillaryFallbackOffset.y -= dy * 420;
+    applyMapillaryFallbackTransform();
+}
+
+async function zoomMapillaryView(delta) {
+    if (isMapillaryJsViewerActive() && typeof _mapillaryJsViewer.getFieldOfView === 'function') {
+        try {
+            const fov = await _mapillaryJsViewer.getFieldOfView();
+            _mapillaryJsViewer.setFieldOfView(clampMapillaryValue(fov + delta, 20, 100));
+        } catch (err) {
+            console.error('Errore zoom Mapillary:', err);
+        }
+        return;
+    }
+
+    const image = document.getElementById('mapillary-image');
+    if (!image?.src || image.classList.contains('hidden')) return;
+    _mapillaryFallbackScale = clampMapillaryValue(_mapillaryFallbackScale + (delta < 0 ? 0.2 : -0.2), 1, 3);
+    applyMapillaryFallbackTransform();
+}
+
+function resetMapillaryView() {
+    if (isMapillaryJsViewerActive()) {
+        if (typeof _mapillaryJsViewer.setCenter === 'function') _mapillaryJsViewer.setCenter([0.5, 0.5]);
+        if (typeof _mapillaryJsViewer.setFieldOfView === 'function') _mapillaryJsViewer.setFieldOfView(70);
+        return;
+    }
+    resetMapillaryFallbackView();
+}
+
 function bindMapillaryViewerControls() {
     if (_mapillaryViewerControlsBound) return;
     _mapillaryViewerControlsBound = true;
 
     document.getElementById('btn-mapillary-prev')?.addEventListener('click', () => {
         stopMapillaryPlayback();
-        openMapillarySequenceOffset(-1);
+        if (isMapillaryJsViewerActive()) {
+            moveMapillaryJsDirection('Prev');
+        } else {
+            openMapillarySequenceOffset(-1);
+        }
     });
     document.getElementById('btn-mapillary-next')?.addEventListener('click', () => {
         stopMapillaryPlayback();
-        openMapillarySequenceOffset(1);
+        if (isMapillaryJsViewerActive()) {
+            moveMapillaryJsDirection('Next');
+        } else {
+            openMapillarySequenceOffset(1);
+        }
     });
     document.getElementById('btn-mapillary-play')?.addEventListener('click', toggleMapillaryPlayback);
+    document.getElementById('btn-mapillary-pan-left')?.addEventListener('click', () => panMapillaryView(-0.08, 0));
+    document.getElementById('btn-mapillary-pan-right')?.addEventListener('click', () => panMapillaryView(0.08, 0));
+    document.getElementById('btn-mapillary-tilt-up')?.addEventListener('click', () => panMapillaryView(0, -0.08));
+    document.getElementById('btn-mapillary-tilt-down')?.addEventListener('click', () => panMapillaryView(0, 0.08));
+    document.getElementById('btn-mapillary-zoom-in')?.addEventListener('click', () => zoomMapillaryView(-10));
+    document.getElementById('btn-mapillary-zoom-out')?.addEventListener('click', () => zoomMapillaryView(10));
+    document.getElementById('btn-mapillary-reset-view')?.addEventListener('click', resetMapillaryView);
+    document.getElementById('btn-mapillary-step-back')?.addEventListener('click', () => {
+        stopMapillaryPlayback();
+        moveMapillaryJsDirection('StepBackward');
+    });
+    document.getElementById('btn-mapillary-step-forward')?.addEventListener('click', () => {
+        stopMapillaryPlayback();
+        moveMapillaryJsDirection('StepForward');
+    });
+    document.getElementById('btn-mapillary-turn-left')?.addEventListener('click', () => {
+        stopMapillaryPlayback();
+        moveMapillaryJsDirection('TurnLeft');
+    });
+    document.getElementById('btn-mapillary-turn-right')?.addEventListener('click', () => {
+        stopMapillaryPlayback();
+        moveMapillaryJsDirection('TurnRight');
+    });
 }
 
 function openMapillarySequenceOffset(offset, options = {}) {
@@ -934,6 +1112,16 @@ function toggleMapillaryPlayback() {
         stopMapillaryPlayback();
         return;
     }
+    if (isMapillaryJsViewerActive()) {
+        _mapillaryPlayTimer = setInterval(async() => {
+            if (_mapillaryJsMoveInFlight) return;
+            const moved = await moveMapillaryJsDirection('Next', { keepPlayback: true });
+            if (!moved) stopMapillaryPlayback();
+        }, 1700);
+        updateMapillaryPlayIcon();
+        updateMapillaryControls();
+        return;
+    }
     if (_mapillarySequenceIds.length < 2 || _mapillaryCurrentIndex < 0) return;
     _mapillaryPlayTimer = setInterval(() => {
         if (_mapillaryCurrentIndex >= _mapillarySequenceIds.length - 1) {
@@ -943,6 +1131,7 @@ function toggleMapillaryPlayback() {
         openMapillarySequenceOffset(1, { keepPlayback: true });
     }, 1600);
     updateMapillaryPlayIcon();
+    updateMapillaryControls();
 }
 
 function setMapillarySequenceState(sequenceId, ids, imageId) {
@@ -1007,8 +1196,10 @@ function setMapillaryPanelLoading(imageId, options = {}) {
     bindMapillaryViewerControls();
     panel.classList.remove('hidden');
     setMapillaryViewerOpen(true);
+    _mapillaryUsingJsViewer = false;
+    _mapillaryJsMoveInFlight = false;
     document.getElementById('mapillary-js-viewer')?.classList.add('hidden');
-    document.getElementById('mapillary-fallback-controls')?.classList.remove('hidden');
+    document.getElementById('mapillary-controls')?.classList.remove('hidden');
     const image = document.getElementById('mapillary-image');
     const placeholder = document.getElementById('mapillary-placeholder');
     const keepCurrentVisible = options.keepCurrentVisible === true && image?.src && !image.classList.contains('hidden');
@@ -1017,6 +1208,7 @@ function setMapillaryPanelLoading(imageId, options = {}) {
         placeholder.classList.add('hidden');
     } else {
         image.classList.add('hidden');
+        resetMapillaryFallbackView();
         placeholder.classList.remove('hidden');
         placeholder.textContent = 'Caricamento immagine Mapillary...';
         document.getElementById('mapillary-title').textContent = `Mapillary ${imageId}`;
@@ -1169,6 +1361,7 @@ export function closeMapillaryViewer() {
     setMapillaryViewerOpen(false);
     const panel = document.getElementById('panel-mapillary-viewer');
     if (panel) panel.classList.add('hidden');
+    document.getElementById('mapillary-controls')?.classList.add('hidden');
 }
 
 export function setBaseMap(style) {
