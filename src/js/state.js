@@ -2,8 +2,8 @@
 
 export const NEXTZEN_TERRAIN_SOURCE = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
 export const OSRM_ENDPOINTS = {
-    foot: 'https://routing.openstreetmap.de/routed-foot/route/v1/driving/',
-    bike: 'https://routing.openstreetmap.de/routed-bicycle/route/v1/driving/',
+    foot: 'https://routing.openstreetmap.de/routed-foot/route/v1/foot/',
+    bike: 'https://routing.openstreetmap.de/routed-bike/route/v1/bike/',
     moto: 'https://routing.openstreetmap.de/routed-car/route/v1/driving/',
     car: 'https://routing.openstreetmap.de/routed-car/route/v1/driving/'
 };

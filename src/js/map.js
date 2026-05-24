@@ -39,7 +39,7 @@ import {
 import { renderGisTree, showToast, isGisTreeVisible, setSegmentActive, setTrackActive } from './ui.js';
 import { updateStatsAndProfile } from './stats.js';
 import { setupWaypointLayers, updateWaypointsOnMap, bindWaypointInteractions } from './waypoints.js';
-import { schedulePersistAppSession } from './storage.js';
+import { schedulePersistAppSession, schedulePersistTracks } from './storage.js';
 
 // ─── RDP iterativo (no ricorsione, no stack overflow) ─────────────────────────
 function rdpIterative(points, tolerance) {
@@ -135,6 +135,10 @@ let _mapillaryCurrentFov = 70;
 let _trackInteractionsBound = false;
 let _lodInteractionsBound = false;
 let _styleReloadSerial = 0;
+let _elevationHydrationTimer = null;
+let _elevationHydrationRunning = false;
+const _elevationLookupDone = new WeakSet();
+const _terrainTileCache = new Map();
 const _mapillarySequenceCache = new Map();
 const APPLICATION_LAYER_ORDER = [
     'mapillary-sequences-layer',
@@ -273,6 +277,161 @@ function applyLodToMap(forceReload = false) {
     schedulePrebuildOtherLods(lod);
 }
 
+function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+}
+
+function terrainTileCoordinate(lon, lat) {
+    const z = 14;
+    const tileSize = 512;
+    const safeLat = clamp(lat, -85.05112878, 85.05112878);
+    const n = 2 ** z;
+    const xFloat = ((lon + 180) / 360) * n;
+    const latRad = safeLat * Math.PI / 180;
+    const yFloat = (1 - Math.log(Math.tan(latRad) + (1 / Math.cos(latRad))) / Math.PI) / 2 * n;
+    const x = clamp(Math.floor(xFloat), 0, n - 1);
+    const y = clamp(Math.floor(yFloat), 0, n - 1);
+    const pixelX = clamp(Math.floor((xFloat - x) * tileSize), 0, tileSize - 1);
+    const pixelY = clamp(Math.floor((yFloat - y) * tileSize), 0, tileSize - 1);
+    return { z, x, y, pixelX, pixelY };
+}
+
+async function loadTerrainTileImageData(z, x, y) {
+    const key = `${z}/${x}/${y}`;
+    if (_terrainTileCache.has(key)) return _terrainTileCache.get(key);
+
+    const promise = (async() => {
+        const url = NEXTZEN_TERRAIN_SOURCE
+            .replace('{z}', z)
+            .replace('{x}', x)
+            .replace('{y}', y);
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`DEM tile ${response.status}`);
+        const blob = await response.blob();
+        const canvas = document.createElement('canvas');
+        let image = null;
+
+        if (typeof createImageBitmap === 'function') {
+            image = await createImageBitmap(blob);
+            canvas.width = image.width;
+            canvas.height = image.height;
+        } else {
+            image = await new Promise((resolve, reject) => {
+                const img = new Image();
+                const objectUrl = URL.createObjectURL(blob);
+                img.onload = () => {
+                    URL.revokeObjectURL(objectUrl);
+                    resolve(img);
+                };
+                img.onerror = () => {
+                    URL.revokeObjectURL(objectUrl);
+                    reject(new Error('DEM image decode failed'));
+                };
+                img.src = objectUrl;
+            });
+            canvas.width = image.naturalWidth || image.width;
+            canvas.height = image.naturalHeight || image.height;
+        }
+
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(image, 0, 0);
+        image.close?.();
+        return {
+            width: canvas.width,
+            height: canvas.height,
+            data: ctx.getImageData(0, 0, canvas.width, canvas.height).data
+        };
+    })().catch(err => {
+        _terrainTileCache.delete(key);
+        throw err;
+    });
+
+    _terrainTileCache.set(key, promise);
+    return promise;
+}
+
+async function queryTerrariumElevation(lon, lat) {
+    const tile = terrainTileCoordinate(lon, lat);
+    const imageData = await loadTerrainTileImageData(tile.z, tile.x, tile.y);
+    const px = clamp(tile.pixelX, 0, imageData.width - 1);
+    const py = clamp(tile.pixelY, 0, imageData.height - 1);
+    const idx = (py * imageData.width + px) * 4;
+    const r = imageData.data[idx];
+    const g = imageData.data[idx + 1];
+    const b = imageData.data[idx + 2];
+    return Math.round((r * 256 + g + b / 256) - 32768);
+}
+
+function segmentHasOnlyMissingElevation(segment) {
+    const points = segment.points || [];
+    if (points.length === 0) return false;
+    for (let i = 0; i < points.length; i++) {
+        const ele = Number(points[i].ele);
+        if (Number.isFinite(ele) && Math.abs(ele) > 0.01) return false;
+    }
+    return true;
+}
+
+function collectMissingElevationPoints(limit = 120) {
+    const candidates = [];
+    for (let ti = 0; ti < tracks.length && candidates.length < limit; ti++) {
+        const track = tracks[ti];
+        if (track.visible === false) continue;
+        for (let si = 0; si < track.segments.length && candidates.length < limit; si++) {
+            const segment = track.segments[si];
+            if (segment.visible === false) continue;
+            const hydrateFlatSegment = track.localSource !== 'imported' && segmentHasOnlyMissingElevation(segment);
+            const points = segment.points || [];
+            for (let pi = 0; pi < points.length && candidates.length < limit; pi++) {
+                const point = points[pi];
+                if (_elevationLookupDone.has(point)) continue;
+                const ele = Number(point.ele);
+                const missing = !Number.isFinite(ele) || (Math.abs(ele) <= 0.01 && (point.needsElevation || point.isUserClicked || hydrateFlatSegment));
+                if (missing && Number.isFinite(point.lon) && Number.isFinite(point.lat)) {
+                    candidates.push(point);
+                }
+            }
+        }
+    }
+    return candidates;
+}
+
+function scheduleMissingElevationHydration() {
+    if (_elevationHydrationRunning || _elevationHydrationTimer !== null) return;
+    if (collectMissingElevationPoints(1).length === 0) return;
+
+    _elevationHydrationTimer = setTimeout(async() => {
+        _elevationHydrationTimer = null;
+        _elevationHydrationRunning = true;
+        let updated = false;
+
+        try {
+            const candidates = collectMissingElevationPoints();
+            for (let i = 0; i < candidates.length; i++) {
+                const point = candidates[i];
+                _elevationLookupDone.add(point);
+                const ele = await queryElevation(point.lon, point.lat);
+                if (Number.isFinite(ele)) {
+                    point.ele = ele;
+                    updated = true;
+                }
+                delete point.needsElevation;
+            }
+        } finally {
+            _elevationHydrationRunning = false;
+        }
+
+        if (updated) {
+            schedulePersistTracks(tracks);
+            updateStatsAndProfile();
+        }
+
+        if (collectMissingElevationPoints(1).length > 0) {
+            scheduleMissingElevationHydration();
+        }
+    }, 250);
+}
+
 // ─── API pubblica ─────────────────────────────────────────────────────────────
 
 // Debounce: se chiamato in sequenza rapida, esegue una volta sola
@@ -295,6 +454,7 @@ function _doUpdateMapData() {
 
     // 2. Applica subito il LOD corrente (solo questo viene costruito sul main thread)
     applyLodToMap(true);
+    scheduleMissingElevationHydration();
 
     // 3. Punti di editing (solo segmento attivo in draw mode)
     const pointsFeatures = [];
@@ -574,8 +734,8 @@ function mapillaryDestination(lngLat, bearingDeg, distanceMeters) {
 function getMapillaryHorizontalFov() {
     const verticalFov = Number.isFinite(_mapillaryCurrentFov) ? _mapillaryCurrentFov : 70;
     const container = document.getElementById('mapillary-js-viewer');
-    const width = container ? .offsetWidth || 1;
-    const height = container ? .offsetHeight || 1;
+    const width = container?.offsetWidth || 1;
+    const height = container?.offsetHeight || 1;
     const aspect = height === 0 ? 1 : width / height;
     const verticalRad = verticalFov * Math.PI / 180;
     return Math.atan(aspect * Math.tan(0.5 * verticalRad)) * 2 * 180 / Math.PI;
@@ -618,7 +778,7 @@ function refreshMapillaryCurrentSources() {
 
 function centerMapOnMapillaryIfNeeded(lngLat) {
     if (!mapLoaded || !lngLat || !Number.isFinite(lngLat.lng) || !Number.isFinite(lngLat.lat)) return;
-    const bounds = map.getBounds ? .();
+    const bounds = map.getBounds?.();
     if (bounds && !bounds.contains([lngLat.lng, lngLat.lat])) {
         map.easeTo({ center: [lngLat.lng, lngLat.lat], duration: 450 });
     }
@@ -651,21 +811,21 @@ function normalizeMapillaryBearing(value) {
 }
 
 function getMapillaryImageLngLat(image) {
-    return image ? .lngLat ||
-        image ? .computedLngLat ||
-        image ? .originalLngLat ||
-        image ? .computed_geometry ||
-        image ? .computedGeometry ||
-        image ? .geometry;
+    return image?.lngLat ||
+        image?.computedLngLat ||
+        image?.originalLngLat ||
+        image?.computed_geometry ||
+        image?.computedGeometry ||
+        image?.geometry;
 }
 
 function getMapillaryImageBearing(image) {
     return normalizeMapillaryBearing(
-        image ? .computed_compass_angle ?
-        ? image ? .computedCompassAngle ?
-        ? image ? .compass_angle ?
-        ? image ? .compassAngle ?
-        ? image ? .bearing
+        image?.computed_compass_angle
+        ?? image?.computedCompassAngle
+        ?? image?.compass_angle
+        ?? image?.compassAngle
+        ?? image?.bearing
     );
 }
 
@@ -892,19 +1052,19 @@ function bindMapillaryInteractions() {
     map.on('click', 'mapillary-images-layer', (e) => {
         if (!isMapillaryVisible || isDrawing || isCutting || isBoxDeleting || isAddingWaypoint) return;
         const feature = e.features && e.features[0];
-        const imageId = feature ? .properties ? .id || feature ? .properties ? .image_id || feature ? .properties ? .key;
+        const imageId = feature?.properties?.id || feature?.properties?.image_id || feature?.properties?.key;
         if (!imageId) {
             showToast("Immagine Mapillary senza ID interrogabile", "error");
             return;
         }
         e.preventDefault();
-        updateMapillaryCurrentMarker(feature.geometry, imageId, feature.properties ? .computed_compass_angle || feature.properties ? .compass_angle);
+        updateMapillaryCurrentMarker(feature.geometry, imageId, feature.properties?.computed_compass_angle || feature.properties?.compass_angle);
         openMapillaryImage(String(imageId));
     });
 }
 
 function getMapillaryJsApi() {
-    return window.mapillary ? .Viewer ? window.mapillary : (window.Mapillary ? .Viewer ? window.Mapillary : null);
+    return window.mapillary?.Viewer ? window.mapillary : (window.Mapillary?.Viewer ? window.Mapillary : null);
 }
 
 function getMapillaryComponentOptions() {
@@ -963,10 +1123,10 @@ async function syncMapillaryViewerImage(image = null) {
     if (!_mapillaryJsViewer) return;
     try {
         const currentImage = image || await _mapillaryJsViewer.getImage();
-        updateMapillaryViewerHeader(currentImage ? .id || _mapillaryCurrentImageId);
+        updateMapillaryViewerHeader(currentImage?.id || _mapillaryCurrentImageId);
         updateMapillaryCurrentMarker(
             getMapillaryImageLngLat(currentImage),
-            currentImage ? .id,
+            currentImage?.id,
             getMapillaryImageBearing(currentImage)
         );
     } catch {
@@ -988,7 +1148,7 @@ async function syncMapillaryViewerPov() {
     if (!_mapillaryJsViewer || typeof _mapillaryJsViewer.getPointOfView !== 'function') return;
     try {
         const pov = await _mapillaryJsViewer.getPointOfView();
-        updateMapillaryCurrentBearing(pov ? .bearing);
+        updateMapillaryCurrentBearing(pov?.bearing);
     } catch {
         // Il punto di vista non è disponibile durante alcune transizioni.
     }
@@ -1015,7 +1175,7 @@ function bindMapillaryJsEvents() {
     if (!_mapillaryJsViewer || _mapillaryJsViewer._gpxSuiteEventsBound) return;
     _mapillaryJsViewer._gpxSuiteEventsBound = true;
     _mapillaryJsViewer.on('load', () => { syncMapillaryViewerToMap(); });
-    _mapillaryJsViewer.on('image', event => { syncMapillaryViewerToMap(event ? .image); });
+    _mapillaryJsViewer.on('image', event => { syncMapillaryViewerToMap(event?.image); });
     _mapillaryJsViewer.on('position', syncMapillaryViewerPosition);
     _mapillaryJsViewer.on('pov', syncMapillaryViewerPov);
     _mapillaryJsViewer.on('fov', syncMapillaryViewerFov);
@@ -1025,7 +1185,7 @@ function bindMapillaryJsEvents() {
 
 async function openMapillaryJsViewer(imageId) {
     const api = getMapillaryJsApi();
-    if (!api ? .Viewer) throw new Error('MapillaryJS non disponibile');
+    if (!api?.Viewer) throw new Error('MapillaryJS non disponibile');
 
     const panel = document.getElementById('panel-mapillary-viewer');
     const jsContainer = document.getElementById('mapillary-js-viewer');
@@ -1036,8 +1196,8 @@ async function openMapillaryJsViewer(imageId) {
     panel.classList.remove('hidden');
     setMapillaryViewerOpen(true);
     jsContainer.classList.remove('hidden');
-    image ? .classList.add('hidden');
-    placeholder ? .classList.add('hidden');
+    image?.classList.add('hidden');
+    placeholder?.classList.add('hidden');
     updateMapillaryViewerHeader(imageId);
 
     if (!_mapillaryJsViewer) {
@@ -1061,7 +1221,7 @@ async function openMapillaryJsViewer(imageId) {
         const image = await _mapillaryJsViewer.getImage();
         updateMapillaryCurrentMarker(
             getMapillaryImageLngLat(image),
-            image ? .id || imageId,
+            image?.id || imageId,
             getMapillaryImageBearing(image)
         );
     } catch {
@@ -1106,11 +1266,11 @@ async function fetchMapillarySequenceIds(sequenceId) {
         const data = await response.json();
         if (Array.isArray(data.data)) {
             for (let i = 0; i < data.data.length; i++) {
-                const id = data.data[i] ? .id || data.data[i] ? .image_id;
+                const id = data.data[i]?.id || data.data[i]?.image_id;
                 if (id) ids.push(String(id));
             }
         }
-        url = data.paging ? .next || '';
+        url = data.paging?.next || '';
     }
 
     _mapillarySequenceCache.set(sequenceId, ids);
@@ -1146,10 +1306,10 @@ function setMapillaryPanelLoading(imageId, options = {}) {
     if (!panel) return;
     panel.classList.remove('hidden');
     setMapillaryViewerOpen(true);
-    document.getElementById('mapillary-js-viewer') ? .classList.add('hidden');
+    document.getElementById('mapillary-js-viewer')?.classList.add('hidden');
     const image = document.getElementById('mapillary-image');
     const placeholder = document.getElementById('mapillary-placeholder');
-    const keepCurrentVisible = options.keepCurrentVisible === true && image ? .src && !image.classList.contains('hidden');
+    const keepCurrentVisible = options.keepCurrentVisible === true && image?.src && !image.classList.contains('hidden');
 
     if (keepCurrentVisible) {
         placeholder.classList.add('hidden');
@@ -1198,17 +1358,17 @@ async function openMapillaryImageFallback(imageId, options = {}) {
             image.classList.remove('hidden');
             placeholder.classList.add('hidden');
             _mapillaryCurrentImageId = String(data.id || imageId);
-            updateMapillaryCurrentMarker(data.computed_geometry || data.geometry, data.id || imageId, data.computed_compass_angle ? ? data.compass_angle);
+            updateMapillaryCurrentMarker(data.computed_geometry || data.geometry, data.id || imageId, data.computed_compass_angle ?? data.compass_angle);
         } else {
             image.classList.add('hidden');
             placeholder.classList.remove('hidden');
             placeholder.textContent = 'Anteprima non disponibile per questa immagine.';
             _mapillaryCurrentImageId = String(data.id || imageId);
-            updateMapillaryCurrentMarker(data.computed_geometry || data.geometry, data.id || imageId, data.computed_compass_angle ? ? data.compass_angle);
+            updateMapillaryCurrentMarker(data.computed_geometry || data.geometry, data.id || imageId, data.computed_compass_angle ?? data.compass_angle);
         }
         document.getElementById('mapillary-title').textContent = `Mapillary ${data.id || imageId}`;
         document.getElementById('mapillary-date').textContent = formatMapillaryDate(data.captured_at);
-        document.getElementById('mapillary-author').textContent = data.creator ? .username ? `di ${data.creator.username}` : '';
+        document.getElementById('mapillary-author').textContent = data.creator?.username ? `di ${data.creator.username}` : '';
         document.getElementById('mapillary-open-link').href = `https://www.mapillary.com/app/?pKey=${encodeURIComponent(data.id || imageId)}`;
         await loadMapillarySequence(data.sequence, String(data.id || imageId), requestSerial);
     } catch (err) {
@@ -1233,7 +1393,7 @@ async function openMapillaryImage(imageId, options = {}) {
         return;
     }
 
-    if (!options.forceFallback && getMapillaryJsApi() ? .Viewer) {
+    if (!options.forceFallback && getMapillaryJsApi()?.Viewer) {
         try {
             stopMapillaryPlayback();
             await openMapillaryJsViewer(imageId);
@@ -1378,7 +1538,7 @@ function setupStyleDependentLayers() {
             type: 'raster',
             source: 'waymarked-hiking',
             paint: { 'raster-opacity': 0.8 },
-            layout: { visibility: hikingToggle ? .checked ? 'visible' : 'none' }
+            layout: { visibility: hikingToggle?.checked ? 'visible' : 'none' }
         });
     }
 }
@@ -1469,6 +1629,12 @@ export async function queryElevation(lon, lat) {
     if (!mapLoaded) return 0;
     try {
         const ele = map.queryTerrainElevation([lon, lat]);
-        return ele !== null ? Math.round(ele) : 0;
-    } catch { return 0; }
+        if (Number.isFinite(ele) && Math.abs(ele) > 0.01) return Math.round(ele);
+    } catch {}
+
+    try {
+        return await queryTerrariumElevation(lon, lat);
+    } catch {
+        return 0;
+    }
 }

@@ -19,7 +19,7 @@ import {
 } from './state.js';
 
 import { escapeXml, generateDistinctTrackColor } from './utils.js';
-import { forceUpdateStats } from './stats.js';
+import { forceUpdateStats, haversineDistance } from './stats.js';
 import {
     listStoredTracks,
     loadStoredTrack,
@@ -27,7 +27,8 @@ import {
     ensureTrackStorageMeta,
     onLibraryChanged,
     loadPersistedAppSession,
-    schedulePersistAppSession
+    schedulePersistAppSession,
+    schedulePersistTracks
 } from './storage.js';
 
 // Riferimenti a funzioni degli altri moduli — iniettati da main.js per evitare
@@ -519,6 +520,7 @@ function openTrackContextMenuAt(trackId, clientX, clientY) {
     normalizeTreeSelection();
     const selectedCount = _treeSelection.length;
     const hasClipboard = !!_treeClipboard && (((_treeClipboard.tracks || []).length + (_treeClipboard.segments || []).length) > 0);
+    const pointCount = (track.segments || []).reduce((sum, segment) => sum + ((segment.points || []).length), 0);
 
     closeTrackContextMenu();
     const menu = document.createElement('div');
@@ -532,6 +534,7 @@ function openTrackContextMenuAt(trackId, clientX, clientY) {
       ${createTreeContextMenuButton('clipboard-paste', 'Incolla', `pasteTreeSelection('${track.id}')`, !hasClipboard)}
       ${createTreeContextMenuButton('scissors', 'Taglia', 'cutTreeSelection()')}
       ${createTreeContextMenuButton('copy-plus', 'Duplica', `duplicateTreeSelection('${track.id}')`)}
+      ${createTreeContextMenuButton('route', 'Estrai tratti non asfaltati', `extractOffroadFromTrack('${track.id}')`, pointCount < 2)}
       <div class="my-1 border-t border-gray-800"></div>
       <button onclick="openTrackNameEditor('${track.id}')" class="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-gray-800 text-left">
         <i data-lucide="pencil" class="w-3.5 h-3.5"></i><span>Rinomina</span>
@@ -604,6 +607,7 @@ function openSegmentContextMenuAt(trackId, segId, clientX, clientY) {
       ${createTreeContextMenuButton('clipboard-paste', 'Incolla', `pasteTreeSelection('${trackId}', '${segId}')`, !hasClipboard)}
       ${createTreeContextMenuButton('scissors', 'Taglia', 'cutTreeSelection()')}
       ${createTreeContextMenuButton('copy-plus', 'Duplica', `duplicateTreeSelection('${trackId}', '${segId}')`)}
+      ${createTreeContextMenuButton('route', 'Estrai tratti non asfaltati', `extractOffroadFromSegment('${trackId}', '${segId}')`, segment.points.length < 2)}
       <div class="my-1 border-t border-gray-800"></div>
       <button onclick="renameSegmentFromMenu('${trackId}', '${segId}')" class="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-gray-800 text-left">
         <i data-lucide="pencil" class="w-3.5 h-3.5"></i><span>Rinomina</span>
@@ -751,6 +755,384 @@ export function renameSegmentFromMenu(trackId, segId) {
     if (!input) return;
     input.focus();
     input.select();
+}
+
+const OVERPASS_API_URL = 'https://overpass-api.de/api/interpreter';
+const OSM_MATCH_THRESHOLD_M = 35;
+const OFFROAD_MIN_RANGE_DISTANCE_KM = 0.01;
+const OVERPASS_BBOX_PADDING_DEG = 0.0015;
+const PAVED_SURFACES = new Set([
+    'paved', 'asphalt', 'concrete', 'concrete:lanes', 'concrete:plates',
+    'paving_stones', 'sett', 'cobblestone', 'unhewn_cobblestone', 'metal', 'wood'
+]);
+const UNPAVED_SURFACES = new Set([
+    'unpaved', 'compacted', 'fine_gravel', 'gravel', 'pebblestone', 'ground',
+    'dirt', 'earth', 'grass', 'grass_paver', 'sand', 'mud', 'clay',
+    'woodchips', 'rock', 'stone', 'scree', 'shells', 'salt'
+]);
+const OFFROAD_HIGHWAYS = new Set(['track', 'path', 'bridleway', 'steps']);
+const OFFROAD_TRACKTYPES = new Set(['grade2', 'grade3', 'grade4', 'grade5']);
+
+function normalizeOsmTagValue(value) {
+    return String(value || '').trim().toLowerCase().replace(/\s+/g, '_');
+}
+
+function segmentDistanceKm(points, startIndex, endIndex) {
+    let distance = 0;
+    for (let i = startIndex + 1; i <= endIndex; i++) {
+        distance += haversineDistance(points[i - 1].lon, points[i - 1].lat, points[i].lon, points[i].lat);
+    }
+    return distance;
+}
+
+function segmentDistanceMeters(points, startIndex, endIndex) {
+    return segmentDistanceKm(points, startIndex, endIndex) * 1000;
+}
+
+function buildOffroadRanges(points, offroad) {
+    const ranges = [];
+    let start = null;
+
+    for (let i = 0; i < offroad.length; i++) {
+        if (offroad[i] && start === null) {
+            start = i;
+        } else if (!offroad[i] && start !== null) {
+            ranges.push({ start, end: i - 1 });
+            start = null;
+        }
+    }
+
+    if (start !== null) ranges.push({ start, end: offroad.length - 1 });
+
+    return ranges
+        .map(range => ({
+            start: Math.max(0, range.start - 1),
+            end: Math.min(points.length - 1, range.end + 1)
+        }))
+        .filter(range => range.end > range.start)
+        .map(range => ({
+            ...range,
+            distanceKm: segmentDistanceKm(points, range.start, range.end)
+        }))
+        .filter(range => range.distanceKm >= OFFROAD_MIN_RANGE_DISTANCE_KM);
+}
+
+function segmentBbox(points) {
+    let minLon = Infinity;
+    let minLat = Infinity;
+    let maxLon = -Infinity;
+    let maxLat = -Infinity;
+
+    for (let i = 0; i < points.length; i++) {
+        const point = points[i];
+        if (point.lon < minLon) minLon = point.lon;
+        if (point.lon > maxLon) maxLon = point.lon;
+        if (point.lat < minLat) minLat = point.lat;
+        if (point.lat > maxLat) maxLat = point.lat;
+    }
+
+    return {
+        south: minLat - OVERPASS_BBOX_PADDING_DEG,
+        west: minLon - OVERPASS_BBOX_PADDING_DEG,
+        north: maxLat + OVERPASS_BBOX_PADDING_DEG,
+        east: maxLon + OVERPASS_BBOX_PADDING_DEG
+    };
+}
+
+function buildOverpassQuery(points) {
+    const bbox = segmentBbox(points);
+    return `[out:json][timeout:25];
+(
+  way["highway"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
+);
+out tags geom;`;
+}
+
+async function fetchOsmWaysForSegment(points) {
+    const response = await fetch(OVERPASS_API_URL, {
+        method: 'POST',
+        headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: `data=${encodeURIComponent(buildOverpassQuery(points))}`
+    });
+    if (!response.ok) throw new Error(`Overpass ${response.status}`);
+    const data = await response.json();
+    return (data.elements || [])
+        .filter(element => element.type === 'way' && Array.isArray(element.geometry) && element.geometry.length >= 2)
+        .map(element => ({
+            id: element.id,
+            tags: element.tags || {},
+            geometry: element.geometry.map(node => ({ lat: node.lat, lon: node.lon }))
+        }));
+}
+
+function classifyOsmWaySurface(tags) {
+    const surface = normalizeOsmTagValue(tags.surface);
+    const tracktype = normalizeOsmTagValue(tags.tracktype);
+    const highway = normalizeOsmTagValue(tags.highway);
+
+    if (UNPAVED_SURFACES.has(surface)) return 'offroad';
+    if (PAVED_SURFACES.has(surface)) return 'paved';
+    if (OFFROAD_TRACKTYPES.has(tracktype)) return 'offroad';
+    if (tracktype === 'grade1') return 'paved';
+    if (OFFROAD_HIGHWAYS.has(highway)) return 'offroad';
+    return 'unknown';
+}
+
+function metersPerLonAtLat(lat) {
+    return 111320 * Math.max(0.01, Math.cos(lat * Math.PI / 180));
+}
+
+function pointToSegmentDistanceMeters(point, a, b) {
+    const lat0 = point.lat;
+    const mx = metersPerLonAtLat(lat0);
+    const my = 110540;
+    const px = point.lon * mx;
+    const py = point.lat * my;
+    const ax = a.lon * mx;
+    const ay = a.lat * my;
+    const bx = b.lon * mx;
+    const by = b.lat * my;
+    const dx = bx - ax;
+    const dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) return Math.hypot(px - ax, py - ay);
+    const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+    return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+function buildOsmWaySegments(osmWays) {
+    const segments = [];
+    for (let wi = 0; wi < osmWays.length; wi++) {
+        const way = osmWays[wi];
+        const surfaceClass = classifyOsmWaySurface(way.tags);
+        for (let i = 1; i < way.geometry.length; i++) {
+            segments.push({
+                way,
+                surfaceClass,
+                a: way.geometry[i - 1],
+                b: way.geometry[i]
+            });
+        }
+    }
+    return segments;
+}
+
+function findNearestOsmWaySegment(point, osmSegments) {
+    let best = null;
+    let bestDistance = Infinity;
+
+    for (let i = 0; i < osmSegments.length; i++) {
+        const segment = osmSegments[i];
+        const distance = pointToSegmentDistanceMeters(point, segment.a, segment.b);
+        if (distance < bestDistance) {
+            best = segment;
+            bestDistance = distance;
+        }
+    }
+
+    return best ? { ...best, distance: bestDistance } : null;
+}
+
+function classifyTrackLegAsOffroad(points, index, osmSegments) {
+    const from = points[index - 1];
+    const to = points[index];
+    const mid = {
+        lat: (from.lat + to.lat) / 2,
+        lon: (from.lon + to.lon) / 2
+    };
+    const nearest = findNearestOsmWaySegment(mid, osmSegments);
+    const legDistance = segmentDistanceMeters(points, index - 1, index);
+
+    if (!nearest || nearest.distance > Math.max(OSM_MATCH_THRESHOLD_M, Math.min(80, legDistance * 0.35))) {
+        return {
+            offroad: true,
+            reason: 'unmapped',
+            distance: nearest?.distance || Infinity
+        };
+    }
+
+    if (nearest.surfaceClass === 'offroad') {
+        return {
+            offroad: true,
+            reason: 'unpaved',
+            distance: nearest.distance,
+            tags: nearest.way.tags
+        };
+    }
+
+    return {
+        offroad: false,
+        reason: nearest.surfaceClass === 'paved' ? 'paved' : 'unknown-road',
+        distance: nearest.distance,
+        tags: nearest.way.tags
+    };
+}
+
+function clonePoint(point) {
+    return {
+        lat: point.lat,
+        lon: point.lon,
+        ele: point.ele || 0,
+        isUserClicked: point.isUserClicked === true
+    };
+}
+
+function getAnalyzableSegments(sourceTrack) {
+    return (sourceTrack?.segments || [])
+        .filter(segment => Array.isArray(segment.points) && segment.points.length >= 2);
+}
+
+async function analyzeOffroadSegment(sourceSegment) {
+    const points = sourceSegment.points || [];
+    const osmWays = await fetchOsmWaysForSegment(points);
+    const osmSegments = buildOsmWaySegments(osmWays);
+    const offroad = new Array(points.length).fill(false);
+    let unpavedLegCount = 0;
+    let unmappedLegCount = 0;
+    let pavedLegCount = 0;
+    let unknownRoadLegCount = 0;
+    let matchedWayCount = 0;
+
+    for (let i = 1; i < points.length; i++) {
+        const classification = classifyTrackLegAsOffroad(points, i, osmSegments);
+        if (classification.offroad) {
+            offroad[i - 1] = true;
+            offroad[i] = true;
+            if (classification.reason === 'unpaved') {
+                unpavedLegCount++;
+                matchedWayCount++;
+            } else {
+                unmappedLegCount++;
+            }
+        } else {
+            if (classification.reason === 'paved') {
+                pavedLegCount++;
+                matchedWayCount++;
+            } else {
+                unknownRoadLegCount++;
+            }
+        }
+    }
+
+    return {
+        ranges: buildOffroadRanges(points, offroad),
+        osmWayCount: osmWays.length,
+        matchedWayCount,
+        unpavedLegCount,
+        unmappedLegCount,
+        pavedLegCount,
+        unknownRoadLegCount
+    };
+}
+
+function createOffroadTrack(sourceTrack, extractedRanges, nameBase, summary) {
+    const createdAt = Date.now();
+    const sourceTrackName = sourceTrack.name || 'Traccia';
+    const newTrack = {
+        id: `track_offroad_${createdAt}`,
+        localFileId: `local_${createdAt}_${Math.random().toString(36).slice(2, 8)}`,
+        localCreatedAt: createdAt,
+        localUpdatedAt: createdAt,
+        localSource: 'derived',
+        name: `Offroad - ${nameBase}`,
+        desc: `Tratti non asfaltati estratti da ${sourceTrackName}. OSM highway/surface/tracktype. Segmenti non asfaltati: ${summary.unpavedLegCount}; fuori rete OSM: ${summary.unmappedLegCount}.`,
+        color: generateDistinctTrackColor(tracks.map(track => track.color)),
+        width: Math.max((sourceTrack.width || 3) + 2, 5),
+        visible: true,
+        waypointsVisible: true,
+        segments: extractedRanges.map((item, index) => ({
+            id: `seg_offroad_${createdAt}_${index + 1}`,
+            name: `${item.sourceSegment.name || 'Segmento'} - offroad ${index + 1}`,
+            points: item.sourceSegment.points.slice(item.range.start, item.range.end + 1).map(clonePoint),
+            visible: true
+        })),
+        waypoints: []
+    };
+
+    tracks.push(newTrack);
+    setActiveTrackId(newTrack.id);
+    setActiveSegmentId(newTrack.segments[0]?.id || null);
+    return newTrack;
+}
+
+async function extractOffroadFromSources(sourceTrack, sourceSegments, nameBase) {
+    closeTrackContextMenu();
+
+    if (!sourceTrack || sourceSegments.length === 0) {
+        showToast("Nessun segmento valido per analizzare l'offroad", "error");
+        return;
+    }
+
+    showToast(`Analisi superfici OSM: ${sourceSegments.length} segmenti...`, "info");
+
+    try {
+        const extractedRanges = [];
+        const summary = {
+            osmWayCount: 0,
+            matchedWayCount: 0,
+            unpavedLegCount: 0,
+            unmappedLegCount: 0,
+            pavedLegCount: 0,
+            unknownRoadLegCount: 0
+        };
+
+        for (let i = 0; i < sourceSegments.length; i++) {
+            const sourceSegment = sourceSegments[i];
+            const result = await analyzeOffroadSegment(sourceSegment);
+            summary.osmWayCount += result.osmWayCount;
+            summary.matchedWayCount += result.matchedWayCount;
+            summary.unpavedLegCount += result.unpavedLegCount;
+            summary.unmappedLegCount += result.unmappedLegCount;
+            summary.pavedLegCount += result.pavedLegCount;
+            summary.unknownRoadLegCount += result.unknownRoadLegCount;
+
+            for (let r = 0; r < result.ranges.length; r++) {
+                extractedRanges.push({
+                    sourceSegment,
+                    range: result.ranges[r]
+                });
+            }
+        }
+
+        if (extractedRanges.length === 0) {
+            showToast(`Nessun tratto non asfaltato rilevato: ${summary.pavedLegCount} tratti asfaltati, ${summary.unknownRoadLegCount} senza surface`, "info");
+            return;
+        }
+
+        const newTrack = createOffroadTrack(sourceTrack, extractedRanges, nameBase, summary);
+        if (_saveHistoryState) _saveHistoryState();
+        if (_updateMapData) _updateMapData(true);
+        renderGisTree();
+        updateActiveTracksHeader();
+        focusTrackOnMap(newTrack);
+        schedulePersistTracks(tracks);
+        schedulePersistAppSession();
+        showToast(`Creata ${newTrack.name}: ${extractedRanges.length} tratti non asfaltati`, "success");
+    } catch (err) {
+        console.error(err);
+        showToast("Impossibile completare l'analisi superfici. Verifica rete/Overpass.", "error");
+    }
+}
+
+export async function extractOffroadFromTrack(trackId) {
+    const sourceTrack = tracks.find(track => track.id === trackId);
+    const sourceSegments = getAnalyzableSegments(sourceTrack);
+    await extractOffroadFromSources(sourceTrack, sourceSegments, sourceTrack?.name || 'Traccia');
+}
+
+export async function extractOffroadFromSegment(trackId, segId) {
+    const sourceTrack = tracks.find(track => track.id === trackId);
+    const sourceSegment = sourceTrack?.segments.find(segment => segment.id === segId);
+
+    if (!sourceTrack || !sourceSegment || !Array.isArray(sourceSegment.points) || sourceSegment.points.length < 2) {
+        showToast("Segmento troppo corto per analizzare l'offroad", "error");
+        return;
+    }
+
+    await extractOffroadFromSources(sourceTrack, [sourceSegment], sourceSegment.name || sourceTrack.name || 'Segmento');
 }
 
 export function handleTrackNamePointerDown(event, trackId) {

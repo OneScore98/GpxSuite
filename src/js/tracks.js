@@ -138,6 +138,7 @@ export async function addPointToActiveSegment(lon, lat) {
         updateMapData();
         queryElevation(lon, lat).then(ele => {
             point.ele = ele;
+            updateMapData();
             schedulePersistTracks(tracks);
         });
         return;
@@ -145,34 +146,38 @@ export async function addPointToActiveSegment(lon, lat) {
 
     const lastPoint = segment.points[segment.points.length - 1];
     showToast("Calcolo percorso...", "info");
-    let elevation = 0;
 
     try {
-        elevation = await queryElevation(lon, lat);
         const routePoints = await fetchSnapRoute(lastPoint, { lon, lat }, currentSnapProfile);
         if (routePoints && routePoints.length > 0) {
             routePoints.forEach((pt, i) => {
+                const isEndpoint = i === routePoints.length - 1;
                 segment.points.push({
                     lat: pt[0],
                     lon: pt[1],
-                    ele: pt[2] || elevation,
-                    isUserClicked: (i === routePoints.length - 1)
+                    ele: pt[2] || 0,
+                    isUserClicked: isEndpoint,
+                    needsElevation: true
                 });
             });
         } else {
             segment.points.push({
                 lat: lat,
                 lon: lon,
-                ele: elevation,
-                isUserClicked: true
+                ele: 0,
+                isUserClicked: true,
+                needsElevation: true
             });
         }
     } catch (err) {
+        console.warn('Errore routing OSRM:', err);
+        showToast("Routing non disponibile: punto aggiunto in linea d'aria", "error");
         segment.points.push({
             lat: lat,
             lon: lon,
-            ele: elevation,
-            isUserClicked: true
+            ele: 0,
+            isUserClicked: true,
+            needsElevation: true
         });
     }
 
@@ -180,24 +185,90 @@ export async function addPointToActiveSegment(lon, lat) {
     updateMapData();
 }
 
-export async function fetchSnapRoute(from, to, profile) {
-    const baseUrl = OSRM_ENDPOINTS[profile] || OSRM_ENDPOINTS.foot;
-    const url = `${baseUrl}${from.lon},${from.lat};${to.lon},${to.lat}?geometries=geojson&overview=full`;
+function snapRouteCandidates(profile) {
+    const endpoints = [];
+    const brouterProfile = profile === 'bike' ? 'fastbike' : (profile === 'foot' ? 'trekking' : 'car-fast');
+    endpoints.push({ type: 'brouter', profile: brouterProfile, label: `BRouter ${brouterProfile}` });
 
-    const res = await fetch(url);
-    const data = await res.json();
+    const primary = OSRM_ENDPOINTS[profile] || OSRM_ENDPOINTS.foot;
+    endpoints.push({ type: 'osrm', url: primary, label: `OSRM ${profile}` });
+
+    if (profile === 'foot') {
+        endpoints.push({ type: 'osrm', url: 'https://routing.openstreetmap.de/routed-foot/route/v1/driving/', label: 'OSRM foot fallback' });
+    } else if (profile === 'bike') {
+        endpoints.push({ type: 'osrm', url: 'https://routing.openstreetmap.de/routed-bike/route/v1/driving/', label: 'OSRM bike fallback' });
+    } else {
+        endpoints.push({ type: 'osrm', url: 'https://router.project-osrm.org/route/v1/driving/', label: 'OSRM demo fallback' });
+    }
+
+    return endpoints;
+}
+
+async function fetchJsonWithTimeout(url, options = {}) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), options.timeoutMs || 9000);
+    try {
+        const response = await fetch(url, { signal: controller.signal });
+        if (!response.ok) throw new Error(`${options.label || 'route'} ${response.status}`);
+        return await response.json();
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
+function parseRouteCoordinates(coords) {
+    if (!Array.isArray(coords) || coords.length < 2) return null;
+    const parsedPoints = [];
+    for (let i = 1; i < coords.length; i++) {
+        const c = coords[i];
+        if (!Array.isArray(c) || !Number.isFinite(c[0]) || !Number.isFinite(c[1])) continue;
+        parsedPoints.push([c[1], c[0], Number.isFinite(c[2]) ? Math.round(c[2]) : 0]);
+    }
+    return parsedPoints.length > 0 ? parsedPoints : null;
+}
+
+async function fetchOsrmSnapRoute(from, to, endpoint) {
+    const url = `${endpoint.url}${from.lon},${from.lat};${to.lon},${to.lat}?geometries=geojson&overview=full`;
+    const data = await fetchJsonWithTimeout(url, { label: endpoint.label });
 
     if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
-        const coords = data.routes[0].geometry.coordinates;
-        const parsedPoints = [];
-        for (let i = 1; i < coords.length; i++) {
-            const c = coords[i];
-            const el = await queryElevation(c[0], c[1]);
-            parsedPoints.push([c[1], c[0], el]);
-        }
-        return parsedPoints;
+        return parseRouteCoordinates(data.routes[0].geometry.coordinates);
     }
-    return null;
+    throw new Error(`${endpoint.label} ${data.code || 'NoRoute'}`);
+}
+
+async function fetchBrouterSnapRoute(from, to, endpoint) {
+    const lonlats = `${from.lon},${from.lat}|${to.lon},${to.lat}`;
+    const params = new URLSearchParams({
+        lonlats,
+        profile: endpoint.profile,
+        alternativeidx: '0',
+        format: 'geojson'
+    });
+    const data = await fetchJsonWithTimeout(`https://brouter.de/brouter?${params.toString()}`, { label: endpoint.label, timeoutMs: 12000 });
+    const coords = data.features?.[0]?.geometry?.coordinates;
+    const parsed = parseRouteCoordinates(coords);
+    if (parsed) return parsed;
+    throw new Error(`${endpoint.label} NoRoute`);
+}
+
+export async function fetchSnapRoute(from, to, profile) {
+    const errors = [];
+    const endpoints = snapRouteCandidates(profile);
+
+    for (let i = 0; i < endpoints.length; i++) {
+        const endpoint = endpoints[i];
+        try {
+            const route = endpoint.type === 'brouter' ?
+                await fetchBrouterSnapRoute(from, to, endpoint) :
+                await fetchOsrmSnapRoute(from, to, endpoint);
+            if (route && route.length > 0) return route;
+        } catch (err) {
+            errors.push(`${endpoint.label}: ${err.message}`);
+        }
+    }
+
+    throw new Error(errors.join(' | '));
 }
 
 export function cutTrackAtPoint(lngLat) {

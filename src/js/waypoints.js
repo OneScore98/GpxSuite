@@ -59,8 +59,8 @@ function findWaypoint(trackId, wpId) {
 }
 
 function getWaypointFeatureFromEvent(e) {
-    const feature = e ? .features ? .[0];
-    if (!feature ? .properties) return null;
+    const feature = e ?.features ?.[0];
+    if (!feature ?.properties) return null;
     const trackId = feature.properties.trackId;
     const wpId = feature.properties.wpId;
     if (!trackId || !wpId) return null;
@@ -314,9 +314,9 @@ export function bindWaypointInteractions() {
     });
 
     map.on('click', 'gpx-waypoints-cluster-layer', (e) => {
-        const feature = e ? .features ? .[0];
-        const clusterId = feature ? .properties ? .cluster_id;
-        const coords = feature ? .geometry ? .coordinates;
+        const feature = e ?.features ?.[0];
+        const clusterId = feature ?.properties ?.cluster_id;
+        const coords = feature ?.geometry ?.coordinates;
         const src = map.getSource('gpx-waypoints');
         if (!src || clusterId === undefined || !coords) return;
         src.getClusterExpansionZoom(clusterId, (err, zoom) => {

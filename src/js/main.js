@@ -29,7 +29,7 @@ import {
     handleTrackNamePointerDown, clearTrackNameLongPress,
     handleTrackNameClick, openTrackNameEditor, finishTrackNameEditor, handleTrackNameKeydown,
     toggleAllWaypointsVisibility, toggleWaypointVisibility, toggleSegmentVisibility,
-    deleteTrack, addNewSegmentToTrack, renameSegment, renameSegmentFromMenu, setSegmentActive, deleteSegment,
+    deleteTrack, addNewSegmentToTrack, renameSegment, renameSegmentFromMenu, extractOffroadFromTrack, extractOffroadFromSegment, setSegmentActive, deleteSegment,
     zoomToWaypoint, deleteWaypoint, searchNominatim
 } from './ui.js';
 
@@ -92,6 +92,8 @@ window.deleteTrack = deleteTrack;
 window.addNewSegmentToTrack = addNewSegmentToTrack;
 window.renameSegment = renameSegment;
 window.renameSegmentFromMenu = renameSegmentFromMenu;
+window.extractOffroadFromTrack = extractOffroadFromTrack;
+window.extractOffroadFromSegment = extractOffroadFromSegment;
 window.setSegmentActive = setSegmentActive;
 window.deleteSegment = deleteSegment;
 window.zoomToWaypoint = zoomToWaypoint;
