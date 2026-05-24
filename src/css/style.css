@@ -74,8 +74,171 @@ body.mapillary-viewer-open #cursor-coordinates {
 
 /* Griglia di stampa trascinabile */
 #print-drag-grid {
+    box-sizing: content-box;
+    overflow: visible;
     touch-action: none;
     user-select: none;
+    background: rgba(37, 99, 235, 0.13);
+    box-shadow: 0 0 0 9999px rgba(2, 6, 23, 0.28), 0 0 0 2px rgba(147, 197, 253, 0.95), 0 12px 40px rgba(37, 99, 235, 0.35);
+}
+
+#print-drag-grid:not(.hidden) {
+    display: grid;
+}
+
+#panel-print-setup {
+    background: #020617;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    z-index: 40;
+}
+
+#panel-print-setup > .flex-1 {
+    background: #020617;
+}
+
+#panel-print-setup > .p-4:not(.flex-1) {
+    background: #0c0a09;
+}
+
+.print-grid-cell {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px dashed rgba(147, 197, 253, 0.95);
+    background: rgba(37, 99, 235, 0.08);
+}
+
+.print-grid-cell-badge,
+.print-grid-cell-label {
+    pointer-events: none;
+    user-select: none;
+}
+
+.print-grid-cell-badge {
+    position: absolute;
+    top: 0.6rem;
+    left: 0.6rem;
+    padding: 0.25rem 0.45rem;
+    border-radius: 0.35rem;
+    background: #2563eb;
+    color: white;
+    font-size: 0.62rem;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: 0;
+    box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35);
+}
+
+.print-grid-cell-number {
+    pointer-events: none;
+    user-select: none;
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 3.25rem;
+    font-weight: 900;
+    line-height: 1;
+    text-shadow: 0 2px 14px rgba(15, 23, 42, 0.45);
+}
+
+.print-grid-cell-label {
+    position: absolute;
+    left: 50%;
+    bottom: 0.75rem;
+    transform: translateX(-50%);
+    padding: 0.25rem 0.55rem;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.78);
+    color: white;
+    font-size: 0.62rem;
+    font-weight: 800;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.print-a4-page {
+    box-sizing: border-box;
+    overflow: hidden;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+}
+
+.print-a4-page-portrait {
+    width: min(100%, 210mm);
+    aspect-ratio: 210 / 297;
+}
+
+.print-a4-page-landscape {
+    width: min(100%, 297mm);
+    aspect-ratio: 297 / 210;
+}
+
+.print-map-frame img {
+    display: block;
+    object-fit: contain;
+}
+
+.print-coordinate-grid {
+    z-index: 2;
+}
+
+.print-coord-line {
+    position: absolute;
+    background: rgba(15, 23, 42, 0.36);
+}
+
+.print-coord-line-vertical {
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    transform: translateX(-0.5px);
+}
+
+.print-coord-line-horizontal {
+    left: 0;
+    right: 0;
+    height: 1px;
+    transform: translateY(-0.5px);
+}
+
+.print-coord-label {
+    position: absolute;
+    padding: 0.12rem 0.3rem;
+    border-radius: 0.25rem;
+    background: rgba(255, 255, 255, 0.9);
+    color: #0f172a;
+    font-size: 0.46rem;
+    font-weight: 800;
+    line-height: 1;
+    white-space: nowrap;
+    box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.16);
+}
+
+.print-coord-label-top {
+    top: 0.25rem;
+    transform: translateX(-50%);
+}
+
+.print-coord-label-bottom {
+    bottom: 0.25rem;
+    transform: translateX(-50%);
+}
+
+.print-coord-label-left {
+    left: 0.25rem;
+    transform: translateY(-50%);
+}
+
+.print-coord-label-right {
+    right: 0.25rem;
+    transform: translateY(-50%);
+}
+
+.print-scale-label {
+    z-index: 3;
 }
 
 button,
@@ -244,7 +407,7 @@ label {
     }
 
     #panel-print-setup {
-        z-index: 20;
+        z-index: 40;
     }
 
     #sidebar-tracks-right {
@@ -538,13 +701,164 @@ label {
         bottom: calc(var(--safe-bottom) + 4.1rem);
     }
 
+    #panel-print-setup {
+        top: auto;
+        bottom: calc(var(--safe-bottom) + 0.6rem);
+        width: auto;
+        max-height: min(42vh, 18rem);
+        min-height: 0;
+        border-radius: 1rem;
+        z-index: 40;
+    }
+
+    #panel-print-setup .print-setup-header {
+        padding: 0.7rem 0.85rem;
+    }
+
+    #panel-print-setup .print-setup-header h2 {
+        font-size: 0.68rem;
+    }
+
+    #panel-print-setup .print-setup-body {
+        flex: 0 1 auto;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0.65rem;
+        max-height: min(24vh, 12rem);
+        padding: 0.7rem 0.8rem;
+        overflow-y: auto;
+    }
+
+    #panel-print-setup .print-setup-body > * {
+        margin-top: 0 !important;
+    }
+
+    #panel-print-setup .print-setup-help,
+    #panel-print-setup .print-setup-info {
+        display: none;
+    }
+
+    #panel-print-setup .print-setup-footer {
+        padding: 0.65rem 0.8rem;
+    }
+
+    #panel-print-setup label {
+        font-size: 0.58rem;
+        line-height: 1.1;
+    }
+
+    #panel-print-setup select {
+        min-height: 2.25rem;
+        padding: 0.45rem 0.65rem;
+        font-size: 0.78rem;
+    }
+
+    #panel-print-setup button {
+        min-height: 2.25rem;
+    }
+
+    #btn-generate-previews {
+        min-height: 2.55rem;
+        border-radius: 0.8rem;
+    }
+
+    #print-scale-slider {
+        min-height: 1.5rem;
+    }
+
     #sidebar-tracks-right {
-        top: calc(var(--safe-top) + 0.6rem);
+        top: auto;
         left: calc(var(--safe-left) + 0.6rem);
         right: calc(var(--safe-right) + 0.6rem);
         bottom: calc(var(--safe-bottom) + 0.6rem);
-        height: auto;
+        height: min(50vh, calc(var(--app-height) - var(--safe-top) - var(--safe-bottom) - 1.2rem));
+        min-height: min(12rem, 50vh);
+        max-height: 50vh;
         z-index: 25;
+    }
+
+    #sidebar-tracks-right > .p-4 {
+        padding: 0.65rem 0.8rem;
+    }
+
+    #sidebar-tracks-right .flex-1.overflow-y-auto {
+        padding: 0.55rem;
+    }
+
+    #gis-file-tree,
+    #gis-file-tree > .space-y-2 {
+        margin-top: 0 !important;
+    }
+
+    #gis-file-tree > .space-y-2 > :not([hidden]) ~ :not([hidden]) {
+        margin-top: 0.45rem !important;
+    }
+
+    #gis-file-tree .gis-track-card {
+        border-radius: 0.75rem;
+        box-shadow: none;
+    }
+
+    #gis-file-tree .gis-track-color-strip {
+        width: 0.25rem;
+    }
+
+    #gis-file-tree .gis-track-body {
+        padding: 0.45rem 0.55rem;
+    }
+
+    #gis-file-tree .gis-track-body > :not([hidden]) ~ :not([hidden]) {
+        margin-top: 0.35rem !important;
+    }
+
+    #gis-file-tree .gis-track-header {
+        align-items: center;
+        gap: 0.35rem;
+    }
+
+    #gis-file-tree .gis-track-drag,
+    #gis-file-tree .gis-track-meta {
+        display: none;
+    }
+
+    #gis-file-tree .track-name-label {
+        width: auto;
+        max-width: calc(100vw - 11rem);
+        font-size: 0.72rem;
+        line-height: 1.15;
+    }
+
+    #gis-file-tree .gis-track-actions {
+        gap: 0.45rem;
+    }
+
+    #gis-file-tree .gis-track-actions button,
+    #gis-file-tree .gis-track-actions input {
+        width: 1.35rem;
+        height: 1.35rem;
+    }
+
+    #gis-file-tree .gis-track-details,
+    #gis-file-tree .gis-waypoints-block {
+        margin-left: 0.75rem;
+        padding-left: 0.55rem;
+    }
+
+    #gis-file-tree .gis-track-details > :not([hidden]) ~ :not([hidden]) {
+        margin-top: 0.25rem !important;
+    }
+
+    #gis-file-tree .gis-segment-row,
+    #gis-file-tree .gis-waypoint-row {
+        min-height: 1.85rem;
+        padding: 0.28rem 0.35rem;
+        font-size: 0.7rem;
+    }
+
+    #gis-file-tree .gis-segment-row input {
+        width: min(8.5rem, 38vw);
+        min-height: 1.35rem;
+        font-size: 0.68rem;
     }
 
     #panel-bottom-stats {
@@ -554,12 +868,27 @@ label {
         height: min(38vh, 20rem);
     }
 
+    @media (orientation: landscape) {
+        #panel-print-setup {
+            top: calc(var(--safe-top) + 0.6rem);
+            right: calc(var(--safe-right) + 0.6rem);
+            bottom: calc(var(--safe-bottom) + 0.6rem);
+            left: auto;
+            width: min(18.5rem, 44vw);
+            max-height: none;
+        }
+
+        #panel-print-setup .print-setup-body {
+            max-height: none;
+        }
+    }
+
     #panel-main-menu.-translate-x-80 {
         transform: translateX(calc(-100vw - 2rem));
     }
 
     #sidebar-tracks-right.translate-x-96 {
-        transform: translateX(calc(100vw + 2rem));
+        transform: translateY(calc(100% + 1rem));
     }
 
     #panel-bottom-stats.translate-y-60 {
@@ -605,15 +934,36 @@ label {
 
 /* Stili per la stampa nativa - Punto 10 */
 @media print {
+    @page a4-portrait {
+        size: A4 portrait;
+        margin: 0;
+    }
+
+    @page a4-landscape {
+        size: A4 landscape;
+        margin: 0;
+    }
+
+    html,
+    body {
+        width: auto !important;
+        height: auto !important;
+        overflow: visible !important;
+        background: white !important;
+    }
+
     body * {
         visibility: hidden;
     }
+
     #print-output-container,
     #print-output-container * {
         visibility: visible;
     }
+
     #print-output-container {
         position: absolute;
+        display: block !important;
         left: 0;
         top: 0;
         width: 100% !important;
@@ -621,20 +971,53 @@ label {
         background: white !important;
         z-index: 9999999 !important;
     }
+
     .print-page {
-        width: 210mm !important;
-        height: 297mm !important;
         page-break-after: always !important;
+        break-after: page !important;
         box-sizing: border-box !important;
         padding: 15mm !important;
         background: white !important;
         display: flex !important;
         flex-direction: column !important;
         justify-content: space-between !important;
+        box-shadow: none !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        overflow: hidden !important;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
     }
+
+    .print-page:last-child {
+        page-break-after: auto !important;
+        break-after: auto !important;
+    }
+
+    .print-a4-page-portrait {
+        page: a4-portrait;
+        width: 210mm !important;
+        height: 297mm !important;
+    }
+
+    .print-a4-page-landscape {
+        page: a4-landscape;
+        width: 297mm !important;
+        height: 210mm !important;
+    }
+
     .print-map-frame {
         width: 100% !important;
-        height: 220mm !important;
+        height: auto !important;
+        min-height: 0 !important;
+        flex: 1 1 auto !important;
         border: 2px solid #000 !important;
     }
+
+    .print-map-frame img {
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: contain !important;
+    }
+
 }

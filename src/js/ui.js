@@ -56,6 +56,7 @@ let _updatePrintGridLayout = null;
 let _updatePrintGridScale = null;
 let _setPrintPlanningOrientation = null;
 let _generateHighResPrintPreview = null;
+let _syncPrintOutputFromPreview = null;
 let _localLibraryBound = false;
 let _gisDragPayload = null;
 let _trackContextMenu = null;
@@ -169,6 +170,25 @@ export function injectDeps(deps) {
     _updatePrintGridScale = deps.updatePrintGridScale;
     _setPrintPlanningOrientation = deps.setPrintPlanningOrientation;
     _generateHighResPrintPreview = deps.generateHighResPrintPreview;
+    _syncPrintOutputFromPreview = deps.syncPrintOutputFromPreview;
+}
+
+export function setupPrintUiEvents() {
+    document.getElementById('btn-open-print').onclick = _togglePrintPlanning;
+    document.getElementById('btn-close-print-setup').onclick = _disablePrintPlanning;
+    document.getElementById('print-grid-select').onchange = _updatePrintGridLayout;
+    document.getElementById('print-scale-slider').oninput = _updatePrintGridScale;
+    document.getElementById('btn-print-port').onclick = () => _setPrintPlanningOrientation('portrait');
+    document.getElementById('btn-print-land').onclick = () => _setPrintPlanningOrientation('landscape');
+
+    document.getElementById('btn-generate-previews').onclick = _generateHighResPrintPreview;
+    document.getElementById('btn-print-preview-cancel').onclick = () => {
+        document.getElementById('print-preview-modal').classList.add('hidden');
+    };
+    document.getElementById('btn-print-preview-confirm').onclick = () => {
+        if (_syncPrintOutputFromPreview) _syncPrintOutputFromPreview();
+        window.print();
+    };
 }
 
 export function createNewTrack(name) {
@@ -1490,7 +1510,9 @@ export function syncMobileBackdrop() {
         return;
     }
 
-    const hasOpenPanel = isMainMenuOpen() || isSidebarOpen() || isStatsPanelOpen() || isPrintSetupOpen();
+    // Struttura GIS e progettazione stampa restano leggere su mobile: niente
+    // backdrop, cosi la mappa rimane visibile mentre si naviga tra gli elementi.
+    const hasOpenPanel = isMainMenuOpen() || isStatsPanelOpen();
     backdrop.classList.toggle('hidden', !hasOpenPanel);
 }
 
@@ -1539,7 +1561,7 @@ function _doRenderGisTree() {
             const segmentCount = track.segments.length;
             const pointCount = track.segments.reduce((sum, seg) => sum + seg.points.length, 0);
             html += `
-            <div class="group bg-gray-900/95 border ${isSelected ? 'border-cyan-400/80 bg-cyan-950/20' : (isActive ? 'border-blue-500/60 shadow-blue-950/30' : 'border-gray-800')} rounded-xl overflow-hidden shadow-lg"
+            <div class="gis-track-card group bg-gray-900/95 border ${isSelected ? 'border-cyan-400/80 bg-cyan-950/20' : (isActive ? 'border-blue-500/60 shadow-blue-950/30' : 'border-gray-800')} rounded-xl overflow-hidden shadow-lg"
                  onclick="handleTrackTreeClick(event, '${track.id}', true)"
                  oncontextmenu="handleTrackContextMenu(event, '${track.id}')"
                  onpointerdown="handleTrackPointerDown(event, '${track.id}')"
@@ -1549,30 +1571,30 @@ function _doRenderGisTree() {
                  ondragover="handleGisDragOver(event)"
                  ondrop="handleGisDrop(event, 'track', '${track.id}')">
               <div class="flex items-stretch">
-                <div class="w-1.5" style="background-color: ${track.color || '#3b82f6'}"></div>
-                <div class="flex-1 min-w-0 p-2.5 space-y-2">
-                  <div class="flex items-start justify-between gap-2">
+                <div class="gis-track-color-strip w-1.5" style="background-color: ${track.color || '#3b82f6'}"></div>
+                <div class="gis-track-body flex-1 min-w-0 p-2.5 space-y-2">
+                  <div class="gis-track-header flex items-start justify-between gap-2">
                     <div class="flex items-start gap-2 min-w-0">
                       <button draggable="true"
                               ondragstart="handleGisDragStart(event, 'track', '${track.id}')"
                               ondragend="handleGisDragEnd(event)"
-                              class="mt-0.5 text-gray-600 hover:text-gray-300 cursor-grab active:cursor-grabbing"
+                              class="gis-track-drag mt-0.5 text-gray-600 hover:text-gray-300 cursor-grab active:cursor-grabbing"
                               title="Trascina per riordinare questo file GPX">
                         <i data-lucide="grip-vertical" class="w-4 h-4"></i>
                       </button>
-                      <div class="min-w-0 cursor-pointer">
+                      <div class="gis-track-title-block min-w-0 cursor-pointer">
                         <div class="flex items-center gap-1.5 min-w-0">
                           <i data-lucide="${isExpanded ? 'chevron-down' : 'chevron-right'}" class="w-3 h-3 ${isActive ? 'text-blue-300' : 'text-gray-500'} shrink-0"></i>
                           <i data-lucide="file-map" class="w-3.5 h-3.5 ${isActive ? 'text-blue-300' : 'text-gray-500'} shrink-0"></i>
                           <span id="track-name-${track.id}" data-track-name-id="${track.id}" role="button" tabindex="0" contenteditable="false"
                                 class="track-name-label block text-xs font-bold ${track.visible === false ? 'text-gray-500 line-through' : 'text-white'} border-b border-transparent focus:border-blue-500 focus:outline-none min-w-0 w-36 truncate cursor-pointer select-none">${escapeXml(track.name)}</span>
                         </div>
-                        <div class="text-[10px] text-gray-500 mt-0.5 pl-5">
+                        <div class="gis-track-meta text-[10px] text-gray-500 mt-0.5 pl-5">
                           File ${trackIndex + 1} · ${segmentCount} segmenti · ${pointCount} pt · ${track.waypoints.length} wp · ${track.width || 3}px
                         </div>
                       </div>
                     </div>
-                    <div class="flex items-center gap-1.5 shrink-0">
+                    <div class="gis-track-actions flex items-center gap-1.5 shrink-0">
                       <button onclick="toggleTrackVisibility('${track.id}')" class="text-gray-400 hover:text-white" title="Mostra/Nascondi File"><i data-lucide="${track.visible === false ? 'eye-off' : 'eye'}" class="w-3.5 h-3.5"></i></button>
                       <input type="color" value="${track.color}" onchange="changeTrackColor('${track.id}', this.value)" class="w-4 h-4 rounded border-0 bg-transparent cursor-pointer" title="Colore traccia">
                       <button onclick="handleTrackContextMenu(event, '${track.id}')" class="text-gray-500 hover:text-white" title="Menu file"><i data-lucide="more-vertical" class="w-3.5 h-3.5"></i></button>
@@ -1581,7 +1603,7 @@ function _doRenderGisTree() {
                   </div>
 
                   ${isExpanded ? `
-                  <div class="ml-5 pl-3 border-l border-gray-800/90 space-y-1"
+                  <div class="gis-track-details ml-5 pl-3 border-l border-gray-800/90 space-y-1"
                        ondragover="handleGisDragOver(event)"
                        ondrop="handleGisDrop(event, 'track-segments', '${track.id}')">
                     <div class="text-[9px] text-gray-600 font-bold uppercase tracking-wider flex items-center gap-1 pb-0.5">
@@ -1591,7 +1613,7 @@ function _doRenderGisTree() {
                         const isSegActive = seg.id === activeSegmentId;
                         const isSegSelected = selectionHas(makeTreeKey('segment', track.id, seg.id));
                         return `
-                        <div class="flex items-center justify-between text-xs py-1.5 px-1.5 rounded border ${isSegSelected ? 'bg-cyan-950/45 text-cyan-200 border-cyan-700/70' : (isSegActive ? 'bg-blue-950/40 text-blue-300 border-blue-900/60' : 'text-gray-400 border-transparent hover:bg-gray-800/45 hover:border-gray-800')} ${seg.visible === false ? 'opacity-55' : ''}"
+                        <div class="gis-segment-row flex items-center justify-between text-xs py-1.5 px-1.5 rounded border ${isSegSelected ? 'bg-cyan-950/45 text-cyan-200 border-cyan-700/70' : (isSegActive ? 'bg-blue-950/40 text-blue-300 border-blue-900/60' : 'text-gray-400 border-transparent hover:bg-gray-800/45 hover:border-gray-800')} ${seg.visible === false ? 'opacity-55' : ''}"
                              onclick="handleSegmentTreeClick(event, '${track.id}', '${seg.id}', true)"
                              oncontextmenu="handleSegmentContextMenu(event, '${track.id}', '${seg.id}')"
                              onpointerdown="handleSegmentPointerDown(event, '${track.id}', '${seg.id}')"
@@ -1623,7 +1645,7 @@ function _doRenderGisTree() {
                       <i data-lucide="plus" class="w-3 h-3"></i> Aggiungi Segmento
                     </button>
                   </div>` + (track.waypoints.length > 0 ? `
-                  <div class="ml-5 pl-3 border-l border-gray-800/60 pt-1">
+                  <div class="gis-waypoints-block ml-5 pl-3 border-l border-gray-800/60 pt-1">
                     <div class="flex items-center justify-between mb-1">
                       <span class="text-[9px] text-gray-500 font-bold uppercase tracking-wider flex items-center gap-1">
                         <i data-lucide="map-pinned" class="w-3 h-3"></i> Waypoints (${track.waypoints.length})
@@ -1632,7 +1654,7 @@ function _doRenderGisTree() {
                     </div>
                     <div class="${track.waypointsVisible === false ? 'hidden' : 'space-y-1'}">
                       ${track.waypoints.map(wp => `
-                          <div class="flex items-center justify-between gap-1 text-xs hover:bg-gray-800/40 p-1 rounded transition-all ${wp.visible === false ? 'opacity-50' : ''}">
+                          <div class="gis-waypoint-row flex items-center justify-between gap-1 text-xs hover:bg-gray-800/40 p-1 rounded transition-all ${wp.visible === false ? 'opacity-50' : ''}">
                             <div class="flex items-center gap-1.5 min-w-0">
                               <span class="text-sm">${wp.symbol}</span>
                               <span class="font-medium text-gray-200 truncate cursor-pointer" onclick="zoomToWaypoint(${wp.lon}, ${wp.lat})">${escapeXml(wp.name)}</span>
@@ -2278,20 +2300,7 @@ export function setupEvents() {
     document.getElementById('btn-wp-save').onclick = _saveWaypointModifications;
 
     // Eventi di pianificazione stampa
-    document.getElementById('btn-open-print').onclick = _togglePrintPlanning;
-    document.getElementById('btn-close-print-setup').onclick = _disablePrintPlanning;
-    document.getElementById('print-grid-select').onchange = _updatePrintGridLayout;
-    document.getElementById('print-scale-slider').oninput = _updatePrintGridScale;
-    document.getElementById('btn-print-port').onclick = () => _setPrintPlanningOrientation('portrait');
-    document.getElementById('btn-print-land').onclick = () => _setPrintPlanningOrientation('landscape');
-
-    document.getElementById('btn-generate-previews').onclick = _generateHighResPrintPreview;
-    document.getElementById('btn-print-preview-cancel').onclick = () => {
-        document.getElementById('print-preview-modal').classList.add('hidden');
-    };
-    document.getElementById('btn-print-preview-confirm').onclick = () => {
-        window.print();
-    };
+    setupPrintUiEvents();
 
     if (typeof _compactLayoutMedia.addEventListener === 'function') {
         _compactLayoutMedia.addEventListener('change', syncMobileBackdrop);

@@ -14,10 +14,10 @@ import { flushPersistedStateNow, schedulePersistAppSession } from './storage.js'
 import {
     togglePrintPlanning, disablePrintPlanning,
     setupPrintDragEvents, updatePrintGridLayout, updatePrintGridScale,
-    setPrintPlanningOrientation, generateHighResPrintPreview
+    setPrintPlanningOrientation, generateHighResPrintPreview, syncPrintOutputFromPreview
 } from './print.js';
 import {
-    injectDeps, setupEvents, createNewTrack, renderGisTree,
+    injectDeps, setupEvents, setupPrintUiEvents, createNewTrack, renderGisTree,
     restoreStoredTracksOnStartup,
     openStoredTrackFromLibrary, deleteStoredTrackFromLibrary,
     handleGisDragStart, handleGisDragOver, handleGisDrop, handleGisDragEnd,
@@ -57,7 +57,8 @@ injectDeps({
     updatePrintGridLayout,
     updatePrintGridScale,
     setPrintPlanningOrientation,
-    generateHighResPrintPreview
+    generateHighResPrintPreview,
+    syncPrintOutputFromPreview
 });
 
 // Esponi le funzioni richiamate dagli handler inline HTML (onclick="...")
@@ -189,6 +190,8 @@ window.onload = function() {
     setMap(mapInstance);
     configureMapInteractions(mapInstance);
     mapInstance.on('moveend', schedulePersistAppSession);
+    setupPrintUiEvents();
+    setupPrintDragEvents();
 
     const resizeObserver = new ResizeObserver(() => {
         if (mapInstance) mapInstance.resize();
@@ -228,7 +231,6 @@ window.onload = function() {
         setupEvents();
         configureMapillaryToken(localStorage.getItem(MAPILLARY_TOKEN_KEY) || '');
         initChart();
-        setupPrintDragEvents();
         renderGisTree();
         updateActiveTracksHeader();
 
