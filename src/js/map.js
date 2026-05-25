@@ -40,6 +40,7 @@ import { renderGisTree, showToast, isGisTreeVisible, setSegmentActive, setTrackA
 import { updateStatsAndProfile } from './stats.js';
 import { setupWaypointLayers, updateWaypointsOnMap, bindWaypointInteractions } from './waypoints.js';
 import { schedulePersistAppSession, schedulePersistTracks } from './storage.js';
+import { requireAuth, isAuthenticated } from './auth.js';
 
 // ─── RDP iterativo (no ricorsione, no stack overflow) ─────────────────────────
 function rdpIterative(points, tolerance) {
@@ -862,6 +863,7 @@ function clearMapillaryCurrentMarker() {
 }
 
 function setupMapillaryLayers() {
+    if (!isAuthenticated()) return;
     if (!hasMapillaryToken()) return;
 
     if (!map.getSource('mapillary-images')) {
@@ -1051,6 +1053,7 @@ function bindMapillaryInteractions() {
 
     map.on('click', 'mapillary-images-layer', (e) => {
         if (!isMapillaryVisible || isDrawing || isCutting || isBoxDeleting || isAddingWaypoint) return;
+        if (!requireAuth("Mapillary")) return;
         const feature = e.features && e.features[0];
         const imageId = feature?.properties?.id || feature?.properties?.image_id || feature?.properties?.key;
         if (!imageId) {
@@ -1329,6 +1332,7 @@ function setMapillaryPanelLoading(imageId, options = {}) {
 }
 
 async function openMapillaryImageFallback(imageId, options = {}) {
+    if (!requireAuth("Mapillary")) return;
     if (!hasMapillaryToken()) {
         showToast("Inserisci prima il token Mapillary.", "error");
         return;
@@ -1388,6 +1392,7 @@ async function openMapillaryImageFallback(imageId, options = {}) {
 }
 
 async function openMapillaryImage(imageId, options = {}) {
+    if (!requireAuth("Mapillary")) return;
     if (!hasMapillaryToken()) {
         showToast("Inserisci prima il token Mapillary.", "error");
         return;
@@ -1407,8 +1412,13 @@ async function openMapillaryImage(imageId, options = {}) {
     await openMapillaryImageFallback(imageId, options);
 }
 
-export function configureMapillaryToken(token) {
+export function configureMapillaryToken(token, options = {}) {
     const cleanToken = (token || '').trim();
+    if (cleanToken && !options.allowUnauthenticated && !requireAuth("Mapillary")) {
+        const input = document.getElementById('input-mapillary-token');
+        if (input) input.value = '';
+        return;
+    }
     const previousToken = mapillaryToken;
     setMapillaryToken(cleanToken);
     if (previousToken !== cleanToken) {
@@ -1438,6 +1448,11 @@ export function configureMapillaryToken(token) {
 }
 
 export function setMapillaryCoverageVisible(visible, options = {}) {
+    if (visible && !options.allowUnauthenticated && !requireAuth("Mapillary")) {
+        const toggle = document.getElementById('toggle-mapillary');
+        if (toggle) toggle.checked = false;
+        return;
+    }
     if (visible && !hasMapillaryToken()) {
         const toggle = document.getElementById('toggle-mapillary');
         if (toggle) toggle.checked = false;
@@ -1586,6 +1601,7 @@ export function setBaseMap(style) {
 }
 
 export function setDimensionMode(enable3D, options = {}) {
+    if (enable3D && !options.allowUnauthenticated && !requireAuth("la vista 3D")) return;
     setIs3D(enable3D);
     if (!mapLoaded) return;
 
@@ -1621,6 +1637,7 @@ export function setDimensionMode(enable3D, options = {}) {
 
 export function flyToPOI(lon, lat, alt, pitch, bearing) {
     if (!mapLoaded) return;
+    if (!requireAuth("la vista 3D")) return;
     setDimensionMode(true);
     map.flyTo({ center: [lon, lat], zoom: 12.5, pitch, bearing, duration: 3000 });
 }

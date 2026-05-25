@@ -10,6 +10,7 @@ import {
     is3D,
     map
 } from './state.js';
+import { getCurrentUser } from './auth.js';
 
 const DB_NAME = 'gpxsuite-local-db';
 const STORE_NAME = 'gpx-files';
@@ -52,10 +53,23 @@ function cloneTrack(track) {
     return JSON.parse(JSON.stringify(track));
 }
 
+function currentOwnerKey() {
+    const user = getCurrentUser();
+    return user ? `${user.provider}:${user.id}` : null;
+}
+
+function isRecordReadableByCurrentUser(record) {
+    const ownerKey = currentOwnerKey();
+    if (!ownerKey) return false;
+    return !record?.ownerKey || record.ownerKey === ownerKey;
+}
+
 export function ensureTrackStorageMeta(track, source = 'created') {
     if (!track.localFileId) track.localFileId = 'local_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
     if (!track.localCreatedAt) track.localCreatedAt = Date.now();
     if (!track.localSource) track.localSource = source;
+    const ownerKey = currentOwnerKey();
+    if (ownerKey && !track.localOwnerKey) track.localOwnerKey = ownerKey;
     return track.localFileId;
 }
 
@@ -77,13 +91,17 @@ async function openDb() {
 }
 
 async function putTrackRecord(track) {
+    const ownerKey = currentOwnerKey();
+    if (!ownerKey) return;
     const db = await openDb();
     ensureTrackStorageMeta(track, track.localSource || 'created');
     track.localUpdatedAt = Date.now();
+    track.localOwnerKey = track.localOwnerKey || ownerKey;
 
     const tx = db.transaction(STORE_NAME, 'readwrite');
     tx.objectStore(STORE_NAME).put({
         id: track.localFileId,
+        ownerKey: track.localOwnerKey,
         name: track.name || 'Traccia senza nome',
         source: track.localSource || 'created',
         createdAt: track.localCreatedAt,
@@ -196,6 +214,7 @@ export async function listStoredTracks() {
     const records = await promisifyRequest(tx.objectStore(STORE_NAME).getAll());
     await waitForTransaction(tx);
     return records
+        .filter(isRecordReadableByCurrentUser)
         .map(rec => ({
             id: rec.id,
             name: rec.name,
@@ -215,11 +234,20 @@ export async function loadStoredTrack(id) {
     const tx = db.transaction(STORE_NAME, 'readonly');
     const record = await promisifyRequest(tx.objectStore(STORE_NAME).get(id));
     await waitForTransaction(tx);
-    return record ? cloneTrack(record.track) : null;
+    if (!record || !isRecordReadableByCurrentUser(record)) return null;
+    const track = cloneTrack(record.track);
+    const ownerKey = currentOwnerKey();
+    if (ownerKey && !track.localOwnerKey) track.localOwnerKey = ownerKey;
+    return track;
 }
 
 export async function deleteStoredTrack(id) {
     const db = await openDb();
+    const readTx = db.transaction(STORE_NAME, 'readonly');
+    const record = await promisifyRequest(readTx.objectStore(STORE_NAME).get(id));
+    await waitForTransaction(readTx);
+    if (!record || !isRecordReadableByCurrentUser(record)) return;
+
     const tx = db.transaction(STORE_NAME, 'readwrite');
     tx.objectStore(STORE_NAME).delete(id);
     await waitForTransaction(tx);

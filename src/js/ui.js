@@ -20,6 +20,7 @@ import {
 
 import { escapeXml, generateDistinctTrackColor } from './utils.js';
 import { forceUpdateStats, haversineDistance } from './stats.js';
+import { requireAuth, isAuthenticated } from './auth.js';
 import {
     listStoredTracks,
     loadStoredTrack,
@@ -74,6 +75,16 @@ const TOOL_CURSORS = {
     box: createSvgCursor('<rect x="4" y="5" width="16" height="14" rx="1.5" fill="rgba(239,68,68,.18)" stroke="#ef4444" stroke-width="2.4" stroke-dasharray="4 2"/><path d="M7 8l10 8M17 8L7 16" stroke="#f8fafc" stroke-width="1.8" stroke-linecap="round"/>', 12, 12),
     waypoint: createSvgCursor('<path d="M12 22s7-6.2 7-12a7 7 0 10-14 0c0 5.8 7 12 7 12z" fill="#2563eb" stroke="#f8fafc" stroke-width="2"/><circle cx="12" cy="10" r="2.5" fill="#f8fafc"/>', 12, 22)
 };
+
+function richiediAccesso(feature = "questa funzione") {
+    const ok = requireAuth(feature);
+    if (!ok) showToast(`Accedi per usare ${feature}`, 'info');
+    return ok;
+}
+
+function richiediEditingGpx() {
+    return richiediAccesso("l'editing GPX");
+}
 
 function createSvgCursor(svgBody, hotX, hotY) {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">${svgBody}</svg>`;
@@ -192,6 +203,7 @@ export function setupPrintUiEvents() {
 }
 
 export function createNewTrack(name) {
+    if (!richiediAccesso("creare tracce")) return null;
     const trackName = name || `Traccia ${tracks.length + 1}`;
     const color = generateDistinctTrackColor(tracks.map(track => track.color));
     const newTrack = {
@@ -687,6 +699,7 @@ export function handleSegmentTreeClick(event, trackId, segId, shouldFocus = fals
 }
 
 export function copyTreeSelection() {
+    if (!richiediEditingGpx()) return;
     const payload = getClipboardPayloadFromSelection();
     if (!payload) {
         showToast('Nessun elemento selezionato', 'info');
@@ -698,6 +711,7 @@ export function copyTreeSelection() {
 }
 
 export function cutTreeSelection() {
+    if (!richiediEditingGpx()) return;
     const payload = getClipboardPayloadFromSelection();
     if (!payload) {
         showToast('Nessun elemento selezionato', 'info');
@@ -710,11 +724,13 @@ export function cutTreeSelection() {
 }
 
 export function pasteTreeSelection(trackId = null, segId = null) {
+    if (!richiediEditingGpx()) return;
     closeTrackContextMenu();
     pasteTreeClipboard({ trackId, segId });
 }
 
 export function duplicateTreeSelection(trackId = null, segId = null) {
+    if (!richiediEditingGpx()) return;
     const payload = getClipboardPayloadFromSelection();
     if (!payload) {
         showToast('Nessun elemento selezionato', 'info');
@@ -727,6 +743,7 @@ export function duplicateTreeSelection(trackId = null, segId = null) {
 }
 
 export function deleteTreeSelection() {
+    if (!richiediEditingGpx()) return;
     if (_treeSelection.length === 0) {
         showToast('Nessun elemento selezionato', 'info');
         return;
@@ -770,6 +787,7 @@ export function handleTreeKeyboardShortcuts(event) {
 }
 
 export function renameSegmentFromMenu(trackId, segId) {
+    if (!richiediEditingGpx()) return;
     closeTrackContextMenu();
     const input = document.getElementById(`segment-name-${segId}`);
     if (!input) return;
@@ -1138,12 +1156,14 @@ async function extractOffroadFromSources(sourceTrack, sourceSegments, nameBase) 
 }
 
 export async function extractOffroadFromTrack(trackId) {
+    if (!richiediAccesso("le tracce offroad")) return;
     const sourceTrack = tracks.find(track => track.id === trackId);
     const sourceSegments = getAnalyzableSegments(sourceTrack);
     await extractOffroadFromSources(sourceTrack, sourceSegments, sourceTrack?.name || 'Traccia');
 }
 
 export async function extractOffroadFromSegment(trackId, segId) {
+    if (!richiediAccesso("le tracce offroad")) return;
     const sourceTrack = tracks.find(track => track.id === trackId);
     const sourceSegment = sourceTrack?.segments.find(segment => segment.id === segId);
 
@@ -1191,6 +1211,7 @@ export function handleTrackNameClick(event, trackId) {
 }
 
 export function openTrackNameEditor(trackId) {
+    if (!richiediEditingGpx()) return;
     closeTrackContextMenu();
     const nameEl = document.getElementById(`track-name-${trackId}`);
     if (!nameEl) return;
@@ -1294,6 +1315,7 @@ export async function renderLocalGpxLibrary() {
 }
 
 export async function openStoredTrackFromLibrary(fileId) {
+    if (!richiediAccesso("l'archivio GPX")) return;
     const existing = tracks.find(track => track.localFileId === fileId);
     if (existing) {
         setTrackActive(existing.id);
@@ -1322,6 +1344,7 @@ export async function openStoredTrackFromLibrary(fileId) {
 }
 
 export async function restoreStoredTracksOnStartup() {
+    if (!isAuthenticated()) return { restoredCount: 0, session: null, skippedAuth: true };
     const session = loadPersistedAppSession();
     const files = await listStoredTracks();
     if (files.length === 0) return { restoredCount: 0, session };
@@ -1413,6 +1436,7 @@ export async function restoreStoredTracksOnStartup() {
 }
 
 export async function deleteStoredTrackFromLibrary(fileId) {
+    if (!richiediAccesso("l'archivio GPX")) return;
     const track = tracks.find(item => item.localFileId === fileId);
     if (track) {
         deleteTrack(track.id);
@@ -1709,6 +1733,10 @@ function finishGisTreeMove(message) {
 }
 
 export function handleGisDragStart(event, type, trackId, segId = null) {
+    if (!richiediEditingGpx()) {
+        event.preventDefault();
+        return;
+    }
     _gisDragPayload = { type, trackId, segId };
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', JSON.stringify(_gisDragPayload));
@@ -1725,6 +1753,7 @@ export function handleGisDragEnd() {
 }
 
 export function handleGisDrop(event, targetType, targetTrackId, targetSegId = null) {
+    if (!richiediEditingGpx()) return;
     if (!_gisDragPayload) return;
 
     if (_gisDragPayload.type === 'track' && targetType !== 'track') return;
@@ -1800,6 +1829,7 @@ export function setTrackActive(trackId, shouldFocus = false) {
 }
 
 export function renameTrack(trackId, newName) {
+    if (!richiediEditingGpx()) return;
     const t = tracks.find(tr => tr.id === trackId);
     const cleanName = String(newName || '').trim();
     if (t && cleanName && t.name !== cleanName) {
@@ -1811,6 +1841,7 @@ export function renameTrack(trackId, newName) {
 }
 
 export function changeTrackColor(trackId, newColor) {
+    if (!richiediEditingGpx()) return;
     const t = tracks.find(tr => tr.id === trackId);
     if (t) {
         t.color = newColor;
@@ -1821,6 +1852,7 @@ export function changeTrackColor(trackId, newColor) {
 }
 
 export function changeTrackWidth(trackId, newWidth) {
+    if (!richiediEditingGpx()) return;
     const t = tracks.find(tr => tr.id === trackId);
     const width = Math.max(1, Math.min(12, Number(newWidth) || 3));
     if (t && t.width !== width) {
@@ -1832,6 +1864,7 @@ export function changeTrackWidth(trackId, newWidth) {
 }
 
 export function toggleTrackVisibility(trackId) {
+    if (!richiediEditingGpx()) return;
     const t = tracks.find(tr => tr.id === trackId);
     if (t) {
         t.visible = t.visible === false ? true : false;
@@ -1842,6 +1875,7 @@ export function toggleTrackVisibility(trackId) {
 }
 
 export function toggleAllWaypointsVisibility(trackId) {
+    if (!richiediEditingGpx()) return;
     const track = tracks.find(t => t.id === trackId);
     if (track) {
         track.waypointsVisible = track.waypointsVisible === false ? true : false;
@@ -1851,6 +1885,7 @@ export function toggleAllWaypointsVisibility(trackId) {
 }
 
 export function toggleWaypointVisibility(trackId, wpId) {
+    if (!richiediEditingGpx()) return;
     const track = tracks.find(t => t.id === trackId);
     if (track) {
         const wp = track.waypoints.find(w => w.id === wpId);
@@ -1863,6 +1898,7 @@ export function toggleWaypointVisibility(trackId, wpId) {
 }
 
 export function toggleSegmentVisibility(trackId, segId) {
+    if (!richiediEditingGpx()) return;
     const t = tracks.find(tr => tr.id === trackId);
     if (t) {
         const s = t.segments.find(sg => sg.id === segId);
@@ -1875,6 +1911,7 @@ export function toggleSegmentVisibility(trackId, segId) {
 }
 
 export function deleteTrack(trackId) {
+    if (!richiediEditingGpx()) return;
     const trackToDelete = tracks.find(t => t.id === trackId);
     const remainingTracks = tracks.filter(t => t.id !== trackId);
     setTracks(remainingTracks);
@@ -1893,6 +1930,7 @@ export function deleteTrack(trackId) {
 }
 
 export function addNewSegmentToTrack(trackId) {
+    if (!richiediEditingGpx()) return;
     const t = tracks.find(tr => tr.id === trackId);
     if (t) {
         const newSegId = 'seg_' + Date.now();
@@ -1912,6 +1950,7 @@ export function addNewSegmentToTrack(trackId) {
 }
 
 export function renameSegment(trackId, segId, newName) {
+    if (!richiediEditingGpx()) return;
     const t = tracks.find(tr => tr.id === trackId);
     if (t) {
         const s = t.segments.find(sg => sg.id === segId);
@@ -1934,6 +1973,7 @@ export function setSegmentActive(trackId, segId, shouldFocus = false) {
 }
 
 export function deleteSegment(trackId, segId) {
+    if (!richiediEditingGpx()) return;
     const t = tracks.find(tr => tr.id === trackId);
     if (t) {
         t.segments = t.segments.filter(sg => sg.id !== segId);
@@ -1951,6 +1991,7 @@ export function zoomToWaypoint(lon, lat) {
 }
 
 export function deleteWaypoint(trackId, wpId) {
+    if (!richiediEditingGpx()) return;
     const track = tracks.find(t => t.id === trackId);
     if (track) {
         track.waypoints = track.waypoints.filter(w => w.id !== wpId);
@@ -2131,11 +2172,17 @@ export function setupEvents() {
     };
 
     document.getElementById('toggle-mapillary').onchange = (e) => {
+        if (!richiediAccesso("Mapillary")) {
+            e.target.checked = false;
+            updateMapillaryToolbarButton();
+            return;
+        }
         if (_setMapillaryCoverageVisible) _setMapillaryCoverageVisible(e.target.checked);
         updateMapillaryToolbarButton();
     };
 
     document.getElementById('btn-save-mapillary-token').onclick = () => {
+        if (!richiediAccesso("Mapillary")) return;
         const token = document.getElementById('input-mapillary-token').value;
         if (_configureMapillaryToken) _configureMapillaryToken(token);
         updateMapillaryToolbarButton();
@@ -2143,6 +2190,7 @@ export function setupEvents() {
     };
 
     document.getElementById('btn-clear-mapillary-token').onclick = () => {
+        if (!richiediAccesso("Mapillary")) return;
         document.getElementById('input-mapillary-token').value = '';
         if (_configureMapillaryToken) _configureMapillaryToken('');
         updateMapillaryToolbarButton();
@@ -2154,9 +2202,13 @@ export function setupEvents() {
     };
 
     document.getElementById('view-mode-2d').onclick = () => _setDimensionMode(false);
-    document.getElementById('view-mode-3d').onclick = () => _setDimensionMode(true);
+    document.getElementById('view-mode-3d').onclick = () => {
+        if (!richiediAccesso("la vista 3D")) return;
+        _setDimensionMode(true);
+    };
 
     document.getElementById('btn-draw-track').onclick = () => {
+        if (!richiediEditingGpx()) return;
         setIsDrawing(!isDrawing);
         setIsCutting(false);
         setIsBoxDeleting(false);
@@ -2179,11 +2231,13 @@ export function setupEvents() {
     const profiles = ['off', 'foot', 'bike', 'moto', 'car'];
     profiles.forEach(p => {
         document.getElementById(`snap-profile-${p}`).onclick = () => {
+            if (p !== 'off' && !richiediEditingGpx()) return;
             _setSnapProfile(p);
         };
     });
 
     document.getElementById('btn-snap-toggle').onclick = () => {
+        if (!richiediEditingGpx()) return;
         if (currentSnapProfile === 'off') {
             _setSnapProfile('foot');
         } else {
@@ -2192,6 +2246,7 @@ export function setupEvents() {
     };
 
     document.getElementById('btn-mapillary-layer').onclick = () => {
+        if (!richiediAccesso("Mapillary")) return;
         const toggle = document.getElementById('toggle-mapillary');
         if (!toggle) return;
         toggle.checked = !toggle.checked;
@@ -2202,12 +2257,16 @@ export function setupEvents() {
     map.on('click', (e) => {
         const coords = e.lngLat;
         if (isDrawing) {
+            if (!richiediEditingGpx()) return;
             _addPointToActiveSegment(coords.lng, coords.lat);
         } else if (isCutting) {
+            if (!richiediEditingGpx()) return;
             _cutTrackAtPoint(coords);
         } else if (isBoxDeleting) {
+            if (!richiediEditingGpx()) return;
             _handleBoxDeleteClick(coords);
         } else if (isAddingWaypoint) {
+            if (!richiediEditingGpx()) return;
             _addWaypointAtCoords(coords.lng, coords.lat);
         }
     });
@@ -2219,6 +2278,7 @@ export function setupEvents() {
     });
 
     document.getElementById('btn-cut-track').onclick = () => {
+        if (!richiediEditingGpx()) return;
         setIsCutting(!isCutting);
         setIsDrawing(false);
         setIsBoxDeleting(false);
@@ -2231,6 +2291,7 @@ export function setupEvents() {
     };
 
     document.getElementById('btn-box-delete').onclick = () => {
+        if (!richiediEditingGpx()) return;
         setIsBoxDeleting(!isBoxDeleting);
         setIsDrawing(false);
         setIsCutting(false);
@@ -2243,6 +2304,7 @@ export function setupEvents() {
     };
 
     document.getElementById('btn-add-waypoint').onclick = () => {
+        if (!richiediEditingGpx()) return;
         setIsAddingWaypoint(!isAddingWaypoint);
         setIsDrawing(false);
         setIsCutting(false);
@@ -2270,6 +2332,10 @@ export function setupEvents() {
     });
 
     document.getElementById('file-import-gpx').onchange = (e) => {
+        if (!richiediAccesso("l'import GPX")) {
+            e.target.value = '';
+            return;
+        }
         const file = e.target.files[0];
         if (file) {
             const reader = new FileReader();
@@ -2281,10 +2347,12 @@ export function setupEvents() {
     };
 
     document.getElementById('btn-export-gpx').onclick = () => {
+        if (!richiediAccesso("l'export GPX")) return;
         _exportGPX();
     };
 
     document.getElementById('btn-tree-new-track').onclick = () => {
+        if (!richiediAccesso("creare tracce")) return;
         createNewTrack();
     };
 

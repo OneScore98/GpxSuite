@@ -21,6 +21,7 @@ import { queryElevation } from './map.js';
 import { showToast, updateActiveTracksHeader, createNewTrack } from './ui.js';
 import { haversineDistance } from './stats.js';
 import { schedulePersistAppSession, schedulePersistTracks } from './storage.js';
+import { requireAuth } from './auth.js';
 
 // Throttle: su file enormi JSON.stringify dell'intero state può richiedere
 // 100+ ms. Se l'utente fa molte modifiche rapide (es. tracciamento continuo),
@@ -51,6 +52,7 @@ export function saveHistoryState(options = {}) {
 }
 
 export function triggerUndo() {
+    if (!requireAuth("l'editing GPX")) return;
     if (undoStack.length <= 1) {
         showToast("Nessuna altra operazione da annullare", "info");
         return;
@@ -120,6 +122,7 @@ function ensureActiveEditableSegment() {
 }
 
 export async function addPointToActiveSegment(lon, lat) {
+    if (!requireAuth("l'editing GPX")) return;
     const { track, segment } = ensureActiveEditableSegment();
     if (!track || !segment) {
         showToast("Impossibile trovare un segmento attivo per il disegno", "error");
@@ -272,6 +275,7 @@ export async function fetchSnapRoute(from, to, profile) {
 }
 
 export function cutTrackAtPoint(lngLat) {
+    if (!requireAuth("l'editing GPX")) return;
     let segmentCut = false;
 
     for (let tIdx = 0; tIdx < tracks.length; tIdx++) {
@@ -326,6 +330,7 @@ export function cutTrackAtPoint(lngLat) {
 }
 
 export function handleBoxDeleteClick(lngLat) {
+    if (!requireAuth("l'editing GPX")) return;
     if (!boxDeleteCoords) {
         setBoxDeleteCoords(lngLat);
         updateBoxDeletePreview(lngLat, lngLat);
@@ -375,6 +380,7 @@ export function handleBoxDeleteClick(lngLat) {
 }
 
 export function setSnapProfile(profile, options = {}) {
+    if (profile !== 'off' && !options.allowUnauthenticated && !requireAuth("l'editing GPX")) return;
     setCurrentSnapProfile(profile);
     setIsSnapActive(profile !== 'off');
 
