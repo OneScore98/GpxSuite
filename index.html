@@ -103,42 +103,42 @@
         <!-- Gruppo Strumenti GPX Rapid -->
         <div id="toolbar-quick-tools" class="flex flex-col gap-1 bg-gray-950/95 backdrop-blur-md border border-gray-800/90 rounded-xl p-1 shadow-xl">
             <!-- Nuova Traccia -->
-            <button id="btn-draw-track" data-auth-required data-auth-feature="creare tracce" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Nuova Traccia">
+            <button id="btn-draw-track" data-auth-required class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Nuova Traccia">
         <i data-lucide="pencil" class="w-4 h-4"></i>
       </button>
 
             <!-- Snap to road toggle -->
-            <button id="btn-snap-toggle" data-auth-required data-auth-feature="l'editing GPX" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-400 relative" title="Snap alle Strade (Attivo/Disattivo)">
+            <button id="btn-snap-toggle" data-auth-required class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-400 relative" title="Snap alle Strade (Attivo/Disattivo)">
         <i data-lucide="git-commit" class="w-4 h-4"></i>
         <span id="snap-indicator" class="absolute bottom-1 right-1 w-2 h-2 rounded-full bg-red-500 border border-gray-950"></span>
       </button>
 
             <!-- Taglio Traccia -->
-            <button id="btn-cut-track" data-auth-required data-auth-feature="l'editing GPX" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Taglia Traccia in un punto">
+            <button id="btn-cut-track" data-auth-required class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Taglia Traccia in un punto">
         <i data-lucide="scissors" class="w-4 h-4"></i>
       </button>
 
             <!-- Selezione Area / Cancella punti in Box -->
-            <button id="btn-box-delete" data-auth-required data-auth-feature="l'editing GPX" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Elimina punti dentro area">
+            <button id="btn-box-delete" data-auth-required class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Elimina punti dentro area">
         <i data-lucide="box" class="w-4 h-4"></i>
       </button>
 
             <!-- Aggiungi Waypoint -->
-            <button id="btn-add-waypoint" data-auth-required data-auth-feature="l'editing GPX" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Inserisci Waypoint">
+            <button id="btn-add-waypoint" data-auth-required class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Inserisci Waypoint">
         <i data-lucide="map-pin" class="w-4 h-4"></i>
       </button>
 
             <div class="h-[1px] bg-gray-800 my-1 mx-1"></div>
 
             <!-- Toggle Mapillary -->
-            <button id="btn-mapillary-layer" data-auth-required data-auth-feature="Mapillary" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Mostra/Nascondi livello Mapillary">
+            <button id="btn-mapillary-layer" data-auth-required class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Mostra/Nascondi livello Mapillary">
         <i data-lucide="camera" class="w-4 h-4"></i>
       </button>
 
             <div class="h-[1px] bg-gray-800 my-1 mx-1"></div>
 
             <!-- Undo (CTRL-Z) -->
-            <button id="btn-undo" data-auth-required data-auth-feature="l'editing GPX" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300 disabled:opacity-40" disabled title="Annulla modifica (Ctrl+Z)">
+            <button id="btn-undo" data-auth-required class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300 disabled:opacity-40" disabled title="Annulla modifica (Ctrl+Z)">
         <i data-lucide="undo-2" class="w-4 h-4"></i>
       </button>
 
@@ -148,13 +148,13 @@
       </button>
 
             <!-- Importa GPX -->
-            <label data-auth-required data-auth-feature="l'import GPX" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300 cursor-pointer" title="Importa file GPX">
-        <input type="file" id="file-import-gpx" accept=".gpx" class="hidden" data-auth-required data-auth-feature="l'import GPX">
+            <label data-auth-required class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300 cursor-pointer" title="Importa file GPX">
+        <input type="file" id="file-import-gpx" accept=".gpx" class="hidden" data-auth-required>
         <i data-lucide="upload" class="w-4 h-4"></i>
       </label>
 
             <!-- Esporta GPX -->
-            <button id="btn-export-gpx" data-auth-required data-auth-feature="l'export GPX" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Esporta file GPX">
+            <button id="btn-export-gpx" data-auth-required class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Esporta file GPX">
         <i data-lucide="download" class="w-4 h-4"></i>
       </button>
 
@@ -247,17 +247,17 @@
             </span>
                             <span class="text-[9px] text-gray-500">Foto stradali e copertura GPX</span>
                         </div>
-                        <label data-auth-required data-auth-feature="Mapillary" class="relative inline-flex items-center cursor-pointer">
-            <input type="checkbox" id="toggle-mapillary" class="sr-only peer" data-auth-required data-auth-feature="Mapillary">
+                        <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="toggle-mapillary" class="sr-only peer" data-auth-required>
             <div class="w-8 h-4 bg-gray-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-300 after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-600"></div>
           </label>
                     </div>
                     <div class="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-1.5">
-                        <input type="password" id="input-mapillary-token" data-auth-required data-auth-feature="Mapillary" placeholder="Client token Mapillary" class="min-w-0 bg-gray-900 border border-gray-800 rounded-lg px-2 py-1.5 text-[11px] text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500">
-                        <button id="btn-save-mapillary-token" data-auth-required data-auth-feature="Mapillary" class="bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg px-2 flex items-center justify-center" title="Salva token Mapillary">
+                        <input type="password" id="input-mapillary-token" data-auth-required placeholder="Client token Mapillary" class="min-w-0 bg-gray-900 border border-gray-800 rounded-lg px-2 py-1.5 text-[11px] text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500">
+                        <button id="btn-save-mapillary-token" data-auth-required class="bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg px-2 flex items-center justify-center" title="Salva token Mapillary">
             <i data-lucide="save" class="w-3.5 h-3.5"></i>
           </button>
-                        <button id="btn-clear-mapillary-token" data-auth-required data-auth-feature="Mapillary" class="bg-gray-900 hover:bg-gray-800 text-gray-400 rounded-lg px-2 flex items-center justify-center border border-gray-800" title="Rimuovi token Mapillary">
+                        <button id="btn-clear-mapillary-token" data-auth-required class="bg-gray-900 hover:bg-gray-800 text-gray-400 rounded-lg px-2 flex items-center justify-center border border-gray-800" title="Rimuovi token Mapillary">
             <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
           </button>
                     </div>
@@ -269,7 +269,7 @@
                 <label class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Prospettiva Dimensionale</label>
                 <div class="grid grid-cols-2 gap-1 bg-gray-900 p-1 rounded-lg border border-gray-800">
                     <button id="view-mode-2d" class="text-xs font-medium py-1 px-2 rounded bg-blue-600 text-white">2D PLANO</button>
-                    <button id="view-mode-3d" data-auth-required data-auth-feature="la vista 3D" class="text-xs font-medium py-1 px-2 rounded text-gray-400 hover:text-white">3D TERRENO</button>
+                    <button id="view-mode-3d" data-auth-required class="text-xs font-medium py-1 px-2 rounded text-gray-400 hover:text-white">3D TERRENO</button>
                 </div>
             </div>
 
@@ -281,11 +281,11 @@
                 </div>
 
                 <div class="grid grid-cols-5 gap-1 pt-1.5">
-                    <button id="snap-profile-off" data-auth-required data-auth-feature="l'editing GPX" class="text-[10px] font-bold py-1 rounded bg-blue-600 text-white" title="Disattiva Snap (Linea d'Aria)">OFF</button>
-                    <button id="snap-profile-foot" data-auth-required data-auth-feature="l'editing GPX" class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Piedi (OSRM)">🚶</button>
-                    <button id="snap-profile-bike" data-auth-required data-auth-feature="l'editing GPX" class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Bici (OSRM)">🚲</button>
-                    <button id="snap-profile-moto" data-auth-required data-auth-feature="l'editing GPX" class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Moto (OSRM)">🏍️</button>
-                    <button id="snap-profile-car" data-auth-required data-auth-feature="l'editing GPX" class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Auto (OSRM)">🚗</button>
+                    <button id="snap-profile-off" data-auth-required class="text-[10px] font-bold py-1 rounded bg-blue-600 text-white" title="Disattiva Snap (Linea d'Aria)">OFF</button>
+                    <button id="snap-profile-foot" data-auth-required class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Piedi (OSRM)">🚶</button>
+                    <button id="snap-profile-bike" data-auth-required class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Bici (OSRM)">🚲</button>
+                    <button id="snap-profile-moto" data-auth-required class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Moto (OSRM)">🏍️</button>
+                    <button id="snap-profile-car" data-auth-required class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Auto (OSRM)">🚗</button>
                 </div>
             </div>
 
@@ -384,7 +384,7 @@
         <!-- Contenuto scrollabile del File Tree -->
         <div class="flex-1 overflow-y-auto p-4 space-y-4">
             <div class="flex gap-2">
-                <button id="btn-tree-new-track" data-auth-required data-auth-feature="creare tracce" class="flex-1 bg-blue-600/25 hover:bg-blue-600/40 text-blue-300 border border-blue-800/80 rounded-lg py-1.5 text-xs font-semibold flex items-center justify-center gap-1">
+                <button id="btn-tree-new-track" data-auth-required class="flex-1 bg-blue-600/25 hover:bg-blue-600/40 text-blue-300 border border-blue-800/80 rounded-lg py-1.5 text-xs font-semibold flex items-center justify-center gap-1">
           <i data-lucide="plus" class="w-3.5 h-3.5"></i> Nuova Traccia
         </button>
             </div>

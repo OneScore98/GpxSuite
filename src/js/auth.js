@@ -349,24 +349,6 @@ function setAuthMode(mode) {
     setAuthError('');
 }
 
-function protectedFeatureLabel(el) {
-    return el?.dataset?.authFeature ||
-        el?.getAttribute?.('title') ||
-        el?.getAttribute?.('aria-label') ||
-        'questa funzione';
-}
-
-function handleProtectedControlRequest(event) {
-    if (isAuthenticated()) return;
-    const protectedEl = event.target?.closest?.('[data-auth-required]');
-    if (!protectedEl || protectedEl.closest('#auth-modal')) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation();
-    openAuthModal(`Accedi per usare ${protectedFeatureLabel(protectedEl)}.`);
-}
-
 async function handleLocalLogin(event) {
     event.preventDefault();
     try {
@@ -436,8 +418,6 @@ function bindAuthUi() {
     document.getElementById('btn-auth-tab-register')?.addEventListener('click', () => setAuthMode('register'));
     document.getElementById('auth-login-form')?.addEventListener('submit', handleLocalLogin);
     document.getElementById('auth-register-form')?.addEventListener('submit', handleLocalRegister);
-    document.addEventListener('click', handleProtectedControlRequest, true);
-    document.addEventListener('change', handleProtectedControlRequest, true);
     document.getElementById('btn-google-client-save')?.addEventListener('click', () => {
         setGoogleClientId(document.getElementById('input-google-client-id')?.value || '');
         setAuthError('Client ID Google salvato.', 'success');
@@ -473,6 +453,10 @@ function updateAuthUi() {
         el.setAttribute('aria-disabled', authenticated ? 'false' : 'true');
     });
 
+    document.querySelectorAll('input[data-auth-required]').forEach(el => {
+        el.disabled = !authenticated;
+    });
+
     if (authenticated) closeAuthModal();
 }
 
@@ -482,7 +466,7 @@ export function initAuth(options = {}) {
     updateAuthUi();
     setAuthMode('login');
     renderGoogleButton();
-    if (!currentUser && options.forceModal === true) openAuthModal();
+    if (!currentUser && options.forceModal !== false) openAuthModal();
     return currentUser;
 }
 
@@ -492,26 +476,14 @@ export function openAuthModal(message = '') {
     modal.classList.remove('hidden');
     if (message) setAuthError(message, 'info');
     requestAnimationFrame(() => {
-        if (window.matchMedia('(pointer: coarse)').matches) return;
         const field = document.getElementById('auth-login-email');
         if (field && !currentUser) field.focus({ preventScroll: true });
     });
 }
 
 export function closeAuthModal() {
-    const modal = document.getElementById('auth-modal');
-    if (!modal) return;
-    if (modal.contains(document.activeElement)) {
-        document.activeElement.blur();
-    }
-    const wasOpen = !modal.classList.contains('hidden');
-    modal.classList.add('hidden');
+    document.getElementById('auth-modal')?.classList.add('hidden');
     setAuthError('');
-    if (wasOpen) {
-        requestAnimationFrame(() => {
-            window.dispatchEvent(new CustomEvent('gpxsuite:auth-modal-closed'));
-        });
-    }
 }
 
 export function isAuthenticated() {
@@ -540,4 +512,5 @@ export function onAuthChange(listener) {
 export function signOut() {
     window.google?.accounts?.id?.disableAutoSelect?.();
     setCurrentUser(null);
+    openAuthModal();
 }
