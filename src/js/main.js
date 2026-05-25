@@ -250,6 +250,17 @@ window.onload = function() {
     setupPrintUiEvents();
     setupPrintDragEvents();
 
+    const riallineaMappaAlViewport = () => {
+        const aggiorna = () => {
+            updateViewportMetrics();
+            mapInstance.resize();
+        };
+        requestAnimationFrame(aggiorna);
+        setTimeout(aggiorna, 120);
+        setTimeout(aggiorna, 360);
+    };
+    window.addEventListener('gpxsuite:auth-modal-closed', riallineaMappaAlViewport);
+
     const resizeObserver = new ResizeObserver(() => {
         if (mapInstance) mapInstance.resize();
     });
@@ -285,8 +296,9 @@ window.onload = function() {
         });
 
         setupLayers();
-        initAuth({ forceModal: true });
+        initAuth({ forceModal: false });
         onAuthChange(user => {
+            riallineaMappaAlViewport();
             if (user) {
                 restoreWorkspaceForAuthenticatedUser();
             } else {
