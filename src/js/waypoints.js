@@ -17,7 +17,6 @@ import {
 import { saveHistoryState } from './tracks.js';
 import { updateMapData, queryElevation } from './map.js';
 import { showToast } from './ui.js';
-import { requireAuth } from './auth.js';
 
 let _waypointInteractionsBound = false;
 let _draggingWaypoint = null;
@@ -69,7 +68,6 @@ function getWaypointFeatureFromEvent(e) {
 }
 
 export async function addWaypointAtCoords(lon, lat) {
-    if (!requireAuth("l'editing GPX")) return;
     if (!activeTrackId) {
         showToast("Seleziona o crea una traccia prima di aggiungere un waypoint.", "error");
         setIsAddingWaypoint(false);
@@ -343,7 +341,6 @@ export function bindWaypointInteractions() {
     });
 
     map.on('mousedown', 'gpx-waypoints-hit-layer', (e) => {
-        if (!requireAuth("l'editing GPX")) return;
         if (isAddingWaypoint) return;
         const ids = getWaypointFeatureFromEvent(e);
         if (!ids) return;
@@ -384,7 +381,6 @@ export function bindWaypointInteractions() {
     });
 
     map.on('click', 'gpx-waypoints-hit-layer', (e) => {
-        if (!requireAuth("l'editing GPX")) return;
         if (isAddingWaypoint) return;
         if (_suppressNextWaypointClick) {
             _suppressNextWaypointClick = false;
@@ -398,7 +394,6 @@ export function bindWaypointInteractions() {
 }
 
 export function openWaypointEditor(trackId, wpId) {
-    if (!requireAuth("l'editing GPX")) return;
     const track = tracks.find(t => t.id === trackId);
     if (!track) return;
     const wp = track.waypoints.find(w => w.id === wpId);
@@ -413,7 +408,6 @@ export function openWaypointEditor(trackId, wpId) {
 }
 
 export function saveWaypointModifications() {
-    if (!requireAuth("l'editing GPX")) return;
     if (!activeWpForEdit.trackId || !activeWpForEdit.wpId) return;
     const track = tracks.find(t => t.id === activeWpForEdit.trackId);
     if (track) {

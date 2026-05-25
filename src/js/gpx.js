@@ -9,7 +9,6 @@ import { createNewTrack, showToast } from './ui.js';
 import { saveHistoryState } from './tracks.js';
 import { updateMapData } from './map.js';
 import { escapeXml } from './utils.js';
-import { requireAuth } from './auth.js';
 
 // Singleton del worker: lo creiamo lazy e lo riutilizziamo
 let _gpxWorker = null;
@@ -38,7 +37,6 @@ function yieldToMain() {
 }
 
 export async function importGPX(xmlText, fileName) {
-    if (!requireAuth("l'import GPX")) return;
     showToast("Importazione in corso...", "info");
 
     try {
@@ -52,7 +50,6 @@ export async function importGPX(xmlText, fileName) {
 
         // Costruisci il nuovo track con i dati pre-parsati
         const newTrack = createNewTrack(fileName.replace('.gpx', ''));
-        if (!newTrack) return;
         newTrack.localSource = 'imported';
         newTrack.segments = result.segments.length > 0 ? result.segments : [{
             id: 'seg_' + Date.now() + '_import',
@@ -184,7 +181,6 @@ async function parseInline(xmlText, fileName) {
 // ─── Export GPX ──────────────────────────────────────────────────────────────
 
 export function exportGPX() {
-    if (!requireAuth("l'export GPX")) return;
     if (tracks.length === 0) {
         showToast("Nessun dato GIS da esportare", "error");
         return;

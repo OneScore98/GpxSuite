@@ -1,20 +1,6 @@
 // main.js — Entry point: importa tutto, chiama init al DOMContentLoaded
 
-import {
-    MAPILLARY_TOKEN_KEY,
-    setMap,
-    setMapLoaded,
-    NEXTZEN_TERRAIN_SOURCE,
-    is3D,
-    setTracks,
-    setActiveTrackId,
-    setActiveSegmentId,
-    setUndoStack,
-    setIsDrawing,
-    setIsCutting,
-    setIsBoxDeleting,
-    setIsAddingWaypoint
-} from './state.js';
+import { MAPILLARY_TOKEN_KEY, setMap, setMapLoaded, NEXTZEN_TERRAIN_SOURCE, is3D } from './state.js';
 
 import {
     setupLayers, updateMapData, setBaseMap, setDimensionMode, flyToPOI,
@@ -46,7 +32,6 @@ import {
     deleteTrack, addNewSegmentToTrack, renameSegment, renameSegmentFromMenu, extractOffroadFromTrack, extractOffroadFromSegment, setSegmentActive, deleteSegment,
     zoomToWaypoint, deleteWaypoint, searchNominatim
 } from './ui.js';
-import { initAuth, onAuthChange, isAuthenticated } from './auth.js';
 
 // Inietta le dipendenze circolari in ui.js prima che venga usata
 injectDeps({
@@ -140,7 +125,6 @@ function configureMapInteractions(mapInstance) {
     }
 
     const enableTerrainForCameraGesture = () => {
-        if (!isAuthenticated()) return;
         if (is3D) return;
         setDimensionMode(true, { silent: true, preserveCamera: true });
     };
@@ -156,47 +140,6 @@ function configureMapInteractions(mapInstance) {
     canvas.addEventListener('touchstart', (e) => {
         if (e.touches && e.touches.length >= 2) enableTerrainForCameraGesture();
     }, { passive: true });
-}
-
-let workspaceLoadedForAuth = false;
-
-async function restoreWorkspaceForAuthenticatedUser() {
-    if (!isAuthenticated() || workspaceLoadedForAuth) return;
-    workspaceLoadedForAuth = true;
-    configureMapillaryToken(localStorage.getItem(MAPILLARY_TOKEN_KEY) || '', { allowUnauthenticated: false });
-
-    try {
-        const restoreResult = await restoreStoredTracksOnStartup();
-        if (restoreResult.restoredCount === 0) {
-            createNewTrack("Traccia 1");
-        } else {
-            showToast("Ripristinato l'ultimo stato locale", "success");
-        }
-    } catch (err) {
-        console.error(err);
-        showToast("Archivio locale non disponibile in questo browser", "error");
-        createNewTrack("Traccia 1");
-    }
-}
-
-function clearWorkspaceAfterLogout() {
-    workspaceLoadedForAuth = false;
-    setIsDrawing(false);
-    setIsCutting(false);
-    setIsBoxDeleting(false);
-    setIsAddingWaypoint(false);
-    setSnapProfile('off', { silent: true, allowUnauthenticated: true });
-    setTracks([]);
-    setActiveTrackId(null);
-    setActiveSegmentId(null);
-    setUndoStack([]);
-    closeMapillaryViewer();
-    setMapillaryCoverageVisible(false, { silent: true, allowUnauthenticated: true });
-    configureMapillaryToken('', { allowUnauthenticated: true });
-    setDimensionMode(false, { silent: true, allowUnauthenticated: true });
-    renderGisTree();
-    updateActiveTracksHeader();
-    updateMapData(true);
 }
 
 window.onload = function() {
@@ -285,18 +228,23 @@ window.onload = function() {
         });
 
         setupLayers();
-        initAuth({ forceModal: true });
-        onAuthChange(user => {
-            if (user) {
-                restoreWorkspaceForAuthenticatedUser();
-            } else {
-                clearWorkspaceAfterLogout();
-            }
-        });
         setupEvents();
+        configureMapillaryToken(localStorage.getItem(MAPILLARY_TOKEN_KEY) || '');
         initChart();
         renderGisTree();
         updateActiveTracksHeader();
-        await restoreWorkspaceForAuthenticatedUser();
+
+        try {
+            const restoreResult = await restoreStoredTracksOnStartup();
+            if (restoreResult.restoredCount === 0) {
+                createNewTrack("Traccia 1");
+            } else {
+                showToast("Ripristinato l'ultimo stato locale", "success");
+            }
+        } catch (err) {
+            console.error(err);
+            showToast("Archivio locale non disponibile in questo browser", "error");
+            createNewTrack("Traccia 1");
+        }
     });
 };

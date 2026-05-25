@@ -22,10 +22,6 @@
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 
-    <!-- Google Identity Services -->
-    <meta name="google-signin-client_id" content="">
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
-
     <!-- MapillaryJS viewer ufficiale -->
     <script src="https://unpkg.com/mapillary-js@4.1.2/dist/mapillary.js"></script>
     <link href="https://unpkg.com/mapillary-js@4.1.2/dist/mapillary.css" rel="stylesheet" />
@@ -70,21 +66,6 @@
     <!-- MAPPA (A tutto schermo) -->
     <div id="map"></div>
 
-    <!-- AUTENTICAZIONE -->
-    <div id="auth-status-bar" class="absolute top-3 right-16 z-20 flex items-center gap-2">
-        <div id="auth-avatar" class="hidden w-8 h-8 rounded-lg bg-blue-600 text-white text-xs font-bold items-center justify-center shadow-xl border border-blue-400/40 flex"></div>
-        <div class="hidden md:block min-w-0 max-w-[13rem] bg-gray-950/90 border border-gray-800 rounded-lg px-2.5 py-1.5 shadow-xl">
-            <div id="auth-status-text" class="text-[11px] text-gray-200 font-semibold truncate">Accedi</div>
-            <div id="auth-user-email" class="text-[9px] text-gray-500 truncate"></div>
-        </div>
-        <button id="btn-auth-open" class="w-10 h-10 rounded-xl bg-gray-950/90 backdrop-blur-md border border-gray-800 hover:bg-gray-800 transition-all shadow-xl flex items-center justify-center text-white" title="Accedi">
-      <i data-lucide="log-in" class="w-4 h-4"></i>
-    </button>
-        <button id="btn-auth-logout" class="hidden w-10 h-10 rounded-xl bg-gray-950/90 backdrop-blur-md border border-gray-800 hover:bg-gray-800 transition-all shadow-xl flex items-center justify-center text-gray-300" title="Esci">
-      <i data-lucide="log-out" class="w-4 h-4"></i>
-    </button>
-    </div>
-
     <!-- BACKDROP MOBILE PER PANNELLI E SHEET -->
     <button id="mobile-panel-backdrop" class="hidden absolute inset-0 z-[15] bg-black/45 backdrop-blur-[2px]" aria-label="Chiudi pannelli"></button>
 
@@ -118,42 +99,42 @@
         <!-- Gruppo Strumenti GPX Rapid -->
         <div id="toolbar-quick-tools" class="flex flex-col gap-1 bg-gray-950/95 backdrop-blur-md border border-gray-800/90 rounded-xl p-1 shadow-xl">
             <!-- Nuova Traccia -->
-            <button id="btn-draw-track" data-auth-required class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Nuova Traccia">
+            <button id="btn-draw-track" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Nuova Traccia">
         <i data-lucide="pencil" class="w-4 h-4"></i>
       </button>
 
             <!-- Snap to road toggle -->
-            <button id="btn-snap-toggle" data-auth-required class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-400 relative" title="Snap alle Strade (Attivo/Disattivo)">
+            <button id="btn-snap-toggle" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-400 relative" title="Snap alle Strade (Attivo/Disattivo)">
         <i data-lucide="git-commit" class="w-4 h-4"></i>
         <span id="snap-indicator" class="absolute bottom-1 right-1 w-2 h-2 rounded-full bg-red-500 border border-gray-950"></span>
       </button>
 
             <!-- Taglio Traccia -->
-            <button id="btn-cut-track" data-auth-required class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Taglia Traccia in un punto">
+            <button id="btn-cut-track" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Taglia Traccia in un punto">
         <i data-lucide="scissors" class="w-4 h-4"></i>
       </button>
 
             <!-- Selezione Area / Cancella punti in Box -->
-            <button id="btn-box-delete" data-auth-required class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Elimina punti dentro area">
+            <button id="btn-box-delete" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Elimina punti dentro area">
         <i data-lucide="box" class="w-4 h-4"></i>
       </button>
 
             <!-- Aggiungi Waypoint -->
-            <button id="btn-add-waypoint" data-auth-required class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Inserisci Waypoint">
+            <button id="btn-add-waypoint" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Inserisci Waypoint">
         <i data-lucide="map-pin" class="w-4 h-4"></i>
       </button>
 
             <div class="h-[1px] bg-gray-800 my-1 mx-1"></div>
 
             <!-- Toggle Mapillary -->
-            <button id="btn-mapillary-layer" data-auth-required class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Mostra/Nascondi livello Mapillary">
+            <button id="btn-mapillary-layer" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Mostra/Nascondi livello Mapillary">
         <i data-lucide="camera" class="w-4 h-4"></i>
       </button>
 
             <div class="h-[1px] bg-gray-800 my-1 mx-1"></div>
 
             <!-- Undo (CTRL-Z) -->
-            <button id="btn-undo" data-auth-required class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300 disabled:opacity-40" disabled title="Annulla modifica (Ctrl+Z)">
+            <button id="btn-undo" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300 disabled:opacity-40" disabled title="Annulla modifica (Ctrl+Z)">
         <i data-lucide="undo-2" class="w-4 h-4"></i>
       </button>
 
@@ -163,13 +144,13 @@
       </button>
 
             <!-- Importa GPX -->
-            <label data-auth-required class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300 cursor-pointer" title="Importa file GPX">
-        <input type="file" id="file-import-gpx" accept=".gpx" class="hidden" data-auth-required>
+            <label class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300 cursor-pointer" title="Importa file GPX">
+        <input type="file" id="file-import-gpx" accept=".gpx" class="hidden">
         <i data-lucide="upload" class="w-4 h-4"></i>
       </label>
 
             <!-- Esporta GPX -->
-            <button id="btn-export-gpx" data-auth-required class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Esporta file GPX">
+            <button id="btn-export-gpx" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Esporta file GPX">
         <i data-lucide="download" class="w-4 h-4"></i>
       </button>
 
@@ -248,16 +229,16 @@
                             <span class="text-[9px] text-gray-500">Foto stradali e copertura GPX</span>
                         </div>
                         <label class="relative inline-flex items-center cursor-pointer">
-            <input type="checkbox" id="toggle-mapillary" class="sr-only peer" data-auth-required>
+            <input type="checkbox" id="toggle-mapillary" class="sr-only peer">
             <div class="w-8 h-4 bg-gray-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-300 after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-600"></div>
           </label>
                     </div>
                     <div class="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-1.5">
-                        <input type="password" id="input-mapillary-token" data-auth-required placeholder="Client token Mapillary" class="min-w-0 bg-gray-900 border border-gray-800 rounded-lg px-2 py-1.5 text-[11px] text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500">
-                        <button id="btn-save-mapillary-token" data-auth-required class="bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg px-2 flex items-center justify-center" title="Salva token Mapillary">
+                        <input type="password" id="input-mapillary-token" placeholder="Client token Mapillary" class="min-w-0 bg-gray-900 border border-gray-800 rounded-lg px-2 py-1.5 text-[11px] text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500">
+                        <button id="btn-save-mapillary-token" class="bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg px-2 flex items-center justify-center" title="Salva token Mapillary">
             <i data-lucide="save" class="w-3.5 h-3.5"></i>
           </button>
-                        <button id="btn-clear-mapillary-token" data-auth-required class="bg-gray-900 hover:bg-gray-800 text-gray-400 rounded-lg px-2 flex items-center justify-center border border-gray-800" title="Rimuovi token Mapillary">
+                        <button id="btn-clear-mapillary-token" class="bg-gray-900 hover:bg-gray-800 text-gray-400 rounded-lg px-2 flex items-center justify-center border border-gray-800" title="Rimuovi token Mapillary">
             <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
           </button>
                     </div>
@@ -269,7 +250,7 @@
                 <label class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Prospettiva Dimensionale</label>
                 <div class="grid grid-cols-2 gap-1 bg-gray-900 p-1 rounded-lg border border-gray-800">
                     <button id="view-mode-2d" class="text-xs font-medium py-1 px-2 rounded bg-blue-600 text-white">2D PLANO</button>
-                    <button id="view-mode-3d" data-auth-required class="text-xs font-medium py-1 px-2 rounded text-gray-400 hover:text-white">3D TERRENO</button>
+                    <button id="view-mode-3d" class="text-xs font-medium py-1 px-2 rounded text-gray-400 hover:text-white">3D TERRENO</button>
                 </div>
             </div>
 
@@ -281,11 +262,11 @@
                 </div>
 
                 <div class="grid grid-cols-5 gap-1 pt-1.5">
-                    <button id="snap-profile-off" data-auth-required class="text-[10px] font-bold py-1 rounded bg-blue-600 text-white" title="Disattiva Snap (Linea d'Aria)">OFF</button>
-                    <button id="snap-profile-foot" data-auth-required class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Piedi (OSRM)">🚶</button>
-                    <button id="snap-profile-bike" data-auth-required class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Bici (OSRM)">🚲</button>
-                    <button id="snap-profile-moto" data-auth-required class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Moto (OSRM)">🏍️</button>
-                    <button id="snap-profile-car" data-auth-required class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Auto (OSRM)">🚗</button>
+                    <button id="snap-profile-off" class="text-[10px] font-bold py-1 rounded bg-blue-600 text-white" title="Disattiva Snap (Linea d'Aria)">OFF</button>
+                    <button id="snap-profile-foot" class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Piedi (OSRM)">🚶</button>
+                    <button id="snap-profile-bike" class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Bici (OSRM)">🚲</button>
+                    <button id="snap-profile-moto" class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Moto (OSRM)">🏍️</button>
+                    <button id="snap-profile-car" class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Auto (OSRM)">🚗</button>
                 </div>
             </div>
 
@@ -384,7 +365,7 @@
         <!-- Contenuto scrollabile del File Tree -->
         <div class="flex-1 overflow-y-auto p-4 space-y-4">
             <div class="flex gap-2">
-                <button id="btn-tree-new-track" data-auth-required class="flex-1 bg-blue-600/25 hover:bg-blue-600/40 text-blue-300 border border-blue-800/80 rounded-lg py-1.5 text-xs font-semibold flex items-center justify-center gap-1">
+                <button id="btn-tree-new-track" class="flex-1 bg-blue-600/25 hover:bg-blue-600/40 text-blue-300 border border-blue-800/80 rounded-lg py-1.5 text-xs font-semibold flex items-center justify-center gap-1">
           <i data-lucide="plus" class="w-3.5 h-3.5"></i> Nuova Traccia
         </button>
             </div>
@@ -556,60 +537,6 @@
 
     <!-- CONTAINER NASCOSTO UTILIZZATO SOLO PER LA COMPILAZIONE DI STAMPA FISICA -->
     <div id="print-output-container" class="hidden"></div>
-
-    <!-- MODALE LOGIN -->
-    <div id="auth-modal" class="hidden fixed inset-0 z-[100000] bg-gray-950/90 backdrop-blur-sm p-4 flex items-center justify-center">
-        <div class="auth-card w-full max-w-sm bg-gray-950 border border-gray-800 rounded-lg shadow-2xl overflow-hidden">
-            <div class="px-5 py-4 border-b border-gray-800 flex items-center justify-between">
-                <div>
-                    <h2 class="text-sm font-bold tracking-wide text-white">GeoViewer 3D</h2>
-                    <p class="text-[11px] text-gray-500">Accesso richiesto</p>
-                </div>
-                <i data-lucide="shield-check" class="w-5 h-5 text-blue-400"></i>
-            </div>
-
-            <div class="p-5 space-y-4">
-                <div id="google-signin-button" class="min-h-[44px]"></div>
-
-                <div class="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-1.5">
-                    <input type="text" id="input-google-client-id" placeholder="Google Client ID" autocomplete="off" class="min-w-0 bg-gray-900 border border-gray-800 rounded-lg px-2.5 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-blue-500">
-                    <button id="btn-google-client-save" class="bg-blue-600 hover:bg-blue-500 text-white rounded-lg px-2.5 flex items-center justify-center" title="Salva Client ID Google">
-            <i data-lucide="save" class="w-3.5 h-3.5"></i>
-          </button>
-                    <button id="btn-google-client-clear" class="bg-gray-900 hover:bg-gray-800 text-gray-400 rounded-lg px-2.5 flex items-center justify-center border border-gray-800" title="Rimuovi Client ID Google">
-            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-          </button>
-                </div>
-
-                <div class="auth-tabs grid grid-cols-2 gap-1 bg-gray-900 border border-gray-800 rounded-lg p-1">
-                    <button id="btn-auth-tab-login" class="auth-tab auth-tab-active rounded-md py-1.5 text-xs font-semibold">Accedi</button>
-                    <button id="btn-auth-tab-register" class="auth-tab rounded-md py-1.5 text-xs font-semibold">Crea account</button>
-                </div>
-
-                <form id="auth-login-form" class="space-y-3">
-                    <input type="email" id="auth-login-email" autocomplete="email" placeholder="Email" class="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500">
-                    <input type="password" id="auth-login-password" autocomplete="current-password" placeholder="Password" class="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500">
-                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white rounded-lg py-2 text-sm font-bold flex items-center justify-center gap-2">
-            <i data-lucide="log-in" class="w-4 h-4"></i>
-            <span>Accedi</span>
-          </button>
-                </form>
-
-                <form id="auth-register-form" class="hidden space-y-3">
-                    <input type="text" id="auth-register-name" autocomplete="name" placeholder="Nome" class="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500">
-                    <input type="email" id="auth-register-email" autocomplete="email" placeholder="Email" class="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500">
-                    <input type="password" id="auth-register-password" autocomplete="new-password" placeholder="Password" class="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500">
-                    <input type="password" id="auth-register-confirm" autocomplete="new-password" placeholder="Conferma password" class="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500">
-                    <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg py-2 text-sm font-bold flex items-center justify-center gap-2">
-            <i data-lucide="user-plus" class="w-4 h-4"></i>
-            <span>Crea account</span>
-          </button>
-                </form>
-
-                <div id="auth-message" class="hidden text-[11px] leading-snug"></div>
-            </div>
-        </div>
-    </div>
 
     <!-- JAVASCRIPT APPLICATIVO (moduli ES) -->
     <script type="module" src="src/js/main.js"></script>
