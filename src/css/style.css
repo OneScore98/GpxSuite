@@ -325,7 +325,7 @@ label {
     #header-tracks-container {
         top: calc(var(--safe-top) + 0.45rem);
         left: calc(var(--safe-left) + 0.5rem);
-        right: calc(var(--safe-right) + 3.45rem);
+        right: calc(var(--safe-right) + 7rem);
         padding: 0;
         max-width: none;
     }
@@ -411,6 +411,11 @@ label {
         top: calc(var(--safe-top) + 0.45rem);
         right: calc(var(--safe-right) + 0.5rem);
         z-index: 18;
+    }
+
+    #auth-status-bar {
+        top: calc(var(--safe-top) + 0.45rem);
+        right: calc(var(--safe-right) + 4rem);
     }
 
     #panel-main-menu,
@@ -622,7 +627,7 @@ label {
     #header-tracks-container {
         top: calc(var(--safe-top) + 0.6rem);
         left: calc(var(--safe-left) + 3.85rem);
-        right: calc(var(--safe-right) + 3.85rem);
+        right: calc(var(--safe-right) + 7.35rem);
         height: 2.2rem;
     }
 
@@ -717,6 +722,11 @@ label {
     #btn-open-sidebar-right {
         top: calc(var(--safe-top) + 0.6rem);
         right: calc(var(--safe-right) + 0.6rem);
+    }
+
+    #auth-status-bar {
+        top: calc(var(--safe-top) + 0.6rem);
+        right: calc(var(--safe-right) + 4.15rem);
     }
 
     #btn-mobile-stats {
