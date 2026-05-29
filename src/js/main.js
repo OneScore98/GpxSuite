@@ -1,12 +1,12 @@
 // main.js — Entry point: importa tutto, chiama init al DOMContentLoaded
 
 import { MAPILLARY_TOKEN_KEY, setMap, setMapLoaded, NEXTZEN_TERRAIN_SOURCE, is3D } from './state.js';
+import { ensureLucideIcons } from './utils.js';
 
 import {
     setupLayers, updateMapData, setBaseMap, setDimensionMode, flyToPOI,
     configureMapillaryToken, setMapillaryCoverageVisible, closeMapillaryViewer
 } from './map.js';
-import { initChart } from './stats.js';
 import { importGPX, exportGPX } from './gpx.js';
 import { addPointToActiveSegment, cutTrackAtPoint, handleBoxDeleteClick, saveHistoryState, triggerUndo, setSnapProfile } from './tracks.js';
 import { addWaypointAtCoords, saveWaypointModifications, openWaypointEditor, updateWaypointsOnMap } from './waypoints.js';
@@ -142,7 +142,7 @@ function configureMapInteractions(mapInstance) {
     }, { passive: true });
 }
 
-window.onload = function() {
+function initApp() {
     updateViewportMetrics();
     window.addEventListener('resize', updateViewportMetrics);
     window.addEventListener('orientationchange', updateViewportMetrics);
@@ -157,7 +157,7 @@ window.onload = function() {
         }
     });
 
-    lucide.createIcons();
+    ensureLucideIcons();
 
     const mapInstance = new maplibregl.Map({
         container: 'map',
@@ -230,7 +230,6 @@ window.onload = function() {
         setupLayers();
         setupEvents();
         configureMapillaryToken(localStorage.getItem(MAPILLARY_TOKEN_KEY) || '');
-        initChart();
         renderGisTree();
         updateActiveTracksHeader();
 
@@ -247,4 +246,10 @@ window.onload = function() {
             createNewTrack("Traccia 1");
         }
     });
-};
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initApp, { once: true });
+} else {
+    initApp();
+}

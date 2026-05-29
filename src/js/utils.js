@@ -1,5 +1,8 @@
 // utils.js — funzioni di utilità pure senza dipendenze da altri moduli
 
+const _resourcePromises = new Map();
+const LUCIDE_URL = 'https://unpkg.com/lucide@1.16.0/dist/umd/lucide.min.js';
+
 export function escapeXml(unsafe) {
     return unsafe.replace(/[<>&'"]/g, function(c) {
         switch (c) {
@@ -10,6 +13,86 @@ export function escapeXml(unsafe) {
             case '"': return '&quot;';
         }
     });
+}
+
+export function loadScriptOnce(url, options = {}) {
+    const key = `script:${url}`;
+    if (_resourcePromises.has(key)) return _resourcePromises.get(key);
+
+    const existing = document.querySelector(`script[src="${url}"]`);
+    if (existing?.dataset.loaded === 'true') return Promise.resolve(existing);
+
+    const promise = new Promise((resolve, reject) => {
+        const script = existing || document.createElement('script');
+        script.src = url;
+        script.async = options.async !== false;
+        if (options.defer) script.defer = true;
+        if (options.crossOrigin) script.crossOrigin = options.crossOrigin;
+        if (options.id) script.id = options.id;
+        script.onload = () => {
+            script.dataset.loaded = 'true';
+            resolve(script);
+        };
+        script.onerror = () => {
+            _resourcePromises.delete(key);
+            reject(new Error(`Impossibile caricare ${url}`));
+        };
+        if (!existing) document.head.appendChild(script);
+    });
+
+    _resourcePromises.set(key, promise);
+    return promise;
+}
+
+export function loadStylesheetOnce(url, options = {}) {
+    const key = `style:${url}`;
+    if (_resourcePromises.has(key)) return _resourcePromises.get(key);
+
+    const existing = document.querySelector(`link[href="${url}"]`);
+    if (existing?.dataset.loaded === 'true') return Promise.resolve(existing);
+
+    const promise = new Promise((resolve, reject) => {
+        const link = existing || document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = url;
+        if (options.crossOrigin) link.crossOrigin = options.crossOrigin;
+        if (options.id) link.id = options.id;
+        link.onload = () => {
+            link.dataset.loaded = 'true';
+            resolve(link);
+        };
+        link.onerror = () => {
+            _resourcePromises.delete(key);
+            reject(new Error(`Impossibile caricare ${url}`));
+        };
+        if (!existing) document.head.appendChild(link);
+    });
+
+    _resourcePromises.set(key, promise);
+    return promise;
+}
+
+export function refreshLucideIcons() {
+    if (window.lucide?.createIcons) {
+        window.lucide.createIcons();
+    }
+}
+
+export function ensureLucideIcons() {
+    if (window.lucide?.createIcons) {
+        refreshLucideIcons();
+        return Promise.resolve(window.lucide);
+    }
+
+    return loadScriptOnce(LUCIDE_URL, { id: 'lucide-icons-cdn' })
+        .then(() => {
+            refreshLucideIcons();
+            return window.lucide;
+        })
+        .catch(err => {
+            console.error('Errore caricamento icone Lucide:', err);
+            return null;
+        });
 }
 
 export function perpendicularDistance(p, p1, p2) {

@@ -10,10 +10,36 @@
 //      competere con il rendering della mappa durante pan/zoom
 
 import { chart, setChart, tracks } from './state.js';
+import { loadScriptOnce } from './utils.js';
+
+const CHART_JS_URL = 'https://cdn.jsdelivr.net/npm/chart.js';
+let _chartLoadPromise = null;
 
 export function initChart() {
+    return ensureChart();
+}
+
+function ensureChart() {
+    if (chart) return Promise.resolve(chart);
+    if (_chartLoadPromise) return _chartLoadPromise;
+
+    _chartLoadPromise = loadScriptOnce(CHART_JS_URL, { id: 'chartjs-cdn' })
+        .then(() => createChart())
+        .catch(err => {
+            _chartLoadPromise = null;
+            console.error('Errore caricamento Chart.js:', err);
+            return null;
+        });
+
+    return _chartLoadPromise;
+}
+
+function createChart() {
+    if (chart) return chart;
+    if (!window.Chart) throw new Error('Chart.js non disponibile');
+
     const ctx = document.getElementById('altitudeChart').getContext('2d');
-    const newChart = new Chart(ctx, {
+    const newChart = new window.Chart(ctx, {
         type: 'line',
         data: {
             labels: [],
@@ -43,6 +69,7 @@ export function initChart() {
         }
     });
     setChart(newChart);
+    return newChart;
 }
 
 // Verifica se il pannello statistiche è effettivamente visibile sullo schermo.
@@ -199,14 +226,16 @@ function _doUpdateStats() {
     $('stat-max-slope').innerText   = `${maxSlope.toFixed(1)}%`;
 
     // ── Aggiorna il grafico altimetrico ──────────────────────────────────────
-    const currentChart = chart;
-    if (currentChart && chartXs.length > 0) {
-        // Costruisci labels e data senza nuove map() — già pronti dal sampling
-        const labels = new Array(chartXs.length);
-        for (let i = 0; i < chartXs.length; i++) labels[i] = chartXs[i].toFixed(2) + ' km';
-        currentChart.data.labels = labels;
-        currentChart.data.datasets[0].data = chartYs;
-        currentChart.update('none');
+    if (chartXs.length > 0) {
+        // Chart.js viene caricato solo quando il pannello statistiche viene aperto.
+        ensureChart().then(currentChart => {
+            if (!currentChart) return;
+            const labels = new Array(chartXs.length);
+            for (let i = 0; i < chartXs.length; i++) labels[i] = chartXs[i].toFixed(2) + ' km';
+            currentChart.data.labels = labels;
+            currentChart.data.datasets[0].data = chartYs;
+            currentChart.update('none');
+        });
     }
 }
 

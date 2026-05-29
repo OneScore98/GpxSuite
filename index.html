@@ -5,26 +5,23 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>GeoViewer 3D - Pro GPX Suite & Print Studio</title>
+    <meta name="description" content="Editor GPX web per creare, importare, modificare e stampare tracce GPS su mappa 2D e 3D con profili altimetrici e waypoint.">
 
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://unpkg.com" crossorigin>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="preconnect" href="https://cdn.tailwindcss.com" crossorigin>
+    <link rel="preconnect" href="https://a.tile.openstreetmap.org" crossorigin>
+    <link rel="dns-prefetch" href="//unpkg.com">
+    <link rel="dns-prefetch" href="//cdn.jsdelivr.net">
+    <link rel="dns-prefetch" href="//cdn.tailwindcss.com">
+    <link rel="dns-prefetch" href="//a.tile.openstreetmap.org">
+    <link rel="preload" as="script" href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js">
+    <link rel="preload" as="style" href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css">
 
-    <!-- MapLibre GL JS -->
-    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
-    <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
-
-    <!-- Turf.js per calcoli GIS -->
-    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
-
-    <!-- Chart.js per Altimetria -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-
-    <!-- MapillaryJS viewer ufficiale -->
-    <script src="https://unpkg.com/mapillary-js@4.1.2/dist/mapillary.js"></script>
-    <link href="https://unpkg.com/mapillary-js@4.1.2/dist/mapillary.css" rel="stylesheet" />
+    <!-- MapLibre GL JS: CSS non bloccante, script deferito -->
+    <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet"></noscript>
+    <script defer src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
 
     <!-- CSS Custom & Print Rules -->
     <link rel="stylesheet" href="src/css/style.css">
@@ -539,6 +536,8 @@
     <div id="print-output-container" class="hidden"></div>
 
     <!-- JAVASCRIPT APPLICATIVO (moduli ES) -->
+    <!-- Tailwind resta zero-build, ma fuori dal percorso critico iniziale. -->
+    <script async src="https://cdn.tailwindcss.com/3.4.17" onload="document.documentElement.classList.add('tw-ready')" onerror="document.documentElement.classList.add('tw-ready')"></script>
     <script type="module" src="src/js/main.js"></script>
 </body>
 

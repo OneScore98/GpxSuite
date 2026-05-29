@@ -1,4 +1,4 @@
-/* Stili custom — NON Tailwind (quello resta via CDN) */
+/* Stili custom — NON Tailwind (quello resta via CDN, caricato async) */
 
 :root {
     --app-height: 100vh;
@@ -19,11 +19,30 @@ html {
     overscroll-behavior: none;
 }
 
+body {
+    background: #111827;
+    color: #f3f4f6;
+    user-select: none;
+}
+
+.hidden {
+    display: none !important;
+}
+
+html:not(.tw-ready) body > :not(#map) {
+    visibility: hidden;
+}
+
 #map {
     position: absolute;
     inset: 0;
     width: 100%;
     height: var(--app-height);
+}
+
+#map .maplibregl-ctrl-attrib,
+#map .maplibregl-ctrl-attrib a {
+    color: #1f2937;
 }
 
 #panel-mapillary-viewer {

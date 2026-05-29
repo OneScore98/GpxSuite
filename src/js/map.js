@@ -40,6 +40,7 @@ import { renderGisTree, showToast, isGisTreeVisible, setSegmentActive, setTrackA
 import { updateStatsAndProfile } from './stats.js';
 import { setupWaypointLayers, updateWaypointsOnMap, bindWaypointInteractions } from './waypoints.js';
 import { schedulePersistAppSession, schedulePersistTracks } from './storage.js';
+import { loadScriptOnce, loadStylesheetOnce } from './utils.js';
 
 // ─── RDP iterativo (no ricorsione, no stack overflow) ─────────────────────────
 function rdpIterative(points, tolerance) {
@@ -129,6 +130,7 @@ let _mapillaryRequestSerial = 0;
 let _mapillaryJsViewer = null;
 let _mapillaryJsResizeObserver = null;
 let _mapillaryJsWindowResizeHandler = null;
+let _mapillaryAssetsPromise = null;
 let _mapillaryCurrentLngLat = null;
 let _mapillaryCurrentBearing = 0;
 let _mapillaryCurrentFov = 70;
@@ -160,6 +162,8 @@ const APPLICATION_LAYER_ORDER = [
     'mapillary-current-image-layer',
     'mapillary-current-image-direction-layer'
 ];
+const MAPILLARY_JS_URL = 'https://unpkg.com/mapillary-js@4.1.2/dist/mapillary.js';
+const MAPILLARY_CSS_URL = 'https://unpkg.com/mapillary-js@4.1.2/dist/mapillary.css';
 
 function ensureApplicationLayersAboveMap() {
     if (!mapLoaded) return;
@@ -1067,6 +1071,22 @@ function getMapillaryJsApi() {
     return window.mapillary?.Viewer ? window.mapillary : (window.Mapillary?.Viewer ? window.Mapillary : null);
 }
 
+function ensureMapillaryJsAssets() {
+    const api = getMapillaryJsApi();
+    if (api?.Viewer) return Promise.resolve(api);
+    if (_mapillaryAssetsPromise) return _mapillaryAssetsPromise;
+
+    _mapillaryAssetsPromise = Promise.all([
+        loadStylesheetOnce(MAPILLARY_CSS_URL, { id: 'mapillary-js-css' }),
+        loadScriptOnce(MAPILLARY_JS_URL, { id: 'mapillary-js-cdn' })
+    ]).then(() => getMapillaryJsApi()).catch(err => {
+        _mapillaryAssetsPromise = null;
+        throw err;
+    });
+
+    return _mapillaryAssetsPromise;
+}
+
 function getMapillaryComponentOptions() {
     return {
         cover: false
@@ -1393,11 +1413,14 @@ async function openMapillaryImage(imageId, options = {}) {
         return;
     }
 
-    if (!options.forceFallback && getMapillaryJsApi()?.Viewer) {
+    if (!options.forceFallback) {
         try {
-            stopMapillaryPlayback();
-            await openMapillaryJsViewer(imageId);
-            return;
+            const api = await ensureMapillaryJsAssets();
+            if (api?.Viewer) {
+                stopMapillaryPlayback();
+                await openMapillaryJsViewer(imageId);
+                return;
+            }
         } catch (err) {
             console.error('Errore MapillaryJS:', err);
             showToast("Viewer Mapillary ufficiale non disponibile, uso anteprima base.", "info");

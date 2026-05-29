@@ -18,7 +18,7 @@ import {
     activeWpForEdit, setActiveWpForEdit
 } from './state.js';
 
-import { escapeXml, generateDistinctTrackColor } from './utils.js';
+import { escapeXml, generateDistinctTrackColor, refreshLucideIcons } from './utils.js';
 import { forceUpdateStats, haversineDistance } from './stats.js';
 import {
     listStoredTracks,
@@ -575,7 +575,7 @@ function openTrackContextMenuAt(trackId, clientX, clientY) {
       </button>
       ${createTreeContextMenuButton('trash-2', selectedCount > 1 ? 'Elimina selezione' : 'Elimina file', selectedCount > 1 ? 'deleteTreeSelection()' : `deleteTrack('${track.id}')`, false, true)}`;
     document.body.appendChild(menu);
-    lucide.createIcons();
+    refreshLucideIcons();
 
     const padding = 8;
     const rect = menu.getBoundingClientRect();
@@ -637,7 +637,7 @@ function openSegmentContextMenuAt(trackId, segId, clientX, clientY) {
       </button>
       ${createTreeContextMenuButton('trash-2', selectedCount > 1 ? 'Elimina selezione' : 'Elimina segmento', selectedCount > 1 ? 'deleteTreeSelection()' : `deleteSegment('${trackId}', '${segId}')`, false, true)}`;
     document.body.appendChild(menu);
-    lucide.createIcons();
+    refreshLucideIcons();
 
     const padding = 8;
     const rect = menu.getBoundingClientRect();
@@ -781,6 +781,14 @@ const OVERPASS_API_URL = 'https://overpass-api.de/api/interpreter';
 const OSM_MATCH_THRESHOLD_M = 35;
 const OFFROAD_MIN_RANGE_DISTANCE_KM = 0.01;
 const OVERPASS_BBOX_PADDING_DEG = 0.0015;
+const OVERPASS_MAX_CHUNK_DISTANCE_KM = 7;
+const OVERPASS_MAX_CHUNK_POINTS = 550;
+const OVERPASS_MAX_CHUNK_LAT_SPAN_DEG = 0.06;
+const OVERPASS_MAX_CHUNK_LON_SPAN_DEG = 0.08;
+const OVERPASS_MAX_CHUNKS_PER_REQUEST = 8;
+const OVERPASS_MAX_RETRY_DEPTH = 3;
+const OVERPASS_MAX_RATE_RETRIES = 2;
+const OVERPASS_RETRY_BASE_DELAY_MS = 5000;
 const PAVED_SURFACES = new Set([
     'paved', 'asphalt', 'concrete', 'concrete:lanes', 'concrete:plates',
     'paving_stones', 'sett', 'cobblestone', 'unhewn_cobblestone', 'metal', 'wood'
@@ -837,13 +845,13 @@ function buildOffroadRanges(points, offroad) {
         .filter(range => range.distanceKm >= OFFROAD_MIN_RANGE_DISTANCE_KM);
 }
 
-function segmentBbox(points) {
+function segmentBbox(points, startIndex = 0, endIndex = points.length - 1) {
     let minLon = Infinity;
     let minLat = Infinity;
     let maxLon = -Infinity;
     let maxLat = -Infinity;
 
-    for (let i = 0; i < points.length; i++) {
+    for (let i = startIndex; i <= endIndex; i++) {
         const point = points[i];
         if (point.lon < minLon) minLon = point.lon;
         if (point.lon > maxLon) maxLon = point.lon;
@@ -859,26 +867,75 @@ function segmentBbox(points) {
     };
 }
 
-function buildOverpassQuery(points) {
-    const bbox = segmentBbox(points);
+function buildOverpassQuery(points, startIndex = 0, endIndex = points.length - 1) {
+    const bbox = segmentBbox(points, startIndex, endIndex);
+    return buildOverpassQueryFromBboxes([bbox]);
+}
+
+function buildOverpassQueryFromBboxes(bboxes) {
+    const clauses = bboxes
+        .map(bbox => `  way["highway"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});`)
+        .join('\n');
     return `[out:json][timeout:25];
 (
-  way["highway"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
+${clauses}
 );
 out tags geom;`;
 }
 
-async function fetchOsmWaysForSegment(points) {
-    const response = await fetch(OVERPASS_API_URL, {
-        method: 'POST',
-        headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        body: `data=${encodeURIComponent(buildOverpassQuery(points))}`
-    });
-    if (!response.ok) throw new Error(`Overpass ${response.status}`);
-    const data = await response.json();
+function buildOverpassQueryForChunkBatch(points, chunks, startChunkIndex, endChunkIndex) {
+    const bboxes = [];
+    for (let i = startChunkIndex; i <= endChunkIndex; i++) {
+        const chunk = chunks[i];
+        bboxes.push(segmentBbox(points, chunk.startIndex, chunk.endIndex));
+    }
+    return buildOverpassQueryFromBboxes(bboxes);
+}
+
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function mergeOsmWays(wayGroups) {
+    const merged = new Map();
+    for (let i = 0; i < wayGroups.length; i++) {
+        const ways = wayGroups[i];
+        for (let j = 0; j < ways.length; j++) {
+            const way = ways[j];
+            if (!merged.has(way.id)) merged.set(way.id, way);
+        }
+    }
+    return Array.from(merged.values());
+}
+
+function markOverpassError(error, retryable) {
+    error.retryable = retryable;
+    return error;
+}
+
+function isRetryableOverpassError(error) {
+    return error?.retryable === true;
+}
+
+function getOffroadAnalysisErrorMessage(error) {
+    if (error?.status === 429) {
+        return "Overpass ha limitato le richieste. Riprova tra qualche secondo.";
+    }
+    if (error?.status === 408 || error?.status >= 500 || isRetryableOverpassError(error)) {
+        return "Overpass non ha completato l'analisi in tempo. Riprova tra poco.";
+    }
+    return "Impossibile completare l'analisi superfici. Verifica rete/Overpass.";
+}
+
+function getOverpassRetryDelayMs(error, attempt) {
+    const retryAfter = Number(error?.retryAfterSeconds);
+    if (Number.isFinite(retryAfter) && retryAfter > 0) {
+        return Math.min(retryAfter * 1000, 30000);
+    }
+    return OVERPASS_RETRY_BASE_DELAY_MS * (attempt + 1);
+}
+
+function normalizeOverpassWays(data) {
     return (data.elements || [])
         .filter(element => element.type === 'way' && Array.isArray(element.geometry) && element.geometry.length >= 2)
         .map(element => ({
@@ -886,6 +943,131 @@ async function fetchOsmWaysForSegment(points) {
             tags: element.tags || {},
             geometry: element.geometry.map(node => ({ lat: node.lat, lon: node.lon }))
         }));
+}
+
+async function fetchOsmWaysForQuery(query) {
+    const response = await fetch(OVERPASS_API_URL, {
+        method: 'POST',
+        headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: `data=${encodeURIComponent(query)}`
+    });
+
+    if (!response.ok) {
+        const error = markOverpassError(
+            new Error(`Overpass ${response.status}`),
+            response.status === 408 || response.status === 429 || response.status >= 500
+        );
+        error.status = response.status;
+        error.retryAfterSeconds = response.headers.get('Retry-After');
+        throw error;
+    }
+
+    let data;
+    try {
+        data = await response.json();
+    } catch (error) {
+        throw markOverpassError(new Error('Risposta Overpass non valida'), true);
+    }
+
+    if (data.remark && /timed out|timeout|runtime error/i.test(data.remark)) {
+        throw markOverpassError(new Error(data.remark), true);
+    }
+    return normalizeOverpassWays(data);
+}
+
+async function fetchOsmWaysForQueryWithRetry(query, attempt = 0) {
+    try {
+        return await fetchOsmWaysForQuery(query);
+    } catch (error) {
+        if (!isRetryableOverpassError(error) || attempt >= OVERPASS_MAX_RATE_RETRIES) throw error;
+        await delay(getOverpassRetryDelayMs(error, attempt));
+        return fetchOsmWaysForQueryWithRetry(query, attempt + 1);
+    }
+}
+
+async function fetchOsmWaysForRange(points, startIndex = 0, endIndex = points.length - 1) {
+    return fetchOsmWaysForQueryWithRetry(buildOverpassQuery(points, startIndex, endIndex));
+}
+
+async function fetchOsmWaysForRangeWithRetry(points, startIndex, endIndex, retryDepth = 0) {
+    try {
+        return await fetchOsmWaysForRange(points, startIndex, endIndex);
+    } catch (error) {
+        const canSplit = endIndex - startIndex >= 3 && retryDepth < OVERPASS_MAX_RETRY_DEPTH;
+        if (!isRetryableOverpassError(error) || !canSplit) throw error;
+
+        const midIndex = Math.floor((startIndex + endIndex) / 2);
+        const leftWays = await fetchOsmWaysForRangeWithRetry(points, startIndex, midIndex, retryDepth + 1);
+        const rightWays = await fetchOsmWaysForRangeWithRetry(points, midIndex, endIndex, retryDepth + 1);
+        return mergeOsmWays([leftWays, rightWays]);
+    }
+}
+
+async function fetchOsmWaysForChunkBatchWithRetry(points, chunks, startChunkIndex, endChunkIndex, retryDepth = 0) {
+    try {
+        const query = buildOverpassQueryForChunkBatch(points, chunks, startChunkIndex, endChunkIndex);
+        return await fetchOsmWaysForQueryWithRetry(query);
+    } catch (error) {
+        if (!isRetryableOverpassError(error) || retryDepth >= OVERPASS_MAX_RETRY_DEPTH) throw error;
+
+        if (endChunkIndex > startChunkIndex) {
+            const midChunkIndex = Math.floor((startChunkIndex + endChunkIndex) / 2);
+            const leftWays = await fetchOsmWaysForChunkBatchWithRetry(points, chunks, startChunkIndex, midChunkIndex, retryDepth + 1);
+            const rightWays = await fetchOsmWaysForChunkBatchWithRetry(points, chunks, midChunkIndex + 1, endChunkIndex, retryDepth + 1);
+            return mergeOsmWays([leftWays, rightWays]);
+        }
+
+        const chunk = chunks[startChunkIndex];
+        return fetchOsmWaysForRangeWithRetry(points, chunk.startIndex, chunk.endIndex, retryDepth + 1);
+    }
+}
+
+function splitOffroadAnalysisChunks(points) {
+    const chunks = [];
+    if (!Array.isArray(points) || points.length < 2) return chunks;
+
+    let startIndex = 0;
+    let distanceKm = 0;
+    let minLon = points[0].lon;
+    let maxLon = points[0].lon;
+    let minLat = points[0].lat;
+    let maxLat = points[0].lat;
+
+    for (let i = 1; i < points.length; i++) {
+        const point = points[i];
+        distanceKm += haversineDistance(points[i - 1].lon, points[i - 1].lat, point.lon, point.lat);
+        if (point.lon < minLon) minLon = point.lon;
+        if (point.lon > maxLon) maxLon = point.lon;
+        if (point.lat < minLat) minLat = point.lat;
+        if (point.lat > maxLat) maxLat = point.lat;
+
+        const pointCount = i - startIndex + 1;
+        const shouldClose = i < points.length - 1 && (
+            pointCount >= OVERPASS_MAX_CHUNK_POINTS ||
+            distanceKm >= OVERPASS_MAX_CHUNK_DISTANCE_KM ||
+            maxLat - minLat >= OVERPASS_MAX_CHUNK_LAT_SPAN_DEG ||
+            maxLon - minLon >= OVERPASS_MAX_CHUNK_LON_SPAN_DEG
+        );
+
+        if (shouldClose) {
+            chunks.push({ startIndex, endIndex: i });
+            startIndex = i;
+            distanceKm = 0;
+            minLon = point.lon;
+            maxLon = point.lon;
+            minLat = point.lat;
+            maxLat = point.lat;
+        }
+    }
+
+    if (points.length - startIndex >= 2) {
+        chunks.push({ startIndex, endIndex: points.length - 1 });
+    }
+
+    return chunks;
 }
 
 function classifyOsmWaySurface(tags) {
@@ -923,17 +1105,39 @@ function pointToSegmentDistanceMeters(point, a, b) {
     return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
+function pointToSegmentBboxDistanceMeters(point, segment) {
+    const mx = metersPerLonAtLat(point.lat);
+    const my = 110540;
+    const dx = point.lon < segment.minLon
+        ? (segment.minLon - point.lon) * mx
+        : point.lon > segment.maxLon
+            ? (point.lon - segment.maxLon) * mx
+            : 0;
+    const dy = point.lat < segment.minLat
+        ? (segment.minLat - point.lat) * my
+        : point.lat > segment.maxLat
+            ? (point.lat - segment.maxLat) * my
+            : 0;
+    return Math.hypot(dx, dy);
+}
+
 function buildOsmWaySegments(osmWays) {
     const segments = [];
     for (let wi = 0; wi < osmWays.length; wi++) {
         const way = osmWays[wi];
         const surfaceClass = classifyOsmWaySurface(way.tags);
         for (let i = 1; i < way.geometry.length; i++) {
+            const a = way.geometry[i - 1];
+            const b = way.geometry[i];
             segments.push({
                 way,
                 surfaceClass,
-                a: way.geometry[i - 1],
-                b: way.geometry[i]
+                a,
+                b,
+                minLon: Math.min(a.lon, b.lon),
+                maxLon: Math.max(a.lon, b.lon),
+                minLat: Math.min(a.lat, b.lat),
+                maxLat: Math.max(a.lat, b.lat)
             });
         }
     }
@@ -946,6 +1150,7 @@ function findNearestOsmWaySegment(point, osmSegments) {
 
     for (let i = 0; i < osmSegments.length; i++) {
         const segment = osmSegments[i];
+        if (pointToSegmentBboxDistanceMeters(point, segment) >= bestDistance) continue;
         const distance = pointToSegmentDistanceMeters(point, segment.a, segment.b);
         if (distance < bestDistance) {
             best = segment;
@@ -1005,41 +1210,62 @@ function getAnalyzableSegments(sourceTrack) {
         .filter(segment => Array.isArray(segment.points) && segment.points.length >= 2);
 }
 
+function countOffroadAnalysisChunks(sourceSegments) {
+    let total = 0;
+    for (let i = 0; i < sourceSegments.length; i++) {
+        total += splitOffroadAnalysisChunks(sourceSegments[i].points).length;
+    }
+    return total;
+}
+
 async function analyzeOffroadSegment(sourceSegment) {
     const points = sourceSegment.points || [];
-    const osmWays = await fetchOsmWaysForSegment(points);
-    const osmSegments = buildOsmWaySegments(osmWays);
+    const chunks = splitOffroadAnalysisChunks(points);
     const offroad = new Array(points.length).fill(false);
+    const seenOsmWayIds = new Set();
     let unpavedLegCount = 0;
     let unmappedLegCount = 0;
     let pavedLegCount = 0;
     let unknownRoadLegCount = 0;
     let matchedWayCount = 0;
 
-    for (let i = 1; i < points.length; i++) {
-        const classification = classifyTrackLegAsOffroad(points, i, osmSegments);
-        if (classification.offroad) {
-            offroad[i - 1] = true;
-            offroad[i] = true;
-            if (classification.reason === 'unpaved') {
-                unpavedLegCount++;
-                matchedWayCount++;
-            } else {
-                unmappedLegCount++;
-            }
-        } else {
-            if (classification.reason === 'paved') {
-                pavedLegCount++;
-                matchedWayCount++;
-            } else {
-                unknownRoadLegCount++;
+    for (let c = 0; c < chunks.length; c += OVERPASS_MAX_CHUNKS_PER_REQUEST) {
+        const endChunkIndex = Math.min(chunks.length - 1, c + OVERPASS_MAX_CHUNKS_PER_REQUEST - 1);
+        const osmWays = await fetchOsmWaysForChunkBatchWithRetry(points, chunks, c, endChunkIndex);
+        for (let w = 0; w < osmWays.length; w++) {
+            seenOsmWayIds.add(osmWays[w].id);
+        }
+
+        const osmSegments = buildOsmWaySegments(osmWays);
+        for (let chunkIndex = c; chunkIndex <= endChunkIndex; chunkIndex++) {
+            const chunk = chunks[chunkIndex];
+            for (let i = chunk.startIndex + 1; i <= chunk.endIndex; i++) {
+                const classification = classifyTrackLegAsOffroad(points, i, osmSegments);
+                if (classification.offroad) {
+                    offroad[i - 1] = true;
+                    offroad[i] = true;
+                    if (classification.reason === 'unpaved') {
+                        unpavedLegCount++;
+                        matchedWayCount++;
+                    } else {
+                        unmappedLegCount++;
+                    }
+                } else {
+                    if (classification.reason === 'paved') {
+                        pavedLegCount++;
+                        matchedWayCount++;
+                    } else {
+                        unknownRoadLegCount++;
+                    }
+                }
             }
         }
     }
 
     return {
         ranges: buildOffroadRanges(points, offroad),
-        osmWayCount: osmWays.length,
+        osmWayCount: seenOsmWayIds.size,
+        osmChunkCount: chunks.length,
         matchedWayCount,
         unpavedLegCount,
         unmappedLegCount,
@@ -1058,7 +1284,7 @@ function createOffroadTrack(sourceTrack, extractedRanges, nameBase, summary) {
         localUpdatedAt: createdAt,
         localSource: 'derived',
         name: `Offroad - ${nameBase}`,
-        desc: `Tratti non asfaltati estratti da ${sourceTrackName}. OSM highway/surface/tracktype. Segmenti non asfaltati: ${summary.unpavedLegCount}; fuori rete OSM: ${summary.unmappedLegCount}.`,
+        desc: `Tratti non asfaltati estratti da ${sourceTrackName}. OSM highway/surface/tracktype. Blocchi OSM: ${summary.osmChunkCount}; segmenti non asfaltati: ${summary.unpavedLegCount}; fuori rete OSM: ${summary.unmappedLegCount}.`,
         color: generateDistinctTrackColor(tracks.map(track => track.color)),
         width: Math.max((sourceTrack.width || 3) + 2, 5),
         visible: true,
@@ -1086,12 +1312,14 @@ async function extractOffroadFromSources(sourceTrack, sourceSegments, nameBase) 
         return;
     }
 
-    showToast(`Analisi superfici OSM: ${sourceSegments.length} segmenti...`, "info");
+    const totalChunks = countOffroadAnalysisChunks(sourceSegments);
+    showToast(`Analisi superfici OSM: ${sourceSegments.length} segmenti, ${totalChunks} blocchi...`, "info");
 
     try {
         const extractedRanges = [];
         const summary = {
             osmWayCount: 0,
+            osmChunkCount: 0,
             matchedWayCount: 0,
             unpavedLegCount: 0,
             unmappedLegCount: 0,
@@ -1103,6 +1331,7 @@ async function extractOffroadFromSources(sourceTrack, sourceSegments, nameBase) 
             const sourceSegment = sourceSegments[i];
             const result = await analyzeOffroadSegment(sourceSegment);
             summary.osmWayCount += result.osmWayCount;
+            summary.osmChunkCount += result.osmChunkCount;
             summary.matchedWayCount += result.matchedWayCount;
             summary.unpavedLegCount += result.unpavedLegCount;
             summary.unmappedLegCount += result.unmappedLegCount;
@@ -1133,7 +1362,7 @@ async function extractOffroadFromSources(sourceTrack, sourceSegments, nameBase) 
         showToast(`Creata ${newTrack.name}: ${extractedRanges.length} tratti non asfaltati`, "success");
     } catch (err) {
         console.error(err);
-        showToast("Impossibile completare l'analisi superfici. Verifica rete/Overpass.", "error");
+        showToast(getOffroadAnalysisErrorMessage(err), "error");
     }
 }
 
@@ -1283,7 +1512,7 @@ export async function renderLocalGpxLibrary() {
               </div>
             `;
         }).join('');
-        lucide.createIcons();
+        refreshLucideIcons();
     } catch (err) {
         console.error(err);
         container.innerHTML = `
@@ -1677,7 +1906,7 @@ function _doRenderGisTree() {
         html += `</div>`;
     }
     container.innerHTML = html;
-    lucide.createIcons();
+    refreshLucideIcons();
     container.querySelectorAll('[data-track-name-id]').forEach(nameEl => {
         const trackId = nameEl.dataset.trackNameId;
         nameEl.addEventListener('click', event => handleTrackNameClick(event, trackId));
