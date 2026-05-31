@@ -445,6 +445,7 @@ function removeSelectionForCut() {
         const nextTrack = tracks[0] || null;
         setActiveTrackId(nextTrack?.id || null);
         setActiveSegmentId(nextTrack?.segments[0]?.id || null);
+        if (nextTrack) setTrackExpanded(nextTrack.id, true);
     } else {
         const activeTrack = tracks.find(track => track.id === activeTrackId);
         if (activeTrack && !activeTrack.segments.some(seg => seg.id === activeSegmentId)) {
@@ -471,6 +472,7 @@ function pasteTreeClipboard(target = {}) {
         pastedKeys.push(makeTreeKey('track', cloned.id));
         setActiveTrackId(cloned.id);
         setActiveSegmentId(cloned.segments[0]?.id || null);
+        setTrackExpanded(cloned.id, true);
     });
 
     if ((_treeClipboard.segments || []).length > 0) {
@@ -491,6 +493,7 @@ function pasteTreeClipboard(target = {}) {
             pastedKeys.push(makeTreeKey('segment', targetTrack.id, cloned.id));
             setActiveTrackId(targetTrack.id);
             setActiveSegmentId(cloned.id);
+            setTrackExpanded(targetTrack.id, true);
         });
     }
 
@@ -676,6 +679,14 @@ export function clearTrackLongPress() {
 export function handleTrackTreeClick(event, trackId, shouldFocus = false) {
     if (isInteractiveTreeTarget(event.target)) return;
     selectTreeItem('track', trackId, null, event);
+    if (trackId === activeTrackId) {
+        if (shouldFocus) {
+            const track = tracks.find(tr => tr.id === trackId);
+            if (track) focusTrackOnMap(track);
+        }
+        toggleActiveTrackExpanded(trackId);
+        return;
+    }
     setTrackActive(trackId, shouldFocus);
 }
 
@@ -1416,6 +1427,12 @@ export function handleTrackNameClick(event, trackId) {
         openTrackNameEditor(trackId);
         return;
     }
+    if (trackId === activeTrackId) {
+        const track = tracks.find(tr => tr.id === trackId);
+        if (track) focusTrackOnMap(track);
+        toggleActiveTrackExpanded(trackId);
+        return;
+    }
     setTrackActive(trackId, true);
 }
 
@@ -1748,6 +1765,59 @@ export function syncMobileBackdrop() {
 // Debounce interno: evita di ricostruire il tree DOM ad ogni singola modifica
 let _gisTreeTimer = null;
 let _gisTreeDirty = false;
+const _collapsedActiveTrackIds = new Set();
+const _collapsedTrackSectionKeys = new Set();
+
+function pruneCollapsedActiveTracks() {
+    const validTrackIds = new Set(tracks.map(track => track.id));
+    _collapsedActiveTrackIds.forEach(trackId => {
+        if (!validTrackIds.has(trackId)) _collapsedActiveTrackIds.delete(trackId);
+    });
+    _collapsedTrackSectionKeys.forEach(key => {
+        const [trackId] = key.split(':');
+        if (!validTrackIds.has(trackId)) _collapsedTrackSectionKeys.delete(key);
+    });
+}
+
+function isTrackExpanded(trackId, isActive) {
+    return isActive && !_collapsedActiveTrackIds.has(trackId);
+}
+
+function setTrackExpanded(trackId, expanded) {
+    if (expanded) _collapsedActiveTrackIds.delete(trackId);
+    else _collapsedActiveTrackIds.add(trackId);
+}
+
+function toggleActiveTrackExpanded(trackId) {
+    if (_collapsedActiveTrackIds.has(trackId)) _collapsedActiveTrackIds.delete(trackId);
+    else _collapsedActiveTrackIds.add(trackId);
+    renderGisTree();
+}
+
+function makeTrackSectionKey(trackId, section) {
+    return `${trackId}:${section}`;
+}
+
+function isTrackSectionExpanded(trackId, section) {
+    return !_collapsedTrackSectionKeys.has(makeTrackSectionKey(trackId, section));
+}
+
+function setTrackSectionExpanded(trackId, section, expanded) {
+    const key = makeTrackSectionKey(trackId, section);
+    if (expanded) _collapsedTrackSectionKeys.delete(key);
+    else _collapsedTrackSectionKeys.add(key);
+}
+
+export function toggleTrackSection(event, trackId, section) {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    if (!['segments', 'waypoints'].includes(section)) return;
+    const key = makeTrackSectionKey(trackId, section);
+    if (_collapsedTrackSectionKeys.has(key)) _collapsedTrackSectionKeys.delete(key);
+    else _collapsedTrackSectionKeys.add(key);
+    renderGisTree();
+}
+
 export function renderGisTree() {
     // Marca sempre come dirty — verrà ridisegnato all'apertura del pannello
     _gisTreeDirty = true;
@@ -1767,6 +1837,7 @@ function _doRenderGisTree() {
     _gisTreeDirty = false;
     const container = document.getElementById('gis-file-tree');
     normalizeTreeSelection();
+    pruneCollapsedActiveTracks();
     if (tracks.length === 0) {
         container.innerHTML = `
           <div class="text-center py-6 text-gray-500 text-xs italic">
@@ -1786,7 +1857,9 @@ function _doRenderGisTree() {
         tracks.forEach((track, trackIndex) => {
             const isActive = track.id === activeTrackId;
             const isSelected = selectionHas(makeTreeKey('track', track.id));
-            const isExpanded = isActive;
+            const isExpanded = isTrackExpanded(track.id, isActive);
+            const areSegmentsExpanded = isTrackSectionExpanded(track.id, 'segments');
+            const areWaypointsExpanded = isTrackSectionExpanded(track.id, 'waypoints');
             const segmentCount = track.segments.length;
             const pointCount = track.segments.reduce((sum, seg) => sum + seg.points.length, 0);
             html += `
@@ -1835,10 +1908,17 @@ function _doRenderGisTree() {
                   <div class="gis-track-details ml-5 pl-3 border-l border-gray-800/90 space-y-1"
                        ondragover="handleGisDragOver(event)"
                        ondrop="handleGisDrop(event, 'track-segments', '${track.id}')">
-                    <div class="text-[9px] text-gray-600 font-bold uppercase tracking-wider flex items-center gap-1 pb-0.5">
-                      <i data-lucide="git-branch" class="w-3 h-3"></i> Segmenti
+                    <div class="flex items-center justify-between pb-0.5">
+                      <button type="button"
+                              data-gis-section-toggle="true"
+                              data-section-track-id="${track.id}"
+                              data-section-kind="segments"
+                              class="gis-section-toggle flex items-center justify-start gap-1 text-left w-full text-[9px] text-gray-600 hover:text-gray-300 font-bold uppercase tracking-wider bg-transparent border-0 p-0 min-h-0">
+                        <i data-lucide="${areSegmentsExpanded ? 'chevron-down' : 'chevron-right'}" class="w-3 h-3"></i>
+                        <i data-lucide="git-branch" class="w-3 h-3"></i> Segmenti
+                      </button>
                     </div>
-                    ${track.segments.map((seg, segIndex) => {
+                    ${areSegmentsExpanded ? track.segments.map((seg, segIndex) => {
                         const isSegActive = seg.id === activeSegmentId;
                         const isSegSelected = selectionHas(makeTreeKey('segment', track.id, seg.id));
                         return `
@@ -1869,19 +1949,24 @@ function _doRenderGisTree() {
                           </div>
                         </div>
                       `;
-                    }).join('')}
+                    }).join('') + `
                     <button onclick="addNewSegmentToTrack('${track.id}')" class="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-0.5 pt-1 pl-1">
                       <i data-lucide="plus" class="w-3 h-3"></i> Aggiungi Segmento
-                    </button>
+                    </button>` : ''}
                   </div>` + (track.waypoints.length > 0 ? `
                   <div class="gis-waypoints-block ml-5 pl-3 border-l border-gray-800/60 pt-1">
                     <div class="flex items-center justify-between mb-1">
-                      <span class="text-[9px] text-gray-500 font-bold uppercase tracking-wider flex items-center gap-1">
+                      <button type="button"
+                              data-gis-section-toggle="true"
+                              data-section-track-id="${track.id}"
+                              data-section-kind="waypoints"
+                              class="gis-section-toggle flex flex-1 min-w-0 items-center justify-start gap-1 text-left text-[9px] text-gray-500 hover:text-gray-300 font-bold uppercase tracking-wider bg-transparent border-0 p-0 min-h-0">
+                        <i data-lucide="${areWaypointsExpanded ? 'chevron-down' : 'chevron-right'}" class="w-3 h-3"></i>
                         <i data-lucide="map-pinned" class="w-3 h-3"></i> Waypoints (${track.waypoints.length})
-                      </span>
-                      <button onclick="toggleAllWaypointsVisibility('${track.id}')" class="text-gray-500 hover:text-white" title="Mostra/Nascondi Gruppo Waypoint"><i data-lucide="${track.waypointsVisible === false ? 'eye-off' : 'eye'}" class="w-3.5 h-3.5"></i></button>
+                      </button>
+                      <button onclick="event.stopPropagation(); toggleAllWaypointsVisibility('${track.id}')" class="text-gray-500 hover:text-white" title="Mostra/Nascondi Gruppo Waypoint"><i data-lucide="${track.waypointsVisible === false ? 'eye-off' : 'eye'}" class="w-3.5 h-3.5"></i></button>
                     </div>
-                    <div class="${track.waypointsVisible === false ? 'hidden' : 'space-y-1'}">
+                    ${areWaypointsExpanded ? `<div class="${track.waypointsVisible === false ? 'hidden' : 'space-y-1'}">
                       ${track.waypoints.map(wp => `
                           <div class="gis-waypoint-row flex items-center justify-between gap-1 text-xs hover:bg-gray-800/40 p-1 rounded transition-all ${wp.visible === false ? 'opacity-50' : ''}">
                             <div class="flex items-center gap-1.5 min-w-0">
@@ -1896,7 +1981,7 @@ function _doRenderGisTree() {
                             </div>
                           </div>
                       `).join('')}
-                    </div>
+                    </div>` : ''}
                   </div>
                 ` : '') : ''}
                 </div>
@@ -1920,6 +2005,11 @@ function _doRenderGisTree() {
         nameEl.addEventListener('pointerleave', clearTrackNameLongPress);
         nameEl.addEventListener('keydown', event => handleTrackNameKeydown(event, trackId));
         nameEl.addEventListener('blur', event => finishTrackNameEditor(trackId, event.currentTarget.textContent));
+    });
+    container.querySelectorAll('[data-gis-section-toggle]').forEach(button => {
+        button.addEventListener('click', event => {
+            toggleTrackSection(event, button.dataset.sectionTrackId, button.dataset.sectionKind);
+        });
     });
 }
 
@@ -2018,6 +2108,7 @@ export function setTrackActive(trackId, shouldFocus = false) {
 
     const wasActive = activeTrackId === trackId;
     setActiveTrackId(trackId);
+    if (!wasActive) setTrackExpanded(trackId, true);
     if (track.segments.length > 0) {
         setActiveSegmentId(track.segments[track.segments.length - 1].id);
     }
@@ -2107,10 +2198,12 @@ export function deleteTrack(trackId) {
     const trackToDelete = tracks.find(t => t.id === trackId);
     const remainingTracks = tracks.filter(t => t.id !== trackId);
     setTracks(remainingTracks);
+    _collapsedActiveTrackIds.delete(trackId);
     if (activeTrackId === trackId) {
         const nextTrack = remainingTracks.length > 0 ? remainingTracks[0] : null;
         setActiveTrackId(nextTrack ? nextTrack.id : null);
         setActiveSegmentId(nextTrack && nextTrack.segments.length > 0 ? nextTrack.segments[0].id : null);
+        if (nextTrack) setTrackExpanded(nextTrack.id, true);
     }
     if (trackToDelete?.localFileId) {
         deleteStoredTrack(trackToDelete.localFileId).catch(err => console.error(err));
@@ -2133,6 +2226,8 @@ export function addNewSegmentToTrack(trackId) {
         });
         setActiveSegmentId(newSegId);
         setActiveTrackId(trackId);
+        setTrackExpanded(trackId, true);
+        setTrackSectionExpanded(trackId, 'segments', true);
 
         if (_saveHistoryState) _saveHistoryState();
         if (_updateMapData) _updateMapData();
@@ -2155,6 +2250,8 @@ export function renameSegment(trackId, segId, newName) {
 export function setSegmentActive(trackId, segId, shouldFocus = false) {
     setActiveTrackId(trackId);
     setActiveSegmentId(segId);
+    setTrackExpanded(trackId, true);
+    setTrackSectionExpanded(trackId, 'segments', true);
     if (shouldFocus) focusSegmentOnMap(trackId, segId);
     if (_updateMapData) _updateMapData();
     updateActiveTracksHeader();
