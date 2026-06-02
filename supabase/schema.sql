@@ -193,7 +193,7 @@ create or replace function public.gpxsuite_complete_login(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
     v_user_id uuid := auth.uid();
@@ -327,7 +327,7 @@ create or replace function public.gpxsuite_log_event(
 returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
     v_user_id uuid := auth.uid();
