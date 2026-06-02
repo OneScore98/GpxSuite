@@ -32,7 +32,7 @@ function cleanString(value) {
 }
 
 function escapeHtml(value) {
-    return String(value ? ? '')
+    return String(value ?? '')
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
@@ -66,9 +66,9 @@ async function getSupabaseClient() {
 }
 
 function randomToken() {
-    if (window.crypto ? .randomUUID) return window.crypto.randomUUID();
+    if (window.crypto ?.randomUUID) return window.crypto.randomUUID();
     const bytes = new Uint8Array(24);
-    window.crypto ? .getRandomValues ? .(bytes);
+    window.crypto ?.getRandomValues ?.(bytes);
     return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('') || `${Date.now()}_${Math.random()}`;
 }
 
@@ -82,7 +82,7 @@ function getDeviceKey() {
 }
 
 function defaultDeviceLabel() {
-    const platform = navigator.userAgentData ? .platform || navigator.platform || 'Browser';
+    const platform = navigator.userAgentData ?.platform || navigator.platform || 'Browser';
     const agent = navigator.userAgent || '';
     let browser = 'Browser';
     if (agent.includes('Edg/')) browser = 'Edge';
@@ -138,7 +138,7 @@ function showAuthView(viewName) {
 }
 
 function hideAuthGate() {
-    document.getElementById('auth-gate') ? .classList.add('hidden');
+    document.getElementById('auth-gate') ?.classList.add('hidden');
     document.body.classList.remove('auth-locked');
 }
 
@@ -156,42 +156,42 @@ function updateAccountPanel() {
               </div>
             </div>` : `<span class="text-xs text-gray-500">Sessione non attiva</span>`;
     }
-    if (adminButton) adminButton.classList.toggle('hidden', profile ? .role !== 'admin');
+    if (adminButton) adminButton.classList.toggle('hidden', profile ?.role !== 'admin');
 }
 
 function bindAuthForm() {
-    document.getElementById('btn-auth-login') ? .addEventListener('click', handlePasswordLogin);
-    document.getElementById('btn-auth-magic') ? .addEventListener('click', handleMagicLinkLogin);
-    document.getElementById('btn-auth-forgot') ? .addEventListener('click', handlePasswordResetRequest);
-    document.getElementById('btn-reset-save') ? .addEventListener('click', handleRecoveryPasswordUpdate);
-    document.getElementById('btn-reset-back-login') ? .addEventListener('click', async() => {
+    document.getElementById('btn-auth-login') ?.addEventListener('click', handlePasswordLogin);
+    document.getElementById('btn-auth-magic') ?.addEventListener('click', handleMagicLinkLogin);
+    document.getElementById('btn-auth-forgot') ?.addEventListener('click', handlePasswordResetRequest);
+    document.getElementById('btn-reset-save') ?.addEventListener('click', handleRecoveryPasswordUpdate);
+    document.getElementById('btn-reset-back-login') ?.addEventListener('click', async() => {
         _passwordRecoveryMode = false;
         const client = await getSupabaseClient();
         if (client) await client.auth.signOut();
         setResetMessage('');
         showAuthView('login');
     });
-    document.getElementById('auth-password') ? .addEventListener('keydown', e => {
+    document.getElementById('auth-password') ?.addEventListener('keydown', e => {
         if (e.key === 'Enter') handlePasswordLogin();
     });
-    document.getElementById('reset-password-confirm') ? .addEventListener('keydown', e => {
+    document.getElementById('reset-password-confirm') ?.addEventListener('keydown', e => {
         if (e.key === 'Enter') handleRecoveryPasswordUpdate();
     });
-    document.getElementById('auth-identifier') ? .addEventListener('keydown', e => {
+    document.getElementById('auth-identifier') ?.addEventListener('keydown', e => {
         if (e.key === 'Enter') {
-            const password = cleanString(document.getElementById('auth-password') ? .value);
+            const password = cleanString(document.getElementById('auth-password') ?.value);
             if (password) handlePasswordLogin();
             else handleMagicLinkLogin();
         }
     });
-    document.getElementById('btn-device-retry') ? .addEventListener('click', () => verifyCurrentSession());
-    document.getElementById('btn-device-logout') ? .addEventListener('click', signOut);
+    document.getElementById('btn-device-retry') ?.addEventListener('click', () => verifyCurrentSession());
+    document.getElementById('btn-device-logout') ?.addEventListener('click', signOut);
 }
 
 export function bindAuthUi() {
     updateAccountPanel();
-    document.getElementById('btn-logout') ? .addEventListener('click', signOut);
-    document.getElementById('btn-open-admin-dashboard') ? .addEventListener('click', openAdminDashboard);
+    document.getElementById('btn-logout') ?.addEventListener('click', signOut);
+    document.getElementById('btn-open-admin-dashboard') ?.addEventListener('click', openAdminDashboard);
 }
 
 async function resolveLoginEmail(identifier) {
@@ -200,14 +200,14 @@ async function resolveLoginEmail(identifier) {
     if (!client || !clean) throw new Error('Inserisci username o email.');
     const { data, error } = await client.rpc('gpxsuite_resolve_login_identifier', { p_identifier: clean });
     if (error) throw error;
-    const email = data ? .email || data;
+    const email = data ?.email || data;
     if (!email) throw new Error('Account non trovato o non attivo.');
     return email;
 }
 
 async function handlePasswordLogin() {
-    const identifier = cleanString(document.getElementById('auth-identifier') ? .value);
-    const password = String(document.getElementById('auth-password') ? .value || '');
+    const identifier = cleanString(document.getElementById('auth-identifier') ?.value);
+    const password = String(document.getElementById('auth-password') ?.value || '');
     if (!identifier || !password) {
         setAuthMessage('Inserisci username e password.', 'error');
         return;
@@ -229,7 +229,7 @@ async function handlePasswordLogin() {
 }
 
 async function handleMagicLinkLogin() {
-    const identifier = cleanString(document.getElementById('auth-identifier') ? .value);
+    const identifier = cleanString(document.getElementById('auth-identifier') ?.value);
     if (!identifier) {
         setAuthMessage('Inserisci username o email per ricevere il magic link.', 'error');
         return;
@@ -258,7 +258,7 @@ async function handleMagicLinkLogin() {
 }
 
 async function handlePasswordResetRequest() {
-    const identifier = cleanString(document.getElementById('auth-identifier') ? .value);
+    const identifier = cleanString(document.getElementById('auth-identifier') ?.value);
     if (!identifier) {
         setAuthMessage('Inserisci username o email per ricevere il reset password.', 'error');
         return;
@@ -281,8 +281,8 @@ async function handlePasswordResetRequest() {
 }
 
 async function handleRecoveryPasswordUpdate() {
-    const password = String(document.getElementById('reset-password') ? .value || '');
-    const confirm = String(document.getElementById('reset-password-confirm') ? .value || '');
+    const password = String(document.getElementById('reset-password') ?.value || '');
+    const confirm = String(document.getElementById('reset-password-confirm') ?.value || '');
     if (password.length < 8) {
         setResetMessage('La password deve avere almeno 8 caratteri.', 'error');
         return;
@@ -296,7 +296,7 @@ async function handleRecoveryPasswordUpdate() {
     try {
         const client = await getSupabaseClient();
         const { data: sessionData } = await client.auth.getSession();
-        if (!sessionData ? .session) {
+        if (!sessionData ?.session) {
             throw new Error('Link reset scaduto o sessione recovery non valida.');
         }
         const { error } = await client.auth.updateUser({ password });
@@ -324,7 +324,7 @@ async function verifyCurrentSession(options = {}) {
         if (!client) return false;
         const { data: sessionData, error: sessionError } = await client.auth.getSession();
         if (sessionError) throw sessionError;
-        const session = sessionData ? .session || null;
+        const session = sessionData ?.session || null;
         _authState.session = session;
         if (!session) {
             if (_passwordRecoveryMode) {
@@ -345,11 +345,11 @@ async function verifyCurrentSession(options = {}) {
         const result = normalizeLoginResult(data);
         _authState = {
             ready: true,
-            allowed: result ? .allowed === true,
+            allowed: result ?.allowed === true,
             session,
-            profile: result ? .profile || null,
-            device: result ? .device || null,
-            status: result ? .status || 'unknown'
+            profile: result ?.profile || null,
+            device: result ?.device || null,
+            status: result ?.status || 'unknown'
         };
 
         if (_authState.allowed) {
@@ -374,8 +374,8 @@ function showDeviceBlocked(result) {
     const title = document.getElementById('device-status-title');
     const body = document.getElementById('device-status-body');
     const badge = document.getElementById('device-status-badge');
-    const status = result ? .status || 'pending';
-    const device = result ? .device || {};
+    const status = result ?.status || 'pending';
+    const device = result ?.device || {};
     const messages = {
         pending: 'Questo dispositivo è in attesa di autorizzazione amministratore.',
         rejected: 'Questo dispositivo è stato rifiutato. Contatta l’amministratore.',
@@ -487,7 +487,7 @@ export async function trackAnalyticsEvent(eventName, metadata = {}) {
 }
 
 function assertAdmin() {
-    if (_authState.profile ? .role !== 'admin') throw new Error('Permesso amministratore richiesto.');
+    if (_authState.profile ?.role !== 'admin') throw new Error('Permesso amministratore richiesto.');
 }
 
 function adminMetricCard(label, value, icon, tone = 'text-blue-300') {
@@ -778,10 +778,10 @@ async function saveAdminUser(userId) {
     const field = name => row.querySelector(`[data-admin-user-field="${name}"]`);
     await rpc('gpxsuite_admin_update_user', {
         p_user_id: userId,
-        p_role: field('role') ? .value || 'user',
-        p_status: field('status') ? .value || 'active',
-        p_max_devices: Number(field('max_devices') ? .value || 1),
-        p_device_lock_enabled: field('device_lock_enabled') ? .checked === true
+        p_role: field('role') ?.value || 'user',
+        p_status: field('status') ?.value || 'active',
+        p_max_devices: Number(field('max_devices') ?.value || 1),
+        p_device_lock_enabled: field('device_lock_enabled') ?.checked === true
     });
     await trackAnalyticsEvent('admin_user_update', { userId });
     await refreshAdminDashboard();
@@ -798,7 +798,7 @@ async function setAdminDeviceStatus(deviceId, status) {
 
 async function createAdminUser(formData) {
     const session = _authState.session;
-    if (!session ? .access_token) throw new Error('Sessione admin non valida.');
+    if (!session ?.access_token) throw new Error('Sessione admin non valida.');
     const payload = {
         username: cleanString(formData.get('username')),
         email: cleanString(formData.get('email')).toLowerCase(),
