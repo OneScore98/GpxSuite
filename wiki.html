@@ -68,6 +68,18 @@
             border-radius: 0.25rem;
             font-size: 0.875em;
         }
+
+        .wiki-screenshot {
+            border: 1px solid #1f2937;
+            border-radius: 0.5rem;
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+        }
+
+        .detail-box {
+            background: #111827;
+            border: 1px solid #1f2937;
+            border-radius: 0.5rem;
+        }
     </style>
 </head>
 
@@ -81,6 +93,8 @@
             </h1>
         </div>
         <nav class="flex-1 overflow-y-auto px-4 py-6 space-y-1 text-sm font-medium">
+            <a href="#guida-rapida" class="sidebar-link">Guida rapida</a>
+            <a href="#schermate-uso" class="sidebar-link">Schermate d'uso</a>
             <a href="#introduzione" class="sidebar-link">1. Introduzione</a>
             <a href="#gestione-gpx" class="sidebar-link">2. Gestione File GPX</a>
             <a href="#editing" class="sidebar-link">3. Strumenti di Editing</a>
@@ -90,6 +104,8 @@
             <a href="#stampa" class="sidebar-link">7. Stampa Topografica A4</a>
             <a href="#mapillary" class="sidebar-link">8. Integrazione Mapillary</a>
             <a href="#auth-admin" class="sidebar-link">9. Autenticazione e Admin</a>
+            <a href="#simulazione-locale" class="sidebar-link">10. Simulazione Locale</a>
+            <a href="#problemi-comuni" class="sidebar-link">11. Problemi Comuni</a>
         </nav>
     </aside>
 
@@ -104,6 +120,87 @@
                 </h1>
             </div>
 
+            <!-- Guida rapida -->
+            <section id="guida-rapida" class="prose-section">
+                <h2 class="text-3xl font-bold border-b border-gray-800 pb-2 mb-4">Guida Rapida per l'Utente</h2>
+                <p class="mb-6 text-gray-400 leading-relaxed">
+                    Se vuoi arrivare subito al risultato, parti dal caso che ti riguarda. Le sezioni successive spiegano ogni strumento con più dettaglio.
+                </p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-400">
+                    <div class="detail-box p-5">
+                        <h3 class="text-xl font-semibold mb-3">Ho un GPX da correggere</h3>
+                        <ol class="list-decimal list-inside space-y-2">
+                            <li>Accedi e attendi il caricamento della mappa.</li>
+                            <li>Clicca <strong>Importa file GPX</strong> nella barra strumenti.</li>
+                            <li>Apri <strong>Struttura GIS</strong> per controllare tracce, segmenti e waypoint.</li>
+                            <li>Usa <strong>Taglia Traccia</strong>, <strong>Elimina punti dentro area</strong> o i menu del pannello GIS.</li>
+                            <li>Clicca <strong>Esporta file GPX</strong> quando la traccia è pronta.</li>
+                        </ol>
+                    </div>
+                    <div class="detail-box p-5">
+                        <h3 class="text-xl font-semibold mb-3">Voglio disegnare un percorso nuovo</h3>
+                        <ol class="list-decimal list-inside space-y-2">
+                            <li>Clicca <strong>Nuova Traccia</strong> dalla barra a sinistra o dal pannello GIS.</li>
+                            <li>Se vuoi seguire strade e sentieri, scegli un <strong>Profilo Snapping</strong>.</li>
+                            <li>Clicca sulla mappa nei punti chiave del percorso.</li>
+                            <li>Aggiungi waypoint con <strong>Inserisci Waypoint</strong> per rifugi, fonti o bivi.</li>
+                            <li>Controlla profilo altimetrico e statistiche prima di esportare.</li>
+                        </ol>
+                    </div>
+                    <div class="detail-box p-5">
+                        <h3 class="text-xl font-semibold mb-3">Voglio stampare una carta</h3>
+                        <ol class="list-decimal list-inside space-y-2">
+                            <li>Posiziona la mappa sulla zona interessata.</li>
+                            <li>Clicca <strong>Progetta e Stampa Mappa</strong>.</li>
+                            <li>Trascina la cornice blu sull'area da stampare.</li>
+                            <li>Scegli fogli, orientamento e dimensione della griglia.</li>
+                            <li>Clicca <strong>Genera Anteprime e Stampa</strong>.</li>
+                        </ol>
+                    </div>
+                    <div class="detail-box p-5">
+                        <h3 class="text-xl font-semibold mb-3">Devo solo consultare una traccia</h3>
+                        <ol class="list-decimal list-inside space-y-2">
+                            <li>Importa il GPX o aprilo dall'archivio locale se è già presente.</li>
+                            <li>Usa <strong>MAPPA</strong>, <strong>SAT</strong> o <strong>TOPO</strong> dal Menu Principale.</li>
+                            <li>Attiva <strong>Sentieri OSM</strong> se ti serve la rete escursionistica.</li>
+                            <li>Mostra o nascondi statistiche con il pulsante del profilo altimetrico.</li>
+                            <li>Usa gli occhi nel pannello GIS per confrontare più tracce.</li>
+                        </ol>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Schermate d'uso -->
+            <section id="schermate-uso" class="prose-section">
+                <h2 class="text-3xl font-bold border-b border-gray-800 pb-2 mb-4">Schermate d'Uso dell'Applicazione</h2>
+                <p class="mb-6 text-gray-400 leading-relaxed">
+                    Queste schermate derivano da una sessione locale di prova: è stata creata una traccia con 5 punti, poi sono stati aperti i pannelli principali che l'utente usa durante la pianificazione.
+                </p>
+                <div class="space-y-8">
+                    <figure class="detail-box p-4">
+                        <img class="wiki-screenshot w-full" src="src/assets/wiki/app-uso-editor-gis.png" alt="Editor GpxSuite con traccia disegnata e pannello Struttura GIS aperto">
+                        <figcaption class="text-sm text-gray-400 mt-4 leading-relaxed">
+                            <strong class="text-white">Editor e Struttura GIS:</strong> la traccia disegnata appare sulla mappa, mentre il pannello a destra mostra file GPX, segmenti, numero punti, colore, visibilità e azioni rapide.
+                        </figcaption>
+                    </figure>
+                    <figure class="detail-box p-4">
+                        <img class="wiki-screenshot w-full" src="src/assets/wiki/app-uso-menu-mappe-snapping.png" alt="Menu principale con mappe di base, Mapillary, vista 2D 3D e profili di snapping">
+                        <figcaption class="text-sm text-gray-400 mt-4 leading-relaxed">
+                            <strong class="text-white">Menu Principale:</strong> da qui si cambiano mappe base, layer Sentieri OSM, Mapillary, vista 2D/3D e profilo di snapping per il disegno dei percorsi.
+                        </figcaption>
+                    </figure>
+                    <figure class="detail-box p-4">
+                        <img class="wiki-screenshot w-full" src="src/assets/wiki/app-uso-stampa-a4.png" alt="Pannello Layout di Stampa con griglia A4 evidenziata sulla mappa">
+                        <figcaption class="text-sm text-gray-400 mt-4 leading-relaxed">
+                            <strong class="text-white">Stampa A4:</strong> il pannello Layout di Stampa controlla suddivisione fogli, orientamento e scala; la cornice blu sulla mappa indica l'area che verrà inclusa nelle anteprime.
+                        </figcaption>
+                    </figure>
+                </div>
+                <p class="mt-4 text-xs text-gray-500 leading-relaxed">
+                    Nota: le schermate sono state generate con una copia temporanea locale dell'app usata solo per documentazione, senza modificare la configurazione reale di autenticazione del progetto.
+                </p>
+            </section>
+
             <!-- Sezione 1: Introduzione -->
             <section id="introduzione" class="prose-section">
                 <h2 class="text-3xl font-bold border-b border-gray-800 pb-2 mb-4">1. Introduzione</h2>
@@ -113,6 +210,16 @@
                 <p class="mb-4 text-gray-400 leading-relaxed">
                     Tutte le modifiche che fai vengono <strong>salvate automaticamente in locale</strong> sul tuo computer o telefono. Se chiudi la pagina e la riapri, ritroverai il tuo lavoro esattamente dove lo avevi lasciato.
                 </p>
+                <div class="detail-box p-5 mt-6">
+                    <h3 class="text-xl font-semibold mb-3">Flusso di lavoro consigliato</h3>
+                    <ol class="list-decimal list-inside text-gray-400 space-y-2">
+                        <li>Apri l'app, accedi e verifica che il dispositivo sia autorizzato.</li>
+                        <li>Importa un GPX oppure crea una nuova traccia con la matita.</li>
+                        <li>Correggi segmenti, waypoint e visibilità dalla Struttura GIS.</li>
+                        <li>Controlla distanza, quota e pendenza nel profilo altimetrico.</li>
+                        <li>Esporta il GPX finale o genera le tavole A4 per la stampa.</li>
+                    </ol>
+                </div>
             </section>
 
             <!-- Sezione 2: Gestione GPX -->
@@ -129,6 +236,24 @@
                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>). Verrà salvato sul tuo dispositivo
                     un file <code>.gpx</code> pronto per essere inviato al tuo navigatore, smartphone o smartwatch.
                 </p>
+                <div class="detail-box p-5 mt-6 text-gray-400">
+                    <h3 class="text-xl font-semibold mb-3">Dettagli pratici</h3>
+                    <ul class="list-disc list-inside space-y-2">
+                        <li>I file importati vengono convertiti in tracce, segmenti e waypoint modificabili nel pannello GIS.</li>
+                        <li>Le quote mancanti vengono integrate quando possibile interrogando il terreno della mappa.</li>
+                        <li>Durante l'esportazione viene applicata una semplificazione Douglas-Peucker per ridurre il peso del GPX senza stravolgere la geometria.</li>
+                    </ul>
+                </div>
+                <div class="detail-box p-5 mt-4 text-gray-400">
+                    <h3 class="text-xl font-semibold mb-3">Come gestire più file</h3>
+                    <ol class="list-decimal list-inside space-y-2">
+                        <li>Importa un file alla volta, poi apri <strong>Struttura GIS</strong>.</li>
+                        <li>Rinomina ogni traccia con un nome leggibile, ad esempio "Salita", "Rientro" o "Variante".</li>
+                        <li>Usa il selettore colore per distinguere le tracce sovrapposte.</li>
+                        <li>Nascondi temporaneamente i livelli che non stai usando con l'icona a forma di occhio.</li>
+                        <li>Esporta solo quando la traccia finale è quella attiva e visibile.</li>
+                    </ol>
+                </div>
             </section>
 
             <!-- Sezione 3: Editing -->
@@ -156,6 +281,25 @@
                         <p class="text-sm">Aggiungi punti di interesse (ad es. un rifugio, una fontana o un bivio). Una volta creato, puoi cliccarci sopra per cambiarne il nome, il simbolo e la descrizione.</p>
                     </div>
                 </div>
+                <div class="detail-box p-5 mt-6 text-gray-400">
+                    <h3 class="text-xl font-semibold mb-3">Correzione consigliata di una traccia</h3>
+                    <ol class="list-decimal list-inside space-y-2">
+                        <li>Seleziona la traccia corretta in <strong>Struttura GIS</strong>.</li>
+                        <li>Usa <strong>Taglia Traccia</strong> se devi separare una variante dal percorso principale.</li>
+                        <li>Usa <strong>Elimina punti dentro area</strong> per rimuovere una porzione errata o un tratto duplicato.</li>
+                        <li>Se il risultato non è quello voluto, premi <strong>Annulla modifica</strong> o <strong>Ctrl+Z</strong>.</li>
+                        <li>Controlla il profilo altimetrico: salti di quota anomali spesso indicano punti GPX sbagliati.</li>
+                    </ol>
+                </div>
+                <div class="detail-box p-5 mt-4 text-gray-400">
+                    <h3 class="text-xl font-semibold mb-3">Uso dei waypoint</h3>
+                    <ul class="list-disc list-inside space-y-2">
+                        <li>Clicca <strong>Inserisci Waypoint</strong>, poi scegli il punto sulla mappa.</li>
+                        <li>Modifica nome e dettagli dal popup o dall'icona modifica nel pannello GIS.</li>
+                        <li>Usa i waypoint per note operative: acqua, bivio, parcheggio, punto pericoloso, rifugio.</li>
+                        <li>Nascondi il gruppo waypoint se vuoi leggere meglio la traccia sulla mappa.</li>
+                    </ul>
+                </div>
             </section>
 
             <!-- Sezione 4: Snap to Road -->
@@ -169,6 +313,28 @@
                     Nel <strong>Menu Principale</strong> (icona con tre linee orizzontali in alto a sinistra), puoi selezionare il tuo mezzo di trasporto nella sezione "Profilo Snapping". Puoi scegliere tra: a piedi, in bicicletta, in moto o in auto.
                     L'algoritmo calcolerà la via migliore in base alla tua scelta.
                 </p>
+                <p class="text-gray-500 text-sm leading-relaxed">
+                    Lo snap usa servizi esterni di routing: se la rete non risponde, continua a disegnare in linea retta e riprova quando la connessione torna stabile.
+                </p>
+                <div class="detail-box p-5 mt-6 text-gray-400">
+                    <h3 class="text-xl font-semibold mb-3">Quando usare ogni profilo</h3>
+                    <ul class="list-disc list-inside space-y-2">
+                        <li><strong>OFF:</strong> linee dirette tra i punti, utile per creste, tracce fuori sentiero o correzioni manuali.</li>
+                        <li><strong>Piedi:</strong> escursionismo e percorsi dove contano sentieri, strade bianche e passaggi pedonali.</li>
+                        <li><strong>Bici:</strong> itinerari ciclabili e sterrati pedalabili.</li>
+                        <li><strong>Moto:</strong> itinerari mototuristici o percorsi stradali con esigenze diverse dall'auto.</li>
+                        <li><strong>Auto:</strong> collegamenti stradali e trasferimenti su rete carrabile.</li>
+                    </ul>
+                </div>
+                <div class="detail-box p-5 mt-4 text-gray-400">
+                    <h3 class="text-xl font-semibold mb-3">Buone pratiche</h3>
+                    <ol class="list-decimal list-inside space-y-2">
+                        <li>Imposta il profilo prima di disegnare il tratto.</li>
+                        <li>Clicca pochi punti chiave: incroci, tornanti, cambi di strada.</li>
+                        <li>Disattiva lo snap quando vuoi collegare manualmente due punti fuori rete.</li>
+                        <li>Controlla subito il risultato: se il routing prende una strada sbagliata, annulla e aggiungi un punto intermedio.</li>
+                    </ol>
+                </div>
             </section>
 
             <!-- Sezione 5: Mappa 3D -->
@@ -183,6 +349,15 @@
                     <li><strong>Vista 3D:</strong> Clicca su "3D Terreno" per far emergere i rilievi montuosi. Per inclinare la mappa a tuo piacimento e ruotarla, <strong>tieni premuto il tasto CTRL (o Command)</strong> sulla tastiera mentre trascini con
                         il mouse. (Se usi un dispositivo touch, usa semplicemente due dita!).</li>
                 </ul>
+                <div class="detail-box p-5 mt-6 text-gray-400">
+                    <h3 class="text-xl font-semibold mb-3">Quale mappa scegliere</h3>
+                    <ul class="list-disc list-inside space-y-2">
+                        <li><strong>MAPPA:</strong> migliore per orientarsi rapidamente, cercare paesi, strade e nomi.</li>
+                        <li><strong>SAT:</strong> utile per verificare boschi, radure, cave, strade sterrate e zone aperte.</li>
+                        <li><strong>TOPO:</strong> consigliata per montagna, dislivelli, curve di livello e pianificazione escursionistica.</li>
+                        <li><strong>3D TERRENO:</strong> utile prima della stampa o quando vuoi capire esposizione, vallate e creste.</li>
+                    </ul>
+                </div>
             </section>
 
             <!-- Sezione 6: Analisi Offroad -->
@@ -195,6 +370,15 @@
                     Fai <strong>click con il tasto destro</strong> sul nome della tua traccia (oppure tieni premuto a lungo su mobile) per aprire il menu delle opzioni, quindi seleziona <strong>"Estrai Offroad"</strong>. L'app interrogherà il database
                     cartografico e creerà un livello colorato sopra la tua traccia per mostrarti esattamente dove il percorso non è asfaltato!
                 </p>
+                <div class="detail-box p-5 text-gray-400">
+                    <h3 class="text-xl font-semibold mb-3">Come leggere il risultato</h3>
+                    <ul class="list-disc list-inside space-y-2">
+                        <li>Usa l'analisi come supporto decisionale: la classificazione dipende dai dati disponibili sulla mappa.</li>
+                        <li>Confronta sempre il risultato con mappa satellitare e, se disponibile, Mapillary.</li>
+                        <li>Se una traccia è molto lunga, analizza prima i segmenti principali per ridurre confusione visiva.</li>
+                        <li>Per un itinerario stampabile, lascia visibili solo i layer davvero utili.</li>
+                    </ul>
+                </div>
             </section>
 
             <!-- Sezione 7: Stampa -->
@@ -210,6 +394,33 @@
                     <li>Clicca su "Genera Anteprime". Il sistema "fotograferà" la mappa ad altissima risoluzione per te.</li>
                     <li>Usa la finestra di stampa del tuo sistema per salvare tutto come PDF. Ricorda di abilitare la "Stampa sfondi/colori" nel tuo browser!</li>
                 </ol>
+                <div class="detail-box p-5 text-gray-400">
+                    <h3 class="text-xl font-semibold mb-3">Controlli prima della stampa</h3>
+                    <ul class="list-disc list-inside space-y-2">
+                        <li>Attendi che le tessere della mappa siano caricate prima di generare le anteprime.</li>
+                        <li>Controlla orientamento, numero di pagine e scala prima di aprire la finestra di stampa.</li>
+                        <li>Se salvi in PDF, abilita sempre la stampa di sfondi e colori del browser.</li>
+                    </ul>
+                </div>
+                <div class="detail-box p-5 mt-4 text-gray-400">
+                    <h3 class="text-xl font-semibold mb-3">Esempi pratici di layout</h3>
+                    <ul class="list-disc list-inside space-y-2">
+                        <li><strong>1 Foglio A4:</strong> uscita breve, zona ristretta, promemoria rapido.</li>
+                        <li><strong>2 Fogli Orizzontali:</strong> percorso lineare da ovest a est o valle lunga.</li>
+                        <li><strong>2 Fogli Verticali:</strong> salita e discesa sviluppate in direzione nord-sud.</li>
+                        <li><strong>4 o 6 Fogli:</strong> area ampia, anello lungo o stampa da portare come cartografia principale.</li>
+                    </ul>
+                </div>
+                <div class="detail-box p-5 mt-4 text-gray-400">
+                    <h3 class="text-xl font-semibold mb-3">Sequenza sicura prima del PDF</h3>
+                    <ol class="list-decimal list-inside space-y-2">
+                        <li>Usa <strong>TOPO</strong> o <strong>SAT</strong> in base al tipo di uscita.</li>
+                        <li>Attiva solo tracce e waypoint necessari.</li>
+                        <li>Apri <strong>Progetta e Stampa Mappa</strong> e centra la cornice blu.</li>
+                        <li>Genera le anteprime.</li>
+                        <li>Conferma con <strong>Lancia Stampa (A4 PDF)</strong>.</li>
+                    </ol>
+                </div>
             </section>
 
             <!-- Sezione 8: Mapillary -->
@@ -223,6 +434,15 @@
                     <li>Appariranno sulla mappa delle linee verdi fluo: indicano che lì qualcuno è passato con una telecamera.</li>
                     <li>Seleziona l'icona della telecamera nella barra a sinistra, quindi clicca su una linea verde. Si aprirà un riquadro con foto panoramiche o a 360° esplorabili interattivamente!</li>
                 </ul>
+                <div class="detail-box p-5 mt-6 text-gray-400">
+                    <h3 class="text-xl font-semibold mb-3">Quando Mapillary è utile</h3>
+                    <ul class="list-disc list-inside space-y-2">
+                        <li>Per controllare se una strada è asfaltata, sterrata, chiusa o privata.</li>
+                        <li>Per verificare bivi, cancelli, ponti, guadi e segnaletica.</li>
+                        <li>Per confermare un tratto offroad prima di esportare o stampare.</li>
+                        <li>Per confrontare il percorso con immagini reali quando la mappa satellitare non basta.</li>
+                    </ul>
+                </div>
             </section>
 
             <!-- Sezione 9: Auth e Admin -->
@@ -237,6 +457,138 @@
                         essere "Approvato" manualmente dall'amministratore prima che tu possa entrare per ragioni di sicurezza.</p>
                     <h4 class="text-white font-bold mb-2">Pannello Amministratore</h4>
                     <p class="text-sm">Se sei un gestore della piattaforma, puoi accedere al Pannello Amministratore (icona a forma di scudo nel menu principale) per autorizzare nuovi dispositivi, revocare gli accessi o creare nuovi account utente in maniera veloce.</p>
+                </div>
+                <div class="detail-box p-5 mt-6 text-gray-400">
+                    <h3 class="text-xl font-semibold mb-3">Cosa succede in locale</h3>
+                    <ul class="list-disc list-inside space-y-2">
+                        <li>Se <code>AUTH_REQUIRED</code> è attivo, l'app resta protetta anche durante una simulazione locale.</li>
+                        <li>La mappa di sfondo del login può caricarsi, ma l'editor GPX viene inizializzato solo dopo una sessione autorizzata.</li>
+                        <li>Un nuovo dispositivo può entrare in stato pending finché un amministratore non lo approva dalla dashboard.</li>
+                    </ul>
+                </div>
+                <div class="detail-box p-5 mt-4 text-gray-400">
+                    <h3 class="text-xl font-semibold mb-3">Accesso utente passo-passo</h3>
+                    <ol class="list-decimal list-inside space-y-2">
+                        <li>Inserisci username o email.</li>
+                        <li>Inserisci la password oppure richiedi un <strong>Magic link</strong>.</li>
+                        <li>Se compare "Autorizzazione richiesta", avvisa l'amministratore e lascia il dispositivo in attesa.</li>
+                        <li>Dopo l'approvazione, premi <strong>Riprova</strong> o ricarica la pagina.</li>
+                        <li>Usa <strong>Esci</strong> quando lavori su un computer condiviso.</li>
+                    </ol>
+                </div>
+                <div class="detail-box p-5 mt-4 text-gray-400">
+                    <h3 class="text-xl font-semibold mb-3">Azioni amministratore</h3>
+                    <ul class="list-disc list-inside space-y-2">
+                        <li>Apri <strong>Menu Principale</strong> e poi <strong>Admin</strong>.</li>
+                        <li>Controlla dispositivi pending e approva solo quelli riconosciuti.</li>
+                        <li>Revoca dispositivi non più usati o compromessi.</li>
+                        <li>Crea account con nomi riconoscibili, così la gestione rimane chiara nel tempo.</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- Sezione 10: Simulazione locale -->
+            <section id="simulazione-locale" class="prose-section">
+                <h2 class="text-3xl font-bold border-b border-gray-800 pb-2 mb-4">10. Simulazione Locale Verificata</h2>
+                <p class="mb-4 text-gray-400 leading-relaxed">
+                    Simulazione eseguita in locale il <strong>2 giugno 2026</strong> servendo il progetto con il server statico Python, senza build step e senza installare dipendenze.
+                </p>
+                <figure class="my-6">
+                    <img class="wiki-screenshot w-full" src="src/assets/wiki/simulazione-locale-login.png" alt="Screenshot della schermata di accesso di GpxSuite durante la simulazione locale">
+                    <figcaption class="text-xs text-gray-500 mt-3 leading-relaxed">
+                        Screenshot reale da <code>http://127.0.0.1:8000/</code>: il gate di accesso viene mostrato correttamente e blocca l'editor finché la sessione non è autorizzata.
+                    </figcaption>
+                </figure>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-400">
+                    <div class="detail-box p-5">
+                        <h3 class="text-xl font-semibold mb-3">Avvio locale</h3>
+                        <ol class="list-decimal list-inside space-y-2">
+                            <li>Apri il terminale nella cartella del progetto.</li>
+                            <li>Esegui <code>python3 -m http.server 8000</code>.</li>
+                            <li>Apri <code>http://127.0.0.1:8000/</code> nel browser.</li>
+                            <li>Usa <code>http://127.0.0.1</code> se <code>localhost</code> mostra una versione in cache.</li>
+                        </ol>
+                    </div>
+                    <div class="detail-box p-5">
+                        <h3 class="text-xl font-semibold mb-3">Risultato osservato</h3>
+                        <ul class="list-disc list-inside space-y-2">
+                            <li>La pagina carica il gate di autenticazione.</li>
+                            <li>La card mostra accesso con username/email, password e magic link.</li>
+                            <li>La UI operativa resta chiusa senza sessione Supabase valida.</li>
+                            <li>La protezione fail-closed evita accessi non autorizzati anche in locale.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="detail-box p-5 mt-6 text-gray-400">
+                    <h3 class="text-xl font-semibold mb-3">Checklist per una simulazione completa</h3>
+                    <ul class="list-disc list-inside space-y-2">
+                        <li>Conferma che <code>src/js/auth-config.js</code> punti al progetto Supabase corretto.</li>
+                        <li>Accedi con un account abilitato e approva il dispositivo dalla dashboard amministratore se richiesto.</li>
+                        <li>Importa un GPX di prova, verifica mappa, pannello GIS e profilo altimetrico.</li>
+                        <li>Prova una modifica non distruttiva, poi usa Annulla per controllare la cronologia.</li>
+                        <li>Genera una preview A4 solo dopo il caricamento completo delle tessere mappa.</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- Sezione 11: Problemi comuni -->
+            <section id="problemi-comuni" class="prose-section">
+                <h2 class="text-3xl font-bold border-b border-gray-800 pb-2 mb-4">11. Problemi Comuni e Soluzioni</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-400">
+                    <div class="detail-box p-5">
+                        <h3 class="text-xl font-semibold mb-3">Non riesco ad accedere</h3>
+                        <ul class="list-disc list-inside space-y-2">
+                            <li>Controlla username/email e password.</li>
+                            <li>Se usi Magic link, verifica posta in arrivo e spam.</li>
+                            <li>Se il dispositivo è in attesa, serve approvazione amministratore.</li>
+                            <li>Se Supabase non è configurato, l'app non concede accesso.</li>
+                        </ul>
+                    </div>
+                    <div class="detail-box p-5">
+                        <h3 class="text-xl font-semibold mb-3">La mappa sembra vuota</h3>
+                        <ul class="list-disc list-inside space-y-2">
+                            <li>Attendi il caricamento delle tessere.</li>
+                            <li>Verifica la connessione internet: le mappe arrivano da servizi esterni.</li>
+                            <li>Controlla che la traccia non sia nascosta nel pannello GIS.</li>
+                            <li>Usa lo zoom sulla traccia o reimporta il GPX se il file è danneggiato.</li>
+                        </ul>
+                    </div>
+                    <div class="detail-box p-5">
+                        <h3 class="text-xl font-semibold mb-3">Lo snap non segue il percorso giusto</h3>
+                        <ul class="list-disc list-inside space-y-2">
+                            <li>Scegli il profilo corretto prima di aggiungere punti.</li>
+                            <li>Aggiungi punti intermedi vicino agli incroci importanti.</li>
+                            <li>Disattiva lo snap per tratti fuori rete.</li>
+                            <li>Usa <strong>Annulla modifica</strong> appena vedi un routing sbagliato.</li>
+                        </ul>
+                    </div>
+                    <div class="detail-box p-5">
+                        <h3 class="text-xl font-semibold mb-3">La stampa non ha colori o sfondo</h3>
+                        <ul class="list-disc list-inside space-y-2">
+                            <li>Nel dialogo di stampa abilita sfondi/colori.</li>
+                            <li>Genera di nuovo le anteprime dopo aver cambiato mappa o zoom.</li>
+                            <li>Non stampare mentre le tessere sono ancora in caricamento.</li>
+                            <li>Salva prima in PDF se vuoi controllare il risultato.</li>
+                        </ul>
+                    </div>
+                    <div class="detail-box p-5">
+                        <h3 class="text-xl font-semibold mb-3">Il GPX esportato è troppo grande</h3>
+                        <ul class="list-disc list-inside space-y-2">
+                            <li>Elimina segmenti duplicati o inutili dal pannello GIS.</li>
+                            <li>Rimuovi punti errati con la gomma ad area.</li>
+                            <li>Esporta dopo aver nascosto o cancellato layer che non servono.</li>
+                            <li>Controlla se il file originale contiene molte varianti sovrapposte.</li>
+                        </ul>
+                    </div>
+                    <div class="detail-box p-5">
+                        <h3 class="text-xl font-semibold mb-3">Ho perso una modifica</h3>
+                        <ul class="list-disc list-inside space-y-2">
+                            <li>Prova subito <strong>Annulla modifica</strong> o <strong>Ctrl+Z</strong>.</li>
+                            <li>Se hai chiuso il browser, riapri l'app: lo stato locale viene ripristinato quando disponibile.</li>
+                            <li>Esporta versioni intermedie dei lavori importanti.</li>
+                            <li>Evita di cancellare cache o dati sito prima di aver salvato il GPX.</li>
+                        </ul>
+                    </div>
                 </div>
             </section>
         </div>
