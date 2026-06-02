@@ -226,21 +226,38 @@ function limitaCentroGriglia(x, y) {
             const panelRight = panelRect.right - mapRect.left;
             const panelTop = panelRect.top - mapRect.top;
             const panelBottom = panelRect.bottom - mapRect.top;
+            const panelW = Math.max(0, panelRect.width);
+            const panelH = Math.max(0, panelRect.height);
 
-            if (panelLeft <= padding && panelRight > padding) {
-                safeLeft = Math.max(safeLeft, Math.min(mapWidth - padding, panelRight + 18));
+            // Determina l'asse principale del pannello per evitare di gonfiare
+            // entrambi gli assi quando un pannello laterale (alto e stretto)
+            // sfiora anche il bordo inferiore della mappa.
+            // - Pannello "verticale" (laterale): copre gran parte dell'altezza ma non della larghezza → blocca solo left/right.
+            // - Pannello "orizzontale" (top/bottom): copre gran parte della larghezza ma non dell'altezza → blocca solo top/bottom.
+            const verticalDominance = mapHeight > 0 ? panelH / mapHeight : 0;
+            const horizontalDominance = mapWidth > 0 ? panelW / mapWidth : 0;
+            const isVerticalPanel = verticalDominance >= 0.6 && horizontalDominance < 0.6;
+            const isHorizontalPanel = horizontalDominance >= 0.6 && verticalDominance < 0.6;
+            const ambiguousPanel = !isVerticalPanel && !isHorizontalPanel;
+
+            if (isVerticalPanel || ambiguousPanel) {
+                if (panelLeft <= padding && panelRight > padding) {
+                    safeLeft = Math.max(safeLeft, Math.min(mapWidth - padding, panelRight + 18));
+                }
+
+                if (panelRight >= mapWidth - padding && panelLeft < mapWidth - padding) {
+                    safeRight = Math.max(safeRight, Math.min(mapWidth - padding, mapWidth - panelLeft + 18));
+                }
             }
 
-            if (panelRight >= mapWidth - padding && panelLeft < mapWidth - padding) {
-                safeRight = Math.max(safeRight, Math.min(mapWidth - padding, mapWidth - panelLeft + 18));
-            }
+            if (isHorizontalPanel || ambiguousPanel) {
+                if (panelTop <= padding && panelBottom > padding) {
+                    safeTop = Math.max(safeTop, Math.min(mapHeight - padding, panelBottom + 18));
+                }
 
-            if (panelTop <= padding && panelBottom > padding) {
-                safeTop = Math.max(safeTop, Math.min(mapHeight - padding, panelBottom + 18));
-            }
-
-            if (panelBottom >= mapHeight - padding && panelTop < mapHeight - padding) {
-                safeBottom = Math.max(safeBottom, Math.min(mapHeight - padding, mapHeight - panelTop + 18));
+                if (panelBottom >= mapHeight - padding && panelTop < mapHeight - padding) {
+                    safeBottom = Math.max(safeBottom, Math.min(mapHeight - padding, mapHeight - panelTop + 18));
+                }
             }
         }
     }

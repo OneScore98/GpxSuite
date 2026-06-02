@@ -150,6 +150,41 @@ async function loadTrackGeoJson() {
     }
 }
 
+function extractCoordinates(geojson) {
+    let coords = [];
+    if (geojson && geojson.features) {
+        for (let f of geojson.features) {
+            if (f.geometry && f.geometry.type === 'LineString') {
+                for (let c of f.geometry.coordinates) {
+                    if (coords.length > 0) {
+                        const last = coords[coords.length - 1];
+                        if (last[0] === c[0] && last[1] === c[1]) continue;
+                    }
+                    coords.push(c);
+                }
+            }
+        }
+    }
+    return coords;
+}
+
+function getPointAlongPath(path, phase) {
+    if (!path || path.length < 2) return null;
+    const totalSegments = path.length - 1;
+    const continuousIndex = phase * totalSegments;
+    const index = Math.floor(continuousIndex);
+    if (index >= totalSegments) return path[totalSegments];
+    
+    const p1 = path[index];
+    const p2 = path[index + 1];
+    const t = continuousIndex - index;
+    
+    return [
+        p1[0] + (p2[0] - p1[0]) * t,
+        p1[1] + (p2[1] - p1[1]) * t
+    ];
+}
+
 function addTrackLayers(map, geojson) {
     if (map.getSource('login-track')) return;
     map.addSource('login-track', { type: 'geojson', data: geojson });
@@ -209,6 +244,36 @@ function addTrackLayers(map, geojson) {
             'line-dasharray': [1.6, 1.4]
         }
     });
+
+    // Punto mobile luminoso lungo la traccia
+    map.addSource('login-moving-point', {
+        type: 'geojson',
+        data: { type: 'Point', coordinates: [0, 0] }
+    });
+
+    map.addLayer({
+        id: 'login-moving-point-glow',
+        type: 'circle',
+        source: 'login-moving-point',
+        paint: {
+            'circle-radius': 14,
+            'circle-color': '#38bdf8',
+            'circle-opacity': 0.4,
+            'circle-blur': 0.8
+        }
+    });
+
+    map.addLayer({
+        id: 'login-moving-point-core',
+        type: 'circle',
+        source: 'login-moving-point',
+        paint: {
+            'circle-radius': 4,
+            'circle-color': '#ffffff',
+            'circle-stroke-width': 2,
+            'circle-stroke-color': '#0ea5e9'
+        }
+    });
 }
 
 // Triangolare circolare: per ogni "centro" nello spazio [0,1), restituisce
@@ -237,20 +302,26 @@ function setLayerOpacity(map, layerId, opacity) {
     } catch (_) { /* layer non ancora pronto */ }
 }
 
-function startOrbit(state) {
+function startOrbit(state, geojson) {
     const { map } = state;
     const center = state.center;
     const start = performance.now();
-    const orbitPeriodMs = 90000; // un giro completo ogni 90s
+    const orbitPeriodMs = 120000; // un giro completo ogni 120s
     const basemapCyclePeriodMs = 90000; // anche il ciclo basemap dura 90s (3 slot da 30s)
     const reducedMotion = prefersReducedMotion();
 
+    const isMobile = window.innerWidth < 768;
+
     state.startBearing = (Math.random() * 360);
-    state.basePitch = 66;
-    state.baseZoom = 13.2;
+    state.basePitch = isMobile ? 70 : 66; // Più inclinato su mobile per maggiore profondità
+    state.baseZoom = isMobile ? 12.5 : 13.2; // Più lontano su mobile
+
+    const trackCoords = extractCoordinates(geojson);
+    const hasTrack = trackCoords.length > 1;
 
     // Throttling: aggiornamento camera ogni frame, opacità basemap al massimo 8 volte/sec
     let lastOpacityUpdate = 0;
+    let lastPointUpdate = 0;
 
     const animate = (now) => {
         if (!state.running) return;
@@ -258,9 +329,11 @@ function startOrbit(state) {
         const orbitPhase = (elapsed / orbitPeriodMs);
         const bearing = (state.startBearing + (reducedMotion ? 0 : orbitPhase * 360)) % 360;
         const t = elapsed / 1000;
+        
         // Leggera oscillazione pitch/zoom per "respiro" cinematografico
-        const pitchOsc = reducedMotion ? 0 : Math.sin(t * 0.18) * 2.8;
-        const zoomOsc = reducedMotion ? 0 : Math.sin(t * 0.12) * 0.20;
+        const pitchOsc = reducedMotion ? 0 : Math.sin(t * 0.18) * (isMobile ? 1.5 : 2.8);
+        const zoomOsc = reducedMotion ? 0 : Math.sin(t * 0.12) * (isMobile ? 0.12 : 0.20);
+        
         try {
             map.jumpTo({
                 center,
@@ -269,6 +342,37 @@ function startOrbit(state) {
                 zoom: state.baseZoom + zoomOsc
             });
         } catch (_) {}
+
+        if (!reducedMotion) {
+            // Effetto pulsazione sul glow della traccia
+            try {
+                if (map.getLayer('login-track-glow')) {
+                    const glowPulse = 0.12 + Math.sin(t * 1.5) * 0.10;
+                    map.setPaintProperty('login-track-glow', 'line-opacity', glowPulse);
+                    const widthPulse = 18 + Math.cos(t * 0.8) * 4;
+                    map.setPaintProperty('login-track-glow', 'line-width', widthPulse);
+                }
+            } catch (_) {}
+            
+            // Punto mobile con effetto ping-pong (andata e ritorno)
+            if (hasTrack && now - lastPointUpdate > 32) {
+                lastPointUpdate = now;
+                const pointPeriodMs = 24000; // 24s per l'intero ciclo
+                let pointPhase = (elapsed % pointPeriodMs) / pointPeriodMs;
+                if (pointPhase > 0.5) {
+                    pointPhase = 1 - (pointPhase - 0.5) * 2;
+                } else {
+                    pointPhase = pointPhase * 2;
+                }
+                // Ease in-out (smoothstep)
+                const easePhase = pointPhase * pointPhase * (3 - 2 * pointPhase);
+                const currentPoint = getPointAlongPath(trackCoords, easePhase);
+                if (currentPoint) {
+                    const src = map.getSource('login-moving-point');
+                    if (src) src.setData({ type: 'Point', coordinates: currentPoint });
+                }
+            }
+        }
 
         // Crossfade basemap: phase ciclico [0,1) → 3 slot
         if (now - lastOpacityUpdate > 120) {
@@ -356,7 +460,7 @@ export async function startAuthMapBackground() {
             map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
             addTrackLayers(map, geojson);
             container.classList.add('is-ready');
-            startOrbit(_state);
+            startOrbit(_state, geojson);
         } catch (err) {
             console.warn('[auth-bg] Errore inizializzazione layer:', err);
         }

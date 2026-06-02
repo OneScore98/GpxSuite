@@ -4,6 +4,7 @@ import {
     AUTH_REQUIRED,
     SUPABASE_URL,
     SUPABASE_PUBLISHABLE_KEY,
+    AUTH_REDIRECT_URL,
     ADMIN_USERS_FUNCTION_URL
 } from './auth-config.js';
 import { ensureLucideIcons, refreshLucideIcons } from './utils.js';
@@ -48,6 +49,25 @@ function adminUsersFunctionUrl() {
     const configured = cleanString(ADMIN_USERS_FUNCTION_URL);
     if (configured) return configured;
     return `${cleanString(SUPABASE_URL).replace(/\/+$/, '')}/functions/v1/gpxsuite-admin-users`;
+}
+
+function normalizeRedirectUrl(value) {
+    const clean = cleanString(value);
+    if (!clean) return '';
+    try {
+        const url = new URL(clean, window.location.href);
+        url.search = '';
+        url.hash = '';
+        return url.toString();
+    } catch {
+        return clean;
+    }
+}
+
+function authRedirectUrl() {
+    const configured = normalizeRedirectUrl(AUTH_REDIRECT_URL);
+    if (configured) return configured;
+    return normalizeRedirectUrl(window.location.href);
 }
 
 async function getSupabaseClient() {
@@ -112,6 +132,14 @@ function setPanelMessage(elementId, message, type = 'info') {
 
 function setAuthMessage(message, type = 'info') {
     setPanelMessage('auth-message', message, type);
+}
+
+function authEmailErrorMessage(err, fallback) {
+    const message = String(err ?.message || err || '').toLowerCase();
+    if (message.includes('email rate limit exceeded')) {
+        return 'Limite email Supabase raggiunto: con il provider email integrato puoi inviare al massimo 2 email all’ora. Attendi circa un’ora e richiedi un nuovo link, oppure configura un SMTP personalizzato.';
+    }
+    return err ?.message || fallback;
 }
 
 function setResetMessage(message, type = 'info') {
@@ -239,7 +267,7 @@ async function handleMagicLinkLogin() {
     try {
         const client = await getSupabaseClient();
         const email = await resolveLoginEmail(identifier);
-        const redirectTo = `${window.location.origin}${window.location.pathname}`;
+        const redirectTo = authRedirectUrl();
         const { error } = await client.auth.signInWithOtp({
             email,
             options: {
@@ -251,7 +279,7 @@ async function handleMagicLinkLogin() {
         setAuthMessage('Magic link inviato. Apri il link dalla tua email su questo dispositivo.', 'success');
     } catch (err) {
         console.error(err);
-        setAuthMessage(err.message || 'Invio magic link non riuscito.', 'error');
+        setAuthMessage(authEmailErrorMessage(err, 'Invio magic link non riuscito.'), 'error');
     } finally {
         setAuthBusy(false);
     }
@@ -268,13 +296,13 @@ async function handlePasswordResetRequest() {
     try {
         const client = await getSupabaseClient();
         const email = await resolveLoginEmail(identifier);
-        const redirectTo = `${window.location.origin}${window.location.pathname}`;
+        const redirectTo = authRedirectUrl();
         const { error } = await client.auth.resetPasswordForEmail(email, { redirectTo });
         if (error) throw error;
         setAuthMessage('Email reset inviata. Apri il link ricevuto e imposta la nuova password.', 'success');
     } catch (err) {
         console.error(err);
-        setAuthMessage(err.message || 'Invio reset password non riuscito.', 'error');
+        setAuthMessage(authEmailErrorMessage(err, 'Invio reset password non riuscito.'), 'error');
     } finally {
         setAuthBusy(false);
     }

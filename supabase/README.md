@@ -25,6 +25,17 @@ supabase functions deploy gpxsuite-admin-users
 ```javascript
 export const SUPABASE_URL = 'https://PROJECT_REF.supabase.co';
 export const SUPABASE_PUBLISHABLE_KEY = '...';
+export const AUTH_REDIRECT_URL = 'https://onescore98.github.io/GpxSuite/';
 ```
 
 Non inserire mai la `service_role key` nel frontend. La usa solo la Edge Function su Supabase.
+
+## URL Auth
+
+In Supabase, apri `Authentication > URL Configuration` e imposta:
+
+- `Site URL`: `https://onescore98.github.io/GpxSuite/`
+- `Redirect URLs`: `https://onescore98.github.io/GpxSuite/`
+
+Per test locali puoi aggiungere anche `http://localhost:8080/`, ma non usarlo come `Site URL` di produzione.
+Se una mail di reset contiene ancora `localhost:3000`, significa che e stata generata prima della modifica/configurazione: richiedi un nuovo reset password.
