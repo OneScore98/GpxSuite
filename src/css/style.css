@@ -98,6 +98,57 @@ body.auth-locked #print-drag-grid {
         linear-gradient(180deg, #22362e 0%, #0d1615 48%, #030712 100%);
 }
 
+/* Sfondo MapLibre 3D animato: si sovrappone al preview SVG, fade-in quando pronto */
+#auth-map-bg {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    overflow: hidden;
+    pointer-events: none;
+    display: none;
+    opacity: 0;
+    transition: opacity 1.2s ease;
+    background: #07110f;
+}
+
+#auth-map-bg.is-ready {
+    opacity: 1;
+}
+
+#auth-map-bg .maplibregl-canvas {
+    outline: none;
+}
+
+#auth-map-bg .maplibregl-ctrl-attrib {
+    background: rgba(2, 6, 23, 0.55);
+    color: rgba(226, 232, 240, 0.62);
+    font-size: 10px;
+    border-radius: 6px;
+    padding: 2px 6px;
+}
+
+#auth-map-bg .maplibregl-ctrl-attrib a {
+    color: rgba(125, 211, 252, 0.78);
+}
+
+/* Overlay scuro/vignette sopra la mappa MapLibre per leggibilità del card */
+#auth-map-bg::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    background:
+        linear-gradient(90deg, rgba(2, 6, 23, 0.18) 0%, rgba(2, 6, 23, 0.30) 45%, rgba(2, 6, 23, 0.78) 80%, rgba(2, 6, 23, 0.92) 100%),
+        radial-gradient(120% 100% at 10% 50%, transparent 35%, rgba(2, 6, 23, 0.45) 100%);
+}
+
+/* Quando la mappa 3D è attiva, attenuiamo il preview SVG sottostante */
+#auth-map-bg.is-ready ~ .auth-map-preview {
+    opacity: 0;
+    transition: opacity 0.8s ease;
+}
+
 .auth-map-preview::before {
     content: "";
     position: absolute;

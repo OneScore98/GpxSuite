@@ -7,6 +7,7 @@ import {
     ADMIN_USERS_FUNCTION_URL
 } from './auth-config.js';
 import { ensureLucideIcons, refreshLucideIcons } from './utils.js';
+import { startAuthMapBackground, stopAuthMapBackground } from './auth-map-background.js';
 
 const DEVICE_KEY_STORAGE = 'gpxsuite-device-key-v1';
 const DEVICE_LABEL_STORAGE = 'gpxsuite-device-label-v1';
@@ -134,11 +135,15 @@ function showAuthView(viewName) {
         view.classList.toggle('hidden', view.dataset.authView !== viewName);
     });
     ensureLucideIcons().catch(err => console.warn(err));
+    // Avvio sfondo MapLibre 3D (best effort, fallback graceful all'SVG)
+    startAuthMapBackground().catch(err => console.debug('[auth-bg] start skip:', err?.message || err));
 }
 
 function hideAuthGate() {
     document.getElementById('auth-gate')?.classList.add('hidden');
     document.body.classList.remove('auth-locked');
+    // Distruggi la mappa di sfondo prima che si crei la mappa principale
+    try { stopAuthMapBackground(); } catch (_) {}
 }
 
 function updateAccountPanel() {

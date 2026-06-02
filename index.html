@@ -65,6 +65,9 @@
 
     <!-- GATE DI AUTENTICAZIONE -->
     <div id="auth-gate" class="fixed inset-0 z-[100000] bg-gray-950 text-gray-100 flex items-center justify-center p-4">
+        <!-- Sfondo MapLibre 3D animato (traccia GPX reale, vista satellitare orbitale).
+             Resta nascosto finché la mappa non è pronta: in tal caso fallback all'SVG sottostante. -->
+        <div id="auth-map-bg" aria-hidden="true"></div>
         <div class="auth-map-preview" aria-hidden="true">
             <div class="auth-map-stage">
                 <div class="auth-map-panel">
