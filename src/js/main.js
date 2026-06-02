@@ -1,6 +1,6 @@
 // main.js — Entry point: importa tutto, chiama init al DOMContentLoaded
 
-import { MAPILLARY_TOKEN_KEY, setMap, setMapLoaded, NEXTZEN_TERRAIN_SOURCE, is3D } from './state.js';
+import { MAPILLARY_TOKEN_KEY, setMap, setMapLoaded, NEXTZEN_TERRAIN_SOURCE, is3D, tracks } from './state.js';
 import { ensureLucideIcons } from './utils.js';
 
 import {
@@ -16,6 +16,7 @@ import {
     setupPrintDragEvents, updatePrintGridLayout, updatePrintGridScale,
     setPrintPlanningOrientation, generateHighResPrintPreview, syncPrintOutputFromPreview
 } from './print.js';
+import { initAuthGate, bindAuthUi, trackAnalyticsEvent } from './auth.js';
 import {
     injectDeps, setupEvents, setupPrintUiEvents, createNewTrack, renderGisTree,
     restoreStoredTracksOnStartup,
@@ -229,6 +230,7 @@ function initApp() {
 
         setupLayers();
         setupEvents();
+        bindAuthUi();
         configureMapillaryToken(localStorage.getItem(MAPILLARY_TOKEN_KEY) || '');
         renderGisTree();
         updateActiveTracksHeader();
@@ -245,11 +247,19 @@ function initApp() {
             showToast("Archivio locale non disponibile in questo browser", "error");
             createNewTrack("Traccia 1");
         }
+        trackAnalyticsEvent('app_ready', { restoredTracks: tracks.length }).catch(err => console.warn(err));
+    });
+}
+
+function bootstrapApp() {
+    updateViewportMetrics();
+    initAuthGate({ onAuthorized: initApp }).catch(err => {
+        console.error(err);
     });
 }
 
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initApp, { once: true });
+    document.addEventListener('DOMContentLoaded', bootstrapApp, { once: true });
 } else {
-    initApp();
+    bootstrapApp();
 }

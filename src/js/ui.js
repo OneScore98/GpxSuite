@@ -20,6 +20,7 @@ import {
 
 import { escapeXml, generateDistinctTrackColor, refreshLucideIcons } from './utils.js';
 import { forceUpdateStats, haversineDistance } from './stats.js';
+import { trackAnalyticsEvent } from './auth.js';
 import {
     listStoredTracks,
     loadStoredTrack,
@@ -181,7 +182,10 @@ export function setupPrintUiEvents() {
     document.getElementById('btn-print-port').onclick = () => _setPrintPlanningOrientation('portrait');
     document.getElementById('btn-print-land').onclick = () => _setPrintPlanningOrientation('landscape');
 
-    document.getElementById('btn-generate-previews').onclick = _generateHighResPrintPreview;
+    document.getElementById('btn-generate-previews').onclick = () => {
+        trackAnalyticsEvent('richiesta_stampa', { source: 'print_preview' }).catch(err => console.warn(err));
+        if (_generateHighResPrintPreview) _generateHighResPrintPreview();
+    };
     document.getElementById('btn-print-preview-cancel').onclick = () => {
         document.getElementById('print-preview-modal').classList.add('hidden');
     };
@@ -2309,6 +2313,7 @@ export async function searchNominatim() {
     if (!q) return;
 
     showToast("Ricerca in corso...", "info");
+    trackAnalyticsEvent('richiesta_nominatim', { queryLength: q.length }).catch(err => console.warn(err));
     try {
         const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`);
         const data = await res.json();
@@ -2598,6 +2603,10 @@ export function setupEvents() {
     document.getElementById('file-import-gpx').onchange = (e) => {
         const file = e.target.files[0];
         if (file) {
+            trackAnalyticsEvent('import_gpx', {
+                fileName: file.name,
+                size: file.size
+            }).catch(err => console.warn(err));
             const reader = new FileReader();
             reader.onload = function(evt) {
                 _importGPX(evt.target.result, file.name);
@@ -2607,6 +2616,7 @@ export function setupEvents() {
     };
 
     document.getElementById('btn-export-gpx').onclick = () => {
+        trackAnalyticsEvent('export_gpx', { tracks: tracks.length }).catch(err => console.warn(err));
         _exportGPX();
     };
 

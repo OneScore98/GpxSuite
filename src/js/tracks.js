@@ -21,6 +21,7 @@ import { queryElevation } from './map.js';
 import { showToast, updateActiveTracksHeader, createNewTrack } from './ui.js';
 import { haversineDistance } from './stats.js';
 import { schedulePersistAppSession, schedulePersistTracks } from './storage.js';
+import { trackAnalyticsEvent } from './auth.js';
 
 // Throttle: su file enormi JSON.stringify dell'intero state può richiedere
 // 100+ ms. Se l'utente fa molte modifiche rapide (es. tracciamento continuo),
@@ -207,8 +208,14 @@ function snapRouteCandidates(profile) {
 async function fetchJsonWithTimeout(url, options = {}) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), options.timeoutMs || 9000);
+    const startedAt = performance.now();
     try {
         const response = await fetch(url, { signal: controller.signal });
+        trackAnalyticsEvent('richiesta_routing', {
+            label: options.label || 'route',
+            ok: response.ok,
+            durationMs: Math.round(performance.now() - startedAt)
+        }).catch(err => console.warn(err));
         if (!response.ok) throw new Error(`${options.label || 'route'} ${response.status}`);
         return await response.json();
     } finally {

@@ -29,7 +29,7 @@ body {
     display: none !important;
 }
 
-html:not(.tw-ready) body > :not(#map) {
+html:not(.tw-ready) body > :not(#map):not(#auth-gate) {
     visibility: hidden;
 }
 
@@ -38,6 +38,42 @@ html:not(.tw-ready) body > :not(#map) {
     inset: 0;
     width: 100%;
     height: var(--app-height);
+}
+
+body.auth-locked #header-tracks-container,
+body.auth-locked #toolbar-left,
+body.auth-locked #panel-main-menu,
+body.auth-locked #btn-open-sidebar-right,
+body.auth-locked #btn-mobile-stats,
+body.auth-locked #sidebar-tracks-right,
+body.auth-locked #panel-bottom-stats,
+body.auth-locked #panel-print-setup,
+body.auth-locked #panel-mapillary-viewer,
+body.auth-locked #cursor-coordinates,
+body.auth-locked #print-drag-grid {
+    display: none !important;
+}
+
+.admin-input {
+    width: 100%;
+    min-height: 2.25rem;
+    border: 1px solid #1f2937;
+    border-radius: 0.5rem;
+    background: #111827;
+    color: #f9fafb;
+    padding: 0.45rem 0.65rem;
+    font-size: 0.75rem;
+    outline: none;
+}
+
+.admin-input:focus {
+    border-color: #3b82f6;
+}
+
+.admin-input-compact {
+    min-height: 1.9rem;
+    padding: 0.25rem 0.45rem;
+    font-size: 0.68rem;
 }
 
 #mobile-panel-backdrop,

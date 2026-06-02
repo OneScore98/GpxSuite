@@ -63,6 +63,70 @@
 
 <body class="bg-gray-900 text-gray-100 select-none overscroll-none">
 
+    <!-- GATE DI AUTENTICAZIONE -->
+    <div id="auth-gate" class="fixed inset-0 z-[100000] bg-gray-950 text-gray-100 flex items-center justify-center p-4">
+        <div class="w-full max-w-md bg-gray-950 border border-gray-800 rounded-2xl shadow-2xl overflow-hidden">
+            <div class="px-5 py-4 border-b border-gray-800 flex items-center justify-between">
+                <div class="min-w-0">
+                    <h1 class="text-sm font-bold tracking-wide uppercase">GeoViewer 3D</h1>
+                    <p class="text-[11px] text-gray-500">Accesso protetto</p>
+                </div>
+                <i data-lucide="shield-check" class="w-5 h-5 text-blue-300"></i>
+            </div>
+
+            <div data-auth-view="loading" class="p-5 space-y-3">
+                <div class="text-xs text-gray-400">Verifica sessione in corso...</div>
+            </div>
+
+            <div data-auth-view="config" class="hidden p-5 space-y-4">
+                <div class="border border-amber-900/70 bg-amber-950/30 text-amber-200 rounded-xl p-3 text-xs leading-relaxed">
+                    Supabase non è configurato. Compila <b>src/js/auth-config.js</b> con URL progetto e publishable key, poi applica lo schema SQL incluso.
+                </div>
+                <div class="text-[11px] text-gray-500 leading-relaxed">
+                    L'app è impostata per fallire chiusa: senza backend configurato non concede accesso.
+                </div>
+            </div>
+
+            <div data-auth-view="login" class="hidden p-5 space-y-4">
+                <div class="space-y-3">
+                    <label class="block space-y-1">
+                        <span class="text-[10px] text-gray-400 uppercase font-semibold tracking-wider">Username o email</span>
+                        <input id="auth-identifier" type="text" autocomplete="username" class="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" placeholder="admin">
+                    </label>
+                    <label class="block space-y-1">
+                        <span class="text-[10px] text-gray-400 uppercase font-semibold tracking-wider">Password</span>
+                        <input id="auth-password" type="password" autocomplete="current-password" class="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" placeholder="Password account">
+                    </label>
+                </div>
+                <div id="auth-message" class="hidden"></div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button id="btn-auth-login" data-auth-action="login" class="bg-blue-600 hover:bg-blue-500 text-white rounded-lg py-2 text-xs font-bold flex items-center justify-center gap-1.5">
+            <i data-lucide="log-in" class="w-4 h-4"></i>
+            <span>Accedi</span>
+          </button>
+                    <button id="btn-auth-magic" data-auth-action="magic" class="bg-gray-900 hover:bg-gray-800 border border-gray-800 text-gray-200 rounded-lg py-2 text-xs font-semibold flex items-center justify-center gap-1.5">
+            <i data-lucide="mail-check" class="w-4 h-4"></i>
+            <span>Magic link</span>
+          </button>
+                </div>
+            </div>
+
+            <div data-auth-view="device" class="hidden p-5 space-y-4">
+                <div class="flex items-center justify-between gap-3">
+                    <div>
+                        <h2 id="device-status-title" class="text-sm font-bold text-white">Autorizzazione richiesta</h2>
+                        <p id="device-status-body" class="mt-1 text-xs text-gray-400 leading-relaxed"></p>
+                    </div>
+                    <span id="device-status-badge" class="text-[9px] font-bold uppercase px-2 py-1 rounded border border-amber-900 bg-amber-950/40 text-amber-200">PENDING</span>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="btn-device-retry" data-auth-action="retry" class="bg-blue-600 hover:bg-blue-500 text-white rounded-lg py-2 text-xs font-bold">Riprova</button>
+                    <button id="btn-device-logout" data-auth-action="logout" class="bg-gray-900 hover:bg-gray-800 border border-gray-800 text-gray-300 rounded-lg py-2 text-xs font-semibold">Esci</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- MAPPA (A tutto schermo) -->
     <div id="map"></div>
 
@@ -267,6 +331,24 @@
                     <button id="snap-profile-bike" class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Bici (OSRM)">🚲</button>
                     <button id="snap-profile-moto" class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Moto (OSRM)">🏍️</button>
                     <button id="snap-profile-car" class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Auto (OSRM)">🚗</button>
+                </div>
+            </div>
+
+            <!-- Account e amministrazione -->
+            <div class="space-y-2 bg-gray-900/50 p-2.5 rounded-xl border border-gray-800">
+                <label class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Account</label>
+                <div id="auth-current-user" class="min-h-9 flex items-center">
+                    <span class="text-xs text-gray-500">Sessione non attiva</span>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="btn-open-admin-dashboard" class="hidden bg-cyan-700/30 hover:bg-cyan-700/50 text-cyan-200 border border-cyan-900 rounded-lg py-2 text-xs font-semibold flex items-center justify-center gap-1.5">
+            <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
+            <span>Admin</span>
+          </button>
+                    <button id="btn-logout" class="bg-gray-900 hover:bg-gray-800 text-gray-300 border border-gray-800 rounded-lg py-2 text-xs font-semibold flex items-center justify-center gap-1.5">
+            <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+            <span>Esci</span>
+          </button>
                 </div>
             </div>
 
@@ -537,6 +619,9 @@
 
     <!-- CONTAINER NASCOSTO UTILIZZATO SOLO PER LA COMPILAZIONE DI STAMPA FISICA -->
     <div id="print-output-container" class="hidden"></div>
+
+    <!-- DASHBOARD AMMINISTRATORE -->
+    <div id="admin-dashboard-modal" class="hidden fixed inset-0 z-[100001] flex items-center justify-center p-3"></div>
 
     <!-- JAVASCRIPT APPLICATIVO (moduli ES) -->
     <!-- Tailwind resta zero-build, ma fuori dal percorso critico iniziale. -->
