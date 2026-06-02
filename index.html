@@ -65,7 +65,102 @@
 
     <!-- GATE DI AUTENTICAZIONE -->
     <div id="auth-gate" class="fixed inset-0 z-[100000] bg-gray-950 text-gray-100 flex items-center justify-center p-4">
-        <div class="w-full max-w-md bg-gray-950 border border-gray-800 rounded-2xl shadow-2xl overflow-hidden">
+        <div class="auth-map-preview" aria-hidden="true">
+            <div class="auth-map-stage">
+                <div class="auth-map-panel">
+                    <svg class="auth-preview-map" viewBox="0 0 1200 760" preserveAspectRatio="none" role="img">
+                        <defs>
+                            <linearGradient id="auth-terrain" x1="0" x2="1" y1="0" y2="1">
+                                <stop offset="0" stop-color="#9fb77a" />
+                                <stop offset="0.32" stop-color="#728f64" />
+                                <stop offset="0.62" stop-color="#c3a46a" />
+                                <stop offset="1" stop-color="#596f58" />
+                            </linearGradient>
+                            <linearGradient id="auth-slope" x1="0.18" x2="0.9" y1="0.04" y2="0.96">
+                                <stop offset="0" stop-color="#f2d18a" stop-opacity="0.72" />
+                                <stop offset="0.5" stop-color="#476646" stop-opacity="0.2" />
+                                <stop offset="1" stop-color="#23362e" stop-opacity="0.62" />
+                            </linearGradient>
+                            <filter id="auth-route-glow" x="-20%" y="-20%" width="140%" height="140%">
+                                <feGaussianBlur stdDeviation="8" result="blur" />
+                                <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.03 0 0 0 0 0.34 0 0 0 0 0.52 0 0 0 0.72 0" />
+                                <feMerge>
+                                    <feMergeNode />
+                                    <feMergeNode in="SourceGraphic" />
+                                </feMerge>
+                            </filter>
+                        </defs>
+
+                        <rect width="1200" height="760" fill="url(#auth-terrain)" />
+                        <path d="M-60 604 C104 492 196 510 348 388 C487 276 627 280 758 172 C891 62 1011 50 1270 -48 L1270 0 L-60 0 Z" fill="#e1bf78" opacity="0.38" />
+                        <path d="M-40 706 C148 618 309 650 469 523 C617 405 734 423 881 282 C1015 154 1116 115 1260 80 L1260 820 L-40 820 Z" fill="#294438" opacity="0.42" />
+                        <path d="M68 612 C166 548 241 548 330 485 C430 414 516 399 610 346 C703 292 786 292 876 228 C975 158 1067 136 1160 86" class="auth-shadow-path" />
+
+                        <g class="auth-contours">
+                            <path d="M-84 154 C113 82 228 105 401 42 C578 -23 704 -7 880 -89 C1009 -149 1101 -158 1240 -142" />
+                            <path d="M-85 216 C77 159 221 176 391 104 C538 43 691 69 852 -10 C995 -81 1098 -85 1238 -72" />
+                            <path d="M-74 276 C83 230 218 234 363 176 C528 110 662 137 842 57 C970 0 1082 -2 1242 14" />
+                            <path d="M-72 334 C92 294 226 294 392 232 C532 180 658 203 822 132 C965 70 1085 72 1245 92" />
+                            <path d="M-60 394 C83 357 229 361 386 307 C554 249 673 277 822 207 C973 137 1080 146 1235 169" />
+                            <path d="M-70 452 C95 420 225 422 391 368 C546 317 691 344 838 278 C979 215 1080 222 1242 248" />
+                            <path d="M-80 516 C104 481 246 496 407 437 C552 384 689 416 842 348 C984 285 1093 291 1242 321" />
+                            <path d="M-90 582 C96 551 257 566 421 505 C563 452 707 489 862 421 C1005 358 1092 367 1243 393" />
+                            <path d="M-94 648 C94 617 258 642 429 579 C596 518 722 561 887 489 C1014 434 1098 441 1246 464" />
+                        </g>
+
+                        <g class="auth-forest-patches">
+                            <path d="M72 193 C122 146 187 152 216 207 C177 253 118 263 72 193 Z" />
+                            <path d="M846 372 C910 319 989 336 1017 407 C970 456 887 449 846 372 Z" />
+                            <path d="M459 72 C521 30 603 53 633 124 C574 162 500 145 459 72 Z" />
+                            <path d="M239 593 C307 542 384 557 423 625 C367 679 278 666 239 593 Z" />
+                        </g>
+
+                        <g class="auth-map-roads">
+                            <path class="auth-road-casing" d="M-45 545 C135 500 213 452 356 441 C496 430 572 376 695 370 C834 363 920 312 1064 302 C1132 297 1186 276 1238 239" />
+                            <path class="auth-road-asphalt" d="M-45 545 C135 500 213 452 356 441 C496 430 572 376 695 370 C834 363 920 312 1064 302 C1132 297 1186 276 1238 239" />
+                            <path class="auth-road-minor" d="M123 736 C170 631 249 588 349 548 C446 509 493 435 548 356 C591 294 633 252 733 201 C825 154 858 101 894 36" />
+                            <path class="auth-dirt-casing" d="M597 352 C695 324 756 272 832 236 C922 194 1004 180 1134 104" />
+                            <path class="auth-road-dirt" d="M597 352 C695 324 756 272 832 236 C922 194 1004 180 1134 104" />
+                        </g>
+
+                        <g class="auth-route" filter="url(#auth-route-glow)">
+                            <path class="auth-route-under" d="M68 612 C166 548 241 548 330 485 C430 414 516 399 610 346" />
+                            <path class="auth-route-paved" d="M68 612 C166 548 241 548 330 485 C430 414 516 399 610 346" />
+                            <path class="auth-route-under" d="M610 346 C703 292 786 292 876 228 C975 158 1067 136 1160 86" />
+                            <path class="auth-route-dirt" d="M610 346 C703 292 786 292 876 228 C975 158 1067 136 1160 86" />
+                            <circle class="auth-route-marker auth-route-start" cx="68" cy="612" r="13" />
+                            <circle class="auth-route-marker auth-route-end" cx="1160" cy="86" r="13" />
+                        </g>
+
+                        <g class="auth-waypoints">
+                            <circle cx="423" cy="421" r="8" />
+                            <circle cx="826" cy="252" r="8" />
+                            <circle cx="1005" cy="171" r="8" />
+                        </g>
+                    </svg>
+                </div>
+            </div>
+
+            <div class="auth-preview-toolbar">
+                <span></span><span></span><span></span><span></span><span></span><span></span>
+            </div>
+            <div class="auth-preview-active-track">
+                <span class="auth-preview-dot"></span>
+                <span class="auth-preview-line auth-preview-line-wide"></span>
+                <span class="auth-preview-line"></span>
+            </div>
+            <div class="auth-preview-tree">
+                <div class="auth-preview-tree-head"></div>
+                <div class="auth-preview-track-row is-paved"></div>
+                <div class="auth-preview-track-row is-dirt"></div>
+                <div class="auth-preview-track-row"></div>
+            </div>
+            <div class="auth-preview-profile">
+                <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            </div>
+        </div>
+
+        <div class="auth-card w-full max-w-md bg-gray-950 border border-gray-800 rounded-2xl shadow-2xl overflow-hidden">
             <div class="px-5 py-4 border-b border-gray-800 flex items-center justify-between">
                 <div class="min-w-0">
                     <h1 class="text-sm font-bold tracking-wide uppercase">GpxSuite</h1>
