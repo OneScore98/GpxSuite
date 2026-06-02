@@ -1,8 +1,8 @@
-# GeoViewer 3D - Pro GPX Suite & Print Studio
+# GpxSuite
 
 **Documentazione di Progetto (gmini.md)**
 
-Questo documento fornisce una visione dettagliata dell'architettura, delle librerie e delle dinamiche di stato utilizzate nella suite *GeoViewer 3D*.
+Questo documento fornisce una visione dettagliata dell'architettura, delle librerie e delle dinamiche di stato utilizzate nella suite *GpxSuite*.
 
 ---
 

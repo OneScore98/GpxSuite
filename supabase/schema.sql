@@ -1,4 +1,4 @@
--- GPXSuite Auth/Admin schema per Supabase
+-- GpxSuite Auth/Admin schema per Supabase
 -- Eseguire nel SQL editor di Supabase dopo aver creato il progetto.
 --
 -- Bootstrap admin:

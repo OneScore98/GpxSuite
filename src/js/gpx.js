@@ -189,7 +189,7 @@ export function exportGPX() {
     // Build con array di stringhe + join: molto più veloce di concatenazione su 100k+ punti
     const parts = [];
     parts.push(`<?xml version="1.0" encoding="UTF-8"?>\n`);
-    parts.push(`<gpx version="1.1" creator="GeoViewer3D" xmlns="http://www.topografix.com/GPX/1/1">\n`);
+    parts.push(`<gpx version="1.1" creator="GpxSuite" xmlns="http://www.topografix.com/GPX/1/1">\n`);
 
     tracks.forEach(track => {
         track.waypoints.forEach(wp => {
@@ -233,7 +233,7 @@ export function exportGPX() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${tracks[0]?.name || 'geoviewer_export'}.gpx`;
+    a.download = `${tracks[0]?.name || 'gpxsuite_export'}.gpx`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

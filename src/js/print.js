@@ -525,7 +525,7 @@ export function renderPrintA4Pages(screenshots) {
                 Note: <span contenteditable="true" class="italic hover:bg-stone-50 p-1 rounded">Inserisci qui note fisiche sul percorso...</span>
               </div>
               <div>
-                Progettato tramite GeoViewer Pro Print Engine
+                Progettato tramite GpxSuite Print Engine
               </div>
             </div>
           </div>

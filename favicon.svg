@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
-  <title id="title">GPXSuite</title>
+  <title id="title">GpxSuite</title>
   <desc id="desc">Icona con rilievi topografici e percorso GPX.</desc>
   <rect x="4" y="4" width="56" height="56" rx="14" fill="#0f172a"/>
   <path d="M10 46c8-4 14-4 22 0s14 4 22 0" fill="none" stroke="#334155" stroke-width="2.2" stroke-linecap="round"/>

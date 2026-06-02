@@ -4,7 +4,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## Project Overview
 
-**GeoViewer 3D - Pro GPX Suite & Print Studio** is a zero-build web application for GPX track editing, 3D map viewing, and topographic printing. It uses native ES modules — no bundler, no package manager, no build step. All dependencies are loaded via CDN at runtime.
+**GpxSuite** is a zero-build web application for GPX track editing, 3D map viewing, and topographic printing. It uses native ES modules — no bundler, no package manager, no build step. All dependencies are loaded via CDN at runtime.
 
 To run: open `index.html` directly in a browser (or serve locally via `python3 -m http.server` — ES modules require a server or `file://` with CORS disabled).
 

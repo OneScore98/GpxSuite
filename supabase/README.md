@@ -1,4 +1,4 @@
-# Supabase per GPXSuite
+# Supabase per GpxSuite
 
 Questa cartella contiene il backend gestito necessario per account, dashboard admin, analytics e blocco dispositivi mantenendo l'app hostabile su GitHub Pages.
 
