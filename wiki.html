@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="it" class="scroll-smooth">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GpxSuite - Wiki Ufficiale</title>
+    <!-- Usa Tailwind via CDN per una pagina documentale standalone zero-build -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <style>
+        body {
+            background-color: #030712;
+            /* gray-950 */
+            color: #d1d5db;
+            /* gray-300 */
+            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+        /* Scrollbar personalizzata per abbinarsi al tema scuro */
+        
+         ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        
+         ::-webkit-scrollbar-track {
+            background: #111827;
+        }
+        
+         ::-webkit-scrollbar-thumb {
+            background: #374151;
+            border-radius: 4px;
+        }
+        
+         ::-webkit-scrollbar-thumb:hover {
+            background: #4b5563;
+        }
+        
+        h1,
+        h2,
+        h3,
+        h4 {
+            color: #f3f4f6;
+        }
+        
+        .sidebar-link {
+            display: block;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            color: #9ca3af;
+            transition: all 0.2s;
+            text-decoration: none;
+        }
+        
+        .sidebar-link:hover {
+            background-color: #1f2937;
+            color: #38bdf8;
+        }
+        
+        .prose-section {
+            scroll-margin-top: 2rem;
+        }
+        
+        code {
+            background-color: #1f2937;
+            color: #38bdf8;
+            padding: 0.125rem 0.375rem;
+            border-radius: 0.25rem;
+            font-size: 0.875em;
+        }
+    </style>
+</head>
+
+<body class="flex h-screen overflow-hidden">
+
+    <!-- Sidebar Navigazione -->
+    <aside class="w-64 bg-gray-900 border-r border-gray-800 flex flex-col h-full shrink-0 hidden md:flex">
+        <div class="p-6 border-b border-gray-800">
+            <h1 class="text-xl font-black text-white tracking-tight flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"></polygon><line x1="9" y1="3" x2="9" y2="18"></line><line x1="15" y1="6" x2="15" y2="21"></line></svg>                GpxSuite Wiki
+            </h1>
+        </div>
+        <nav class="flex-1 overflow-y-auto px-4 py-6 space-y-1 text-sm font-medium">
+            <a href="#introduzione" class="sidebar-link">1. Introduzione</a>
+            <a href="#gestione-gpx" class="sidebar-link">2. Gestione File GPX</a>
+            <a href="#editing" class="sidebar-link">3. Strumenti di Editing</a>
+            <a href="#snap-road" class="sidebar-link">4. Snap to Road (Routing)</a>
+            <a href="#mappa-3d" class="sidebar-link">5. Mappa e Terreno 3D</a>
+            <a href="#analisi-offroad" class="sidebar-link">6. Analisi Offroad</a>
+            <a href="#stampa" class="sidebar-link">7. Stampa Topografica A4</a>
+            <a href="#mapillary" class="sidebar-link">8. Integrazione Mapillary</a>
+            <a href="#auth-admin" class="sidebar-link">9. Autenticazione e Admin</a>
+        </nav>
+    </aside>
+
+    <!-- Contenuto Principale -->
+    <main class="flex-1 h-full overflow-y-auto p-6 md:p-12">
+        <div class="max-w-4xl mx-auto space-y-16 pb-20">
+
+            <!-- Header Mobile -->
+            <div class="md:hidden pb-4 border-b border-gray-800 mb-8">
+                <h1 class="text-2xl font-black text-white tracking-tight flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"></polygon><line x1="9" y1="3" x2="9" y2="18"></line><line x1="15" y1="6" x2="15" y2="21"></line></svg>                    GpxSuite Wiki
+                </h1>
+            </div>
+
+            <!-- Sezione 1: Introduzione -->
+            <section id="introduzione" class="prose-section">
+                <h2 class="text-3xl font-bold border-b border-gray-800 pb-2 mb-4">1. Introduzione</h2>
+                <p class="mb-4 text-gray-400 leading-relaxed">
+                    Benvenuto nella Guida Utente di <strong>GpxSuite</strong>! Questo strumento ti permette di pianificare, esplorare e modificare percorsi per le tue avventure (trekking, mountain bike, moto, ecc.) direttamente dal tuo browser.
+                </p>
+                <p class="mb-4 text-gray-400 leading-relaxed">
+                    Tutte le modifiche che fai vengono <strong>salvate automaticamente in locale</strong> sul tuo computer o telefono. Se chiudi la pagina e la riapri, ritroverai il tuo lavoro esattamente dove lo avevi lasciato.
+                </p>
+            </section>
+
+            <!-- Sezione 2: Gestione GPX -->
+            <section id="gestione-gpx" class="prose-section">
+                <h2 class="text-3xl font-bold border-b border-gray-800 pb-2 mb-4">2. Caricare e Salvare i Percorsi (GPX)</h2>
+                <h3 class="text-xl font-semibold mb-2 mt-6">Importare un file</h3>
+                <p class="mb-4 text-gray-400 leading-relaxed">
+                    Per aprire un percorso esistente, clicca sull'icona <strong>Carica</strong> (<svg class="inline w-4 h-4 text-gray-300" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>) nella barra degli strumenti a sinistra e seleziona un file in formato <code>.gpx</code>                    dal tuo computer. La mappa si sposterà automaticamente sul punto di partenza del percorso caricato.
+                </p>
+                <h3 class="text-xl font-semibold mb-2 mt-6">Esportare il lavoro</h3>
+                <p class="text-gray-400 leading-relaxed">
+                    Quando hai finito di modificare una traccia, puoi scaricarla cliccando sull'icona <strong>Scarica</strong> (<svg class="inline w-4 h-4 text-gray-300" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>). Verrà salvato sul tuo dispositivo
+                    un file <code>.gpx</code> pronto per essere inviato al tuo navigatore, smartphone o smartwatch.
+                </p>
+            </section>
+
+            <!-- Sezione 3: Editing -->
+            <section id="editing" class="prose-section">
+                <h2 class="text-3xl font-bold border-b border-gray-800 pb-2 mb-4">3. Strumenti di Editing</h2>
+                <p class="mb-4 text-gray-400 leading-relaxed">
+                    La barra a sinistra contiene tutti gli strumenti necessari per creare o correggere i tuoi percorsi. Se fai un errore, ricorda che puoi sempre usare l'icona <strong>Annulla</strong> (<svg class="inline w-4 h-4 text-gray-300" xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>).
+                </p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-400">
+                    <div class="bg-gray-900 border border-gray-800 p-4 rounded-xl">
+                        <h4 class="font-bold text-white mb-2 flex items-center gap-2"><svg class="w-4 h-4 text-gray-300" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>                            Matita (Nuova Traccia)</h4>
+                        <p class="text-sm">Inizia a disegnare un nuovo percorso. Basta cliccare in vari punti della mappa. L'app rileverà automaticamente le altitudini (quote) dei punti che hai cliccato.</p>
+                    </div>
+                    <div class="bg-gray-900 border border-gray-800 p-4 rounded-xl">
+                        <h4 class="font-bold text-white mb-2 flex items-center gap-2"><svg class="w-4 h-4 text-gray-300" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>                            Forbici (Taglia Traccia)</h4>
+                        <p class="text-sm">Vuoi spezzare un percorso in due parti? Seleziona le forbici e clicca sulla traccia nel punto in cui vuoi dividerla.</p>
+                    </div>
+                    <div class="bg-gray-900 border border-gray-800 p-4 rounded-xl">
+                        <h4 class="font-bold text-white mb-2 flex items-center gap-2"><svg class="w-4 h-4 text-gray-300" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>                            Gomma ad Area (Box Delete)</h4>
+                        <p class="text-sm">Ti permette di eliminare rapidamente un tratto sbagliato. Clicca un punto di inizio e uno di fine per formare un rettangolo rosso: tutto ciò che si trova al suo interno verrà rimosso.</p>
+                    </div>
+                    <div class="bg-gray-900 border border-gray-800 p-4 rounded-xl">
+                        <h4 class="font-bold text-white mb-2 flex items-center gap-2"><svg class="w-4 h-4 text-gray-300" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>                            Puntina (Aggiungi Waypoint)</h4>
+                        <p class="text-sm">Aggiungi punti di interesse (ad es. un rifugio, una fontana o un bivio). Una volta creato, puoi cliccarci sopra per cambiarne il nome, il simbolo e la descrizione.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Sezione 4: Snap to Road -->
+            <section id="snap-road" class="prose-section">
+                <h2 class="text-3xl font-bold border-b border-gray-800 pb-2 mb-4">4. Calcolo Automatico del Percorso (Calamita)</h2>
+                <p class="mb-4 text-gray-400 leading-relaxed">
+                    Aggiungere i punti uno per uno a mano in linea retta può essere noioso. Attivando l'icona della <strong>Calamita</strong> (nella barra sinistra), l'app traccerà automaticamente il percorso collegando i punti che clicchi seguendo la
+                    rete di sentieri e strade reali!
+                </p>
+                <p class="mb-4 text-gray-400 leading-relaxed">
+                    Nel <strong>Menu Principale</strong> (icona con tre linee orizzontali in alto a sinistra), puoi selezionare il tuo mezzo di trasporto nella sezione "Profilo Snapping". Puoi scegliere tra: a piedi, in bicicletta, in moto o in auto.
+                    L'algoritmo calcolerà la via migliore in base alla tua scelta.
+                </p>
+            </section>
+
+            <!-- Sezione 5: Mappa 3D -->
+            <section id="mappa-3d" class="prose-section">
+                <h2 class="text-3xl font-bold border-b border-gray-800 pb-2 mb-4">5. Stili di Mappa e Vista 3D</h2>
+                <p class="mb-4 text-gray-400 leading-relaxed">
+                    Apri il <strong>Menu Principale</strong> per esplorare le opzioni di visualizzazione:
+                </p>
+                <ul class="list-disc list-inside text-gray-400 space-y-2 ml-4">
+                    <li><strong>Mappe di base:</strong> Puoi passare dalla mappa stradale a quella <strong>Satellitare</strong> o a quella <strong>Topografica</strong> (ideale per vedere le curve di livello in montagna).</li>
+                    <li><strong>Sentieri OSM:</strong> Selezionando questa spunta, appariranno in evidenza i sentieri escursionistici mondiali ufficiali, utili per orientarsi.</li>
+                    <li><strong>Vista 3D:</strong> Clicca su "3D Terreno" per far emergere i rilievi montuosi. Per inclinare la mappa a tuo piacimento e ruotarla, <strong>tieni premuto il tasto CTRL (o Command)</strong> sulla tastiera mentre trascini con
+                        il mouse. (Se usi un dispositivo touch, usa semplicemente due dita!).</li>
+                </ul>
+            </section>
+
+            <!-- Sezione 6: Analisi Offroad -->
+            <section id="analisi-offroad" class="prose-section">
+                <h2 class="text-3xl font-bold border-b border-gray-800 pb-2 mb-4">6. Analisi Offroad</h2>
+                <p class="mb-4 text-gray-400 leading-relaxed">
+                    Vuoi sapere se un tratto che hai disegnato è asfaltato o sterrato? Apri la <strong>Struttura GIS</strong> (l'icona ad albero sulla destra) per vedere l'elenco delle tue tracce.
+                </p>
+                <p class="mb-4 text-gray-400 leading-relaxed">
+                    Fai <strong>click con il tasto destro</strong> sul nome della tua traccia (oppure tieni premuto a lungo su mobile) per aprire il menu delle opzioni, quindi seleziona <strong>"Estrai Offroad"</strong>. L'app interrogherà il database
+                    cartografico e creerà un livello colorato sopra la tua traccia per mostrarti esattamente dove il percorso non è asfaltato!
+                </p>
+            </section>
+
+            <!-- Sezione 7: Stampa -->
+            <section id="stampa" class="prose-section">
+                <h2 class="text-3xl font-bold border-b border-gray-800 pb-2 mb-4">7. Stampa Topografica A4</h2>
+                <p class="mb-4 text-gray-400 leading-relaxed">
+                    GpxSuite integra uno strumento utilissimo per generare cartine stampabili, permettendoti di portarle con te durante l'escursione:
+                </p>
+                <ol class="list-decimal list-inside text-gray-400 space-y-2 ml-4 mb-4">
+                    <li>Clicca sull'icona della <strong>Stampante verde</strong> a sinistra.</li>
+                    <li>Apparirà una griglia con bordi blu sopra la mappa. Trascina questa griglia sulla zona che vuoi stampare.</li>
+                    <li>Nel pannello aperto, scegli quanti fogli A4 ti servono, la grandezza della stampa e se orientare la pagina in orizzontale o verticale.</li>
+                    <li>Clicca su "Genera Anteprime". Il sistema "fotograferà" la mappa ad altissima risoluzione per te.</li>
+                    <li>Usa la finestra di stampa del tuo sistema per salvare tutto come PDF. Ricorda di abilitare la "Stampa sfondi/colori" nel tuo browser!</li>
+                </ol>
+            </section>
+
+            <!-- Sezione 8: Mapillary -->
+            <section id="mapillary" class="prose-section">
+                <h2 class="text-3xl font-bold border-b border-gray-800 pb-2 mb-4">8. Street View (Mapillary)</h2>
+                <p class="mb-4 text-gray-400 leading-relaxed">
+                    Vuoi vedere un'anteprima fotografica reale del sentiero o della strada che stai studiando?
+                </p>
+                <ul class="list-disc list-inside text-gray-400 space-y-2 ml-4">
+                    <li>Nel <strong>Menu Principale</strong>, sotto la voce Mapillary, inserisci il Token (una chiave che devi procurarti dal sito di Mapillary e che serve ad abilitare il servizio) e attivalo.</li>
+                    <li>Appariranno sulla mappa delle linee verdi fluo: indicano che lì qualcuno è passato con una telecamera.</li>
+                    <li>Seleziona l'icona della telecamera nella barra a sinistra, quindi clicca su una linea verde. Si aprirà un riquadro con foto panoramiche o a 360° esplorabili interattivamente!</li>
+                </ul>
+            </section>
+
+            <!-- Sezione 9: Auth e Admin -->
+            <section id="auth-admin" class="prose-section">
+                <h2 class="text-3xl font-bold border-b border-gray-800 pb-2 mb-4">9. Sicurezza e Accesso</h2>
+                <p class="mb-4 text-gray-400 leading-relaxed">
+                    Se l'applicazione è stata configurata per essere protetta con password (ad esempio per uso all'interno di un'azienda o di un gruppo chiuso):
+                </p>
+                <div class="bg-gray-900 border border-gray-800 p-5 rounded-xl text-gray-400">
+                    <h4 class="text-white font-bold mb-2">Connessione sicura ai dispositivi</h4>
+                    <p class="text-sm mb-4">Per accedere ti basterà inserire la mail e la password fornite dall'amministratore (o usare l'accesso rapido tramite Magic Link inviato via mail). La prima volta che accedi da un computer o da un telefono nuovo, il tuo accesso dovrà
+                        essere "Approvato" manualmente dall'amministratore prima che tu possa entrare per ragioni di sicurezza.</p>
+                    <h4 class="text-white font-bold mb-2">Pannello Amministratore</h4>
+                    <p class="text-sm">Se sei un gestore della piattaforma, puoi accedere al Pannello Amministratore (icona a forma di scudo nel menu principale) per autorizzare nuovi dispositivi, revocare gli accessi o creare nuovi account utente in maniera veloce.</p>
+                </div>
+            </section>
+        </div>
+    </main>
+</body>
+
+</html>

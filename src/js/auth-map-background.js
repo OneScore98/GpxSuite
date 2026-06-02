@@ -1,10 +1,13 @@
 // auth-map-background.js — sfondo MapLibre 3D animato per la pagina di login
 //
-// Mostra una vista satellitare orbitale di una traccia GPX reale (Sinnai - Cava
-// Cagima Vecchia), con tratti offroad/asfalto colorati distintamente e DEM
-// Terrarium per il terreno 3D. La mappa si avvia quando il gate auth viene
-// mostrato e si distrugge quando il gate si chiude, in modo da non sprecare
-// risorse durante l'uso normale dell'app.
+// Mostra una vista 3D orbitale ravvicinata sulla zona rocciosa di transizione
+// offroad ↔ asfalto (waypoint "5° fine sterrato", Monte Serpeddì - Sardegna)
+// della traccia GPX reale Sinnai - Cava Cagima Vecchia. Durante l'orbita
+// (un giro ogni 90s) i basemap si alternano in crossfade continuo:
+//   satellite Esri (+ overlay strade/etichette) → topografico OpenTopoMap → OSM.
+//
+// La mappa si avvia quando il gate auth viene mostrato e si distrugge quando il
+// gate si chiude, in modo da non sprecare risorse durante l'uso normale.
 //
 // Fallback graceful: se MapLibre non è disponibile, se WebGL fallisce o se la
 // rete blocca i tile, il container resta nascosto e l'esistente preview SVG
@@ -13,7 +16,16 @@
 const TRACK_URL = 'src/assets/login-track.geojson';
 const TERRAIN_TILES = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
 const SATELLITE_TILES = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+const SATELLITE_REF_TILES = 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}';
 const SATELLITE_ATTRIBUTION = 'Tiles &copy; Esri';
+const TOPO_TILES = 'https://a.tile.opentopomap.org/{z}/{x}/{y}.png';
+const TOPO_ATTRIBUTION = '&copy; OpenTopoMap (CC-BY-SA)';
+const OSM_TILES = 'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const OSM_ATTRIBUTION = '&copy; OpenStreetMap contributors';
+
+// Centro orbitale: waypoint "5° fine sterrato" — passaggio offroad→asfalto
+// in zona Monte Serpeddì (Sardegna), terreno roccioso/montano.
+const ROCKY_TRANSITION_CENTER = [9.307478, 39.421660];
 
 let _state = null;
 // Incrementato a ogni stop: se uno start in volo si trova con un epoch obsoleto,
@@ -53,6 +65,27 @@ function buildStyle() {
                 maxzoom: 19,
                 attribution: SATELLITE_ATTRIBUTION
             },
+            'sat-ref': {
+                type: 'raster',
+                tiles: [SATELLITE_REF_TILES],
+                tileSize: 256,
+                maxzoom: 19,
+                attribution: SATELLITE_ATTRIBUTION
+            },
+            'topo': {
+                type: 'raster',
+                tiles: [TOPO_TILES],
+                tileSize: 256,
+                maxzoom: 17,
+                attribution: TOPO_ATTRIBUTION
+            },
+            'osm': {
+                type: 'raster',
+                tiles: [OSM_TILES],
+                tileSize: 256,
+                maxzoom: 19,
+                attribution: OSM_ATTRIBUTION
+            },
             'terrain-dem': {
                 type: 'raster-dem',
                 tiles: [TERRAIN_TILES],
@@ -64,21 +97,76 @@ function buildStyle() {
         },
         layers: [
             { id: 'bg', type: 'background', paint: { 'background-color': '#08111a' } },
-            { id: 'sat', type: 'raster', source: 'sat', paint: { 'raster-opacity': 0.92, 'raster-fade-duration': 250 } }
+            // Stack basemap (ordine alto = sopra): osm in fondo, poi topo, poi sat,
+            // infine overlay strade Esri. Le opacità sono pilotate dal ciclo orbitale.
+            { id: 'lyr-osm', type: 'raster', source: 'osm', paint: { 'raster-opacity': 0, 'raster-fade-duration': 250 } },
+            { id: 'lyr-topo', type: 'raster', source: 'topo', paint: { 'raster-opacity': 0, 'raster-fade-duration': 250 } },
+            { id: 'lyr-sat', type: 'raster', source: 'sat', paint: { 'raster-opacity': 1, 'raster-fade-duration': 250 } },
+            { id: 'lyr-sat-ref', type: 'raster', source: 'sat-ref', paint: { 'raster-opacity': 0.85, 'raster-fade-duration': 250 } }
         ],
-        terrain: { source: 'terrain-dem', exaggeration: 1.6 }
+        terrain: { source: 'terrain-dem', exaggeration: 1.4 }
     };
 }
 
 async function loadTrackGeoJson() {
-    const res = await fetch(TRACK_URL, { cache: 'force-cache' });
-    if (!res.ok) throw new Error(`Traccia non caricabile (${res.status})`);
-    return await res.json();
+    try {
+        const res = await fetch(TRACK_URL, { cache: 'force-cache' });
+        if (!res.ok) throw new Error(`Traccia non caricabile (${res.status})`);
+        return await res.json();
+    } catch (err) {
+        console.warn('[auth-bg] Fetch traccia fallito, uso fallback inline:', err.message);
+        // Fallback inline track (Monte Serpeddì - Transizione asfalto/sterrato)
+        return {
+            "type": "FeatureCollection",
+            "features": [{
+                    "type": "Feature",
+                    "properties": { "surface": "asfalto" },
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [
+                            [9.303, 39.418],
+                            [9.304, 39.419],
+                            [9.305, 39.420],
+                            [9.307478, 39.421660]
+                        ]
+                    }
+                },
+                {
+                    "type": "Feature",
+                    "properties": { "surface": "offroad" },
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [
+                            [9.307478, 39.421660],
+                            [9.308, 39.422],
+                            [9.309, 39.423],
+                            [9.310, 39.424],
+                            [9.312, 39.425]
+                        ]
+                    }
+                }
+            ]
+        };
+    }
 }
 
 function addTrackLayers(map, geojson) {
     if (map.getSource('login-track')) return;
     map.addSource('login-track', { type: 'geojson', data: geojson });
+
+    // Glow morbido sotto, dà profondità (sotto al casing)
+    map.addLayer({
+        id: 'login-track-glow',
+        type: 'line',
+        source: 'login-track',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+            'line-color': '#7dd3fc',
+            'line-width': 18,
+            'line-opacity': 0.12,
+            'line-blur': 8
+        }
+    });
 
     // Casing scuro sotto entrambe le superfici per maggiore leggibilità
     map.addLayer({
@@ -88,8 +176,8 @@ function addTrackLayers(map, geojson) {
         layout: { 'line-join': 'round', 'line-cap': 'round' },
         paint: {
             'line-color': '#020617',
-            'line-width': 7,
-            'line-opacity': 0.85
+            'line-width': 8,
+            'line-opacity': 0.88
         }
     });
 
@@ -102,8 +190,8 @@ function addTrackLayers(map, geojson) {
         layout: { 'line-join': 'round', 'line-cap': 'round' },
         paint: {
             'line-color': '#38bdf8',
-            'line-width': 3.2,
-            'line-opacity': 0.95
+            'line-width': 3.6,
+            'line-opacity': 0.96
         }
     });
 
@@ -116,54 +204,63 @@ function addTrackLayers(map, geojson) {
         layout: { 'line-join': 'round', 'line-cap': 'round' },
         paint: {
             'line-color': '#f59e0b',
-            'line-width': 3.2,
-            'line-opacity': 0.95,
+            'line-width': 3.6,
+            'line-opacity': 0.96,
             'line-dasharray': [1.6, 1.4]
         }
     });
-
-    // Glow morbido per dare profondità
-    map.addLayer({
-        id: 'login-track-glow',
-        type: 'line',
-        source: 'login-track',
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: {
-            'line-color': '#7dd3fc',
-            'line-width': 14,
-            'line-opacity': 0.10,
-            'line-blur': 6
-        }
-    }, 'login-track-casing');
 }
 
-function computeCenter(geojson) {
-    const bbox = geojson.bbox;
-    if (bbox && bbox.length >= 4) {
-        return [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2];
-    }
-    return [9.3748, 39.4019];
+// Triangolare circolare: per ogni "centro" nello spazio [0,1), restituisce
+// 1 quando phase==center, 0 quando phase si trova a distanza >= window/2.
+// windowWidth = 1/N produce un crossfade continuo fra N layer equispaziati.
+function triangularPulse(phase, center, windowHalfWidth) {
+    let d = Math.abs(phase - center);
+    if (d > 0.5) d = 1 - d; // wrap circolare
+    if (d >= windowHalfWidth) return 0;
+    return 1 - d / windowHalfWidth;
+}
+
+function setLayerOpacity(map, layerId, opacity) {
+    const op = Math.max(0, Math.min(1, opacity));
+    try {
+        if (op < 0.02) {
+            if (map.getLayoutProperty(layerId, 'visibility') !== 'none') {
+                map.setLayoutProperty(layerId, 'visibility', 'none');
+            }
+        } else {
+            if (map.getLayoutProperty(layerId, 'visibility') === 'none') {
+                map.setLayoutProperty(layerId, 'visibility', 'visible');
+            }
+            map.setPaintProperty(layerId, 'raster-opacity', op);
+        }
+    } catch (_) { /* layer non ancora pronto */ }
 }
 
 function startOrbit(state) {
     const { map } = state;
     const center = state.center;
     const start = performance.now();
-    const periodMs = 60000; // un giro ogni 60s
+    const orbitPeriodMs = 90000; // un giro completo ogni 90s
+    const basemapCyclePeriodMs = 90000; // anche il ciclo basemap dura 90s (3 slot da 30s)
     const reducedMotion = prefersReducedMotion();
 
     state.startBearing = (Math.random() * 360);
-    state.basePitch = 64;
-    state.baseZoom = 9.05;
+    state.basePitch = 66;
+    state.baseZoom = 13.2;
+
+    // Throttling: aggiornamento camera ogni frame, opacità basemap al massimo 8 volte/sec
+    let lastOpacityUpdate = 0;
 
     const animate = (now) => {
         if (!state.running) return;
-        const elapsed = (now - start) / periodMs;
-        const bearing = (state.startBearing + (reducedMotion ? 0 : elapsed * 360)) % 360;
-        // leggera oscillazione di pitch e zoom per dare "respiro" alla scena
-        const t = (now - start) / 1000;
-        const pitchOsc = reducedMotion ? 0 : Math.sin(t * 0.18) * 3.2;
-        const zoomOsc = reducedMotion ? 0 : Math.sin(t * 0.12) * 0.18;
+        const elapsed = (now - start);
+        const orbitPhase = (elapsed / orbitPeriodMs);
+        const bearing = (state.startBearing + (reducedMotion ? 0 : orbitPhase * 360)) % 360;
+        const t = elapsed / 1000;
+        // Leggera oscillazione pitch/zoom per "respiro" cinematografico
+        const pitchOsc = reducedMotion ? 0 : Math.sin(t * 0.18) * 2.8;
+        const zoomOsc = reducedMotion ? 0 : Math.sin(t * 0.12) * 0.20;
         try {
             map.jumpTo({
                 center,
@@ -171,7 +268,24 @@ function startOrbit(state) {
                 pitch: state.basePitch + pitchOsc,
                 zoom: state.baseZoom + zoomOsc
             });
-        } catch (_) { /* il map può essere stato distrutto */ }
+        } catch (_) {}
+
+        // Crossfade basemap: phase ciclico [0,1) → 3 slot
+        if (now - lastOpacityUpdate > 120) {
+            lastOpacityUpdate = now;
+            const bmPhase = (elapsed % basemapCyclePeriodMs) / basemapCyclePeriodMs;
+            // window half = 1/3 → triangolare con somma sempre ~1 (overlap perfetto)
+            const w = 1 / 3;
+            const satOp = triangularPulse(bmPhase, 0, w);
+            const topoOp = triangularPulse(bmPhase, 1 / 3, w);
+            const osmOp = triangularPulse(bmPhase, 2 / 3, w);
+            setLayerOpacity(map, 'lyr-sat', satOp);
+            // overlay strade visibile solo quando il satellite è dominante
+            setLayerOpacity(map, 'lyr-sat-ref', satOp * 0.85);
+            setLayerOpacity(map, 'lyr-topo', topoOp);
+            setLayerOpacity(map, 'lyr-osm', osmOp);
+        }
+
         state.rafId = requestAnimationFrame(animate);
     };
 
@@ -199,7 +313,7 @@ export async function startAuthMapBackground() {
         console.warn('[auth-bg] MapLibre non caricato:', err.message);
         return null;
     }
-    if (myEpoch !== _epoch) return null; // stop chiamato nel frattempo
+    if (myEpoch !== _epoch) return null;
 
     let geojson;
     try {
@@ -208,9 +322,9 @@ export async function startAuthMapBackground() {
         console.warn('[auth-bg] Traccia non disponibile:', err.message);
         return null;
     }
-    if (myEpoch !== _epoch) return null; // stop chiamato nel frattempo
+    if (myEpoch !== _epoch) return null;
 
-    const center = computeCenter(geojson);
+    const center = ROCKY_TRANSITION_CENTER.slice();
     container.style.display = 'block';
 
     let map;
@@ -219,8 +333,9 @@ export async function startAuthMapBackground() {
             container,
             style: buildStyle(),
             center,
-            zoom: 9.05,
-            pitch: 64,
+            zoom: 13.2,
+            pitch: 66,
+            maxPitch: 85,
             bearing: 30,
             interactive: false,
             attributionControl: false,
@@ -238,10 +353,8 @@ export async function startAuthMapBackground() {
 
     map.once('load', () => {
         try {
-            // attribuzione minimale, fuori dal flusso visivo (Esri/Mapzen)
             map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
             addTrackLayers(map, geojson);
-            // dissolvenza in: il container parte trasparente e fade-in via CSS
             container.classList.add('is-ready');
             startOrbit(_state);
         } catch (err) {
@@ -250,7 +363,6 @@ export async function startAuthMapBackground() {
     });
 
     map.on('error', (e) => {
-        // tile o sorgente esterna non disponibile: non mostriamo nulla all'utente
         if (e && e.error) console.debug('[auth-bg] map error:', e.error.message || e.error);
     });
 
@@ -258,7 +370,7 @@ export async function startAuthMapBackground() {
 }
 
 export function stopAuthMapBackground() {
-    _epoch++; // invalida start in volo
+    _epoch++;
     if (!_state) return;
     stopOrbit(_state);
     try { _state.map.remove(); } catch (_) {}

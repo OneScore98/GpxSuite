@@ -4,34 +4,84 @@ import { MAPILLARY_TOKEN_KEY, setMap, setMapLoaded, NEXTZEN_TERRAIN_SOURCE, is3D
 import { ensureLucideIcons } from './utils.js';
 
 import {
-    setupLayers, updateMapData, setBaseMap, setDimensionMode, flyToPOI,
-    configureMapillaryToken, setMapillaryCoverageVisible, closeMapillaryViewer
+    setupLayers,
+    updateMapData,
+    setBaseMap,
+    setDimensionMode,
+    flyToPOI,
+    configureMapillaryToken,
+    setMapillaryCoverageVisible,
+    closeMapillaryViewer,
+    createBaseMapStyle
 } from './map.js';
 import { importGPX, exportGPX } from './gpx.js';
 import { addPointToActiveSegment, cutTrackAtPoint, handleBoxDeleteClick, saveHistoryState, triggerUndo, setSnapProfile } from './tracks.js';
 import { addWaypointAtCoords, saveWaypointModifications, openWaypointEditor, updateWaypointsOnMap } from './waypoints.js';
 import { flushPersistedStateNow, schedulePersistAppSession } from './storage.js';
 import {
-    togglePrintPlanning, disablePrintPlanning,
-    setupPrintDragEvents, updatePrintGridLayout, updatePrintGridScale,
-    setPrintPlanningOrientation, generateHighResPrintPreview, syncPrintOutputFromPreview
+    togglePrintPlanning,
+    disablePrintPlanning,
+    setupPrintDragEvents,
+    updatePrintGridLayout,
+    updatePrintGridScale,
+    setPrintPlanningOrientation,
+    generateHighResPrintPreview,
+    syncPrintOutputFromPreview
 } from './print.js';
 import { initAuthGate, bindAuthUi, trackAnalyticsEvent } from './auth.js';
+import { startAuthMapBackground, stopAuthMapBackground } from './auth-map-background.js';
 import {
-    injectDeps, setupEvents, setupPrintUiEvents, createNewTrack, renderGisTree,
+    injectDeps,
+    setupEvents,
+    setupPrintUiEvents,
+    createNewTrack,
+    renderGisTree,
     restoreStoredTracksOnStartup,
-    openStoredTrackFromLibrary, deleteStoredTrackFromLibrary,
-    handleGisDragStart, handleGisDragOver, handleGisDrop, handleGisDragEnd,
-    updateActiveTracksHeader, showToast,
-    setTrackActive, renameTrack, changeTrackColor, changeTrackWidth, toggleTrackVisibility,
-    handleTrackContextMenu, handleTrackPointerDown, clearTrackLongPress,
-    handleTrackTreeClick, handleSegmentTreeClick, handleSegmentContextMenu, handleSegmentPointerDown,
-    copyTreeSelection, cutTreeSelection, pasteTreeSelection, duplicateTreeSelection, deleteTreeSelection,
-    handleTrackNamePointerDown, clearTrackNameLongPress,
-    handleTrackNameClick, openTrackNameEditor, finishTrackNameEditor, handleTrackNameKeydown,
-    toggleAllWaypointsVisibility, toggleWaypointVisibility, toggleSegmentVisibility,
-    deleteTrack, addNewSegmentToTrack, renameSegment, renameSegmentFromMenu, extractOffroadFromTrack, extractOffroadFromSegment, setSegmentActive, deleteSegment,
-    zoomToWaypoint, deleteWaypoint, searchNominatim
+    openStoredTrackFromLibrary,
+    deleteStoredTrackFromLibrary,
+    handleGisDragStart,
+    handleGisDragOver,
+    handleGisDrop,
+    handleGisDragEnd,
+    updateActiveTracksHeader,
+    showToast,
+    setTrackActive,
+    renameTrack,
+    changeTrackColor,
+    changeTrackWidth,
+    toggleTrackVisibility,
+    handleTrackContextMenu,
+    handleTrackPointerDown,
+    clearTrackLongPress,
+    handleTrackTreeClick,
+    handleSegmentTreeClick,
+    handleSegmentContextMenu,
+    handleSegmentPointerDown,
+    copyTreeSelection,
+    cutTreeSelection,
+    pasteTreeSelection,
+    duplicateTreeSelection,
+    deleteTreeSelection,
+    handleTrackNamePointerDown,
+    clearTrackNameLongPress,
+    handleTrackNameClick,
+    openTrackNameEditor,
+    finishTrackNameEditor,
+    handleTrackNameKeydown,
+    toggleAllWaypointsVisibility,
+    toggleWaypointVisibility,
+    toggleSegmentVisibility,
+    deleteTrack,
+    addNewSegmentToTrack,
+    renameSegment,
+    renameSegmentFromMenu,
+    extractOffroadFromTrack,
+    extractOffroadFromSegment,
+    setSegmentActive,
+    deleteSegment,
+    zoomToWaypoint,
+    deleteWaypoint,
+    searchNominatim
 } from './ui.js';
 
 // Inietta le dipendenze circolari in ui.js prima che venga usata
@@ -253,7 +303,13 @@ function initApp() {
 
 function bootstrapApp() {
     updateViewportMetrics();
-    initAuthGate({ onAuthorized: initApp }).catch(err => {
+    startAuthMapBackground(); // Start the background map animation immediately
+    initAuthGate({
+        onAuthorized: () => {
+            stopAuthMapBackground(); // Free resources properly on successful login
+            initApp();
+        }
+    }).catch(err => {
         console.error(err);
     });
 }
