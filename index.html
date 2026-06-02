@@ -109,6 +109,36 @@
             <span>Magic link</span>
           </button>
                 </div>
+                <button id="btn-auth-forgot" data-auth-action="forgot" class="w-full text-[11px] text-blue-300 hover:text-blue-200 py-1.5">
+          Password dimenticata?
+        </button>
+            </div>
+
+            <div data-auth-view="reset" class="hidden p-5 space-y-4">
+                <div class="space-y-1">
+                    <h2 class="text-sm font-bold text-white">Imposta nuova password</h2>
+                    <p class="text-xs text-gray-400 leading-relaxed">Inserisci una nuova password per completare il recupero account.</p>
+                </div>
+                <div class="space-y-3">
+                    <label class="block space-y-1">
+            <span class="text-[10px] text-gray-400 uppercase font-semibold tracking-wider">Nuova password</span>
+            <input id="reset-password" type="password" autocomplete="new-password" class="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" placeholder="Almeno 8 caratteri">
+          </label>
+                    <label class="block space-y-1">
+            <span class="text-[10px] text-gray-400 uppercase font-semibold tracking-wider">Conferma password</span>
+            <input id="reset-password-confirm" type="password" autocomplete="new-password" class="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" placeholder="Ripeti la password">
+          </label>
+                </div>
+                <div id="reset-message" class="hidden"></div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button id="btn-reset-save" data-auth-action="reset-save" class="bg-blue-600 hover:bg-blue-500 text-white rounded-lg py-2 text-xs font-bold flex items-center justify-center gap-1.5">
+            <i data-lucide="key-round" class="w-4 h-4"></i>
+            <span>Salva password</span>
+          </button>
+                    <button id="btn-reset-back-login" data-auth-action="reset-back" class="bg-gray-900 hover:bg-gray-800 border border-gray-800 text-gray-200 rounded-lg py-2 text-xs font-semibold">
+            Torna al login
+          </button>
+                </div>
             </div>
 
             <div data-auth-view="device" class="hidden p-5 space-y-4">

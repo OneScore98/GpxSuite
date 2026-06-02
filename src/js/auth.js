@@ -25,6 +25,7 @@ let _authorizedStarted = false;
 let _onAuthorized = null;
 let _authCheckPromise = null;
 let _adminDashboardBound = false;
+let _passwordRecoveryMode = false;
 
 function cleanString(value) {
     return String(value || '').trim();
@@ -98,14 +99,22 @@ function getDeviceLabel() {
     return label;
 }
 
-function setAuthMessage(message, type = 'info') {
-    const el = document.getElementById('auth-message');
+function setPanelMessage(elementId, message, type = 'info') {
+    const el = document.getElementById(elementId);
     if (!el) return;
     const color = type === 'error' ? 'text-red-300 border-red-900/70 bg-red-950/30' :
         (type === 'success' ? 'text-emerald-300 border-emerald-900/70 bg-emerald-950/30' : 'text-sky-300 border-sky-900/70 bg-sky-950/30');
     el.className = `text-[11px] leading-relaxed border rounded-lg px-3 py-2 ${color}`;
     el.textContent = message;
     el.classList.toggle('hidden', !message);
+}
+
+function setAuthMessage(message, type = 'info') {
+    setPanelMessage('auth-message', message, type);
+}
+
+function setResetMessage(message, type = 'info') {
+    setPanelMessage('reset-message', message, type);
 }
 
 function setAuthBusy(isBusy) {
@@ -152,8 +161,20 @@ function updateAccountPanel() {
 function bindAuthForm() {
     document.getElementById('btn-auth-login')?.addEventListener('click', handlePasswordLogin);
     document.getElementById('btn-auth-magic')?.addEventListener('click', handleMagicLinkLogin);
+    document.getElementById('btn-auth-forgot')?.addEventListener('click', handlePasswordResetRequest);
+    document.getElementById('btn-reset-save')?.addEventListener('click', handleRecoveryPasswordUpdate);
+    document.getElementById('btn-reset-back-login')?.addEventListener('click', async() => {
+        _passwordRecoveryMode = false;
+        const client = await getSupabaseClient();
+        if (client) await client.auth.signOut();
+        setResetMessage('');
+        showAuthView('login');
+    });
     document.getElementById('auth-password')?.addEventListener('keydown', e => {
         if (e.key === 'Enter') handlePasswordLogin();
+    });
+    document.getElementById('reset-password-confirm')?.addEventListener('keydown', e => {
+        if (e.key === 'Enter') handleRecoveryPasswordUpdate();
     });
     document.getElementById('auth-identifier')?.addEventListener('keydown', e => {
         if (e.key === 'Enter') {
@@ -235,6 +256,61 @@ async function handleMagicLinkLogin() {
     }
 }
 
+async function handlePasswordResetRequest() {
+    const identifier = cleanString(document.getElementById('auth-identifier')?.value);
+    if (!identifier) {
+        setAuthMessage('Inserisci username o email per ricevere il reset password.', 'error');
+        return;
+    }
+    setAuthBusy(true);
+    setAuthMessage('Invio email di reset...');
+    try {
+        const client = await getSupabaseClient();
+        const email = await resolveLoginEmail(identifier);
+        const redirectTo = `${window.location.origin}${window.location.pathname}`;
+        const { error } = await client.auth.resetPasswordForEmail(email, { redirectTo });
+        if (error) throw error;
+        setAuthMessage('Email reset inviata. Apri il link ricevuto e imposta la nuova password.', 'success');
+    } catch (err) {
+        console.error(err);
+        setAuthMessage(err.message || 'Invio reset password non riuscito.', 'error');
+    } finally {
+        setAuthBusy(false);
+    }
+}
+
+async function handleRecoveryPasswordUpdate() {
+    const password = String(document.getElementById('reset-password')?.value || '');
+    const confirm = String(document.getElementById('reset-password-confirm')?.value || '');
+    if (password.length < 8) {
+        setResetMessage('La password deve avere almeno 8 caratteri.', 'error');
+        return;
+    }
+    if (password !== confirm) {
+        setResetMessage('Le password non coincidono.', 'error');
+        return;
+    }
+    setAuthBusy(true);
+    setResetMessage('Aggiornamento password...');
+    try {
+        const client = await getSupabaseClient();
+        const { data: sessionData } = await client.auth.getSession();
+        if (!sessionData?.session) {
+            throw new Error('Link reset scaduto o sessione recovery non valida.');
+        }
+        const { error } = await client.auth.updateUser({ password });
+        if (error) throw error;
+        _passwordRecoveryMode = false;
+        setResetMessage('Password aggiornata. Accesso in corso...', 'success');
+        await verifyCurrentSession({ force: true });
+    } catch (err) {
+        console.error(err);
+        setResetMessage(err.message || 'Aggiornamento password non riuscito.', 'error');
+    } finally {
+        setAuthBusy(false);
+    }
+}
+
 function normalizeLoginResult(data) {
     if (Array.isArray(data)) return data[0] || null;
     return data || null;
@@ -250,6 +326,10 @@ async function verifyCurrentSession(options = {}) {
         const session = sessionData?.session || null;
         _authState.session = session;
         if (!session) {
+            if (_passwordRecoveryMode) {
+                showAuthView('reset');
+                return false;
+            }
             _authState = { ready: true, allowed: false, session: null, profile: null, device: null, status: 'signed_out' };
             showAuthView('login');
             return false;
@@ -340,10 +420,22 @@ export async function initAuthGate({ onAuthorized } = {}) {
     try {
         const client = await getSupabaseClient();
         client.auth.onAuthStateChange((event, session) => {
+            if (event === 'PASSWORD_RECOVERY') {
+                _passwordRecoveryMode = true;
+                _authState.session = session || null;
+                setResetMessage('');
+                showAuthView('reset');
+                return;
+            }
             if (event === 'SIGNED_OUT') {
                 _authState = { ready: true, allowed: false, session: null, profile: null, device: null, status: 'signed_out' };
                 _authorizedStarted = false;
+                _passwordRecoveryMode = false;
                 showAuthView('login');
+                return;
+            }
+            if (_passwordRecoveryMode) {
+                showAuthView('reset');
                 return;
             }
             if (session && !_authState.allowed) {
@@ -354,6 +446,11 @@ export async function initAuthGate({ onAuthorized } = {}) {
                 });
             }
         });
+        if (window.location.hash.includes('type=recovery') || window.location.search.includes('type=recovery')) {
+            _passwordRecoveryMode = true;
+            showAuthView('reset');
+            return;
+        }
         await verifyCurrentSession({ force: true });
     } catch (err) {
         console.error(err);
