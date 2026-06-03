@@ -150,22 +150,27 @@ function updateMapillaryToolbarButton() {
 }
 
 function updateDeviceLocationToolbarButton(status = {}) {
-    const btn = document.getElementById('btn-device-location');
-    if (!btn) return;
+    const buttons = ['btn-device-location-main', 'btn-device-location']
+        .map(id => document.getElementById(id))
+        .filter(Boolean);
+    if (buttons.length === 0) return;
 
     const active = Boolean(status.active);
     const waiting = Boolean(status.waiting);
     const moving = Boolean(status.moving);
     const enabled = active || waiting;
     const state = waiting ? 'waiting' : (active ? (moving ? 'moving' : 'active') : 'idle');
-
-    btn.dataset.locationState = state;
-    btn.classList.toggle('bg-sky-600', enabled);
-    btn.classList.toggle('text-white', enabled);
-    btn.classList.toggle('text-gray-300', !enabled);
-    btn.title = waiting ?
+    const title = waiting ?
         'Localizzazione in corso...' :
-        (active ? 'Disattiva localizzazione dispositivo' : 'Attiva localizzazione dispositivo');
+        (active ? 'Centra sulla posizione dispositivo' : 'Attiva localizzazione dispositivo');
+
+    buttons.forEach(btn => {
+        btn.dataset.locationState = state;
+        btn.classList.toggle('bg-sky-600', enabled);
+        btn.classList.toggle('text-white', enabled);
+        btn.classList.toggle('text-gray-300', !enabled);
+        btn.title = title;
+    });
 }
 
 function formatRecordingElapsed(ms = 0) {
@@ -2710,8 +2715,9 @@ export function setupEvents() {
         updateMapillaryToolbarButton();
     };
 
-    const btnDeviceLocation = document.getElementById('btn-device-location');
-    if (btnDeviceLocation) {
+    ['btn-device-location-main', 'btn-device-location'].forEach(id => {
+        const btnDeviceLocation = document.getElementById(id);
+        if (!btnDeviceLocation) return;
         btnDeviceLocation.onclick = () => {
             const active = _toggleDeviceLocation ? _toggleDeviceLocation() : false;
             if (active && isCompactLayout()) {
@@ -2719,7 +2725,7 @@ export function setupEvents() {
                 syncMobileBackdrop();
             }
         };
-    }
+    });
     if (_setDeviceLocationStatusHandler) {
         _setDeviceLocationStatusHandler(updateDeviceLocationToolbarButton);
     }

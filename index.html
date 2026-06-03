@@ -227,6 +227,12 @@
       <i data-lucide="wrench" class="w-5 h-5"></i>
     </button>
 
+        <!-- Localizzazione dispositivo sempre visibile -->
+        <button id="btn-device-location-main" class="w-10 h-10 rounded-xl bg-gray-950/90 backdrop-blur-md border border-gray-800 hover:bg-gray-800 transition-all shadow-xl flex items-center justify-center text-gray-300 relative" title="Attiva localizzazione dispositivo" data-location-state="idle">
+      <i data-lucide="locate-fixed" class="w-5 h-5"></i>
+      <span class="device-location-button-indicator absolute bottom-1.5 right-1.5 w-2 h-2 rounded-full bg-gray-600 border border-gray-950"></span>
+    </button>
+
         <!-- Gruppo Strumenti GPX Rapid -->
         <div id="toolbar-quick-tools" class="flex flex-col gap-1 bg-gray-950/95 backdrop-blur-md border border-gray-800/90 rounded-xl p-1 shadow-xl">
             <!-- Nuova Traccia -->
@@ -685,7 +691,7 @@
     </div>
 
     <!-- INDICATORE REGISTRAZIONE -->
-    <div id="recording-status-chip" class="hidden absolute top-3 left-1/2 -translate-x-1/2 z-40 pointer-events-none bg-gray-950/90 border border-red-900/80 text-red-200 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide shadow-lg">
+    <div id="recording-status-chip" class="hidden absolute z-40 pointer-events-none bg-gray-950/90 border border-red-900/80 text-red-200 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide shadow-lg">
         <span class="recording-status-dot"></span>
         <span id="recording-status-text">REC</span>
     </div>
@@ -720,8 +726,8 @@
         <input id="recording-save-name" type="text" class="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-red-500">
       </label>
             <div class="grid grid-cols-2 gap-2">
-                <button id="btn-recording-save-cancel" class="bg-gray-900 hover:bg-gray-800 border border-gray-800 text-gray-300 rounded-lg py-2 text-xs font-semibold">Annulla</button>
-                <button id="btn-recording-save-confirm" class="bg-red-600 hover:bg-red-500 text-white rounded-lg py-2 text-xs font-bold">Scegli posizione</button>
+                <button id="btn-recording-save-cancel" class="bg-gray-900 hover:bg-gray-800 border border-gray-800 text-gray-300 rounded-lg py-2 text-xs font-semibold">Cancella</button>
+                <button id="btn-recording-save-confirm" class="bg-red-600 hover:bg-red-500 text-white rounded-lg py-2 text-xs font-bold">Salva</button>
             </div>
         </div>
     </div>

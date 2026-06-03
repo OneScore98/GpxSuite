@@ -241,8 +241,12 @@ export async function finishDeviceRecording(name = getDefaultRecordingName()) {
 
 export function toggleDeviceLocation() {
     if (_watchId !== null) {
-        stopDeviceLocation('manual');
-        return false;
+        if (centerOnCurrentDeviceLocation()) {
+            notify("Vista centrata sulla posizione", "info");
+        } else if (_waitingForFirstFix) {
+            notify("Localizzazione in attesa del primo fix", "info");
+        }
+        return true;
     }
     return startDeviceLocation();
 }
@@ -377,6 +381,18 @@ function focusInitialPosition(fix) {
         duration: 1200,
         essential: true
     });
+}
+
+function centerOnCurrentDeviceLocation() {
+    if (!mapLoaded || !map || !_lastFix) return false;
+    _userExploringUntil = 0;
+    _lastFollowAt = 0;
+    map.easeTo({
+        center: [_lastFix.lon, _lastFix.lat],
+        duration: 650,
+        essential: true
+    });
+    return true;
 }
 
 function followPosition(fix) {

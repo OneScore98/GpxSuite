@@ -766,15 +766,28 @@ body.auth-locked #print-drag-grid {
     color: #1f2937;
 }
 
+#recording-status-chip {
+    left: 50%;
+    bottom: calc(var(--safe-bottom) + 3.35rem);
+    transform: translateX(-50%);
+}
+
+body.stats-panel-open #recording-status-chip {
+    bottom: calc(var(--safe-bottom) + 14.5rem);
+}
+
+#btn-device-location-main[data-location-state="waiting"] .device-location-button-indicator,
 #btn-device-location[data-location-state="waiting"] .device-location-button-indicator {
     background: #f59e0b;
     animation: device-location-button-pulse 1s ease-in-out infinite;
 }
 
+#btn-device-location-main[data-location-state="active"] .device-location-button-indicator,
 #btn-device-location[data-location-state="active"] .device-location-button-indicator {
     background: #38bdf8;
 }
 
+#btn-device-location-main[data-location-state="moving"] .device-location-button-indicator,
 #btn-device-location[data-location-state="moving"] .device-location-button-indicator {
     background: #22c55e;
 }
