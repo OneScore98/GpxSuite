@@ -720,7 +720,7 @@
     </div>
 
     <!-- INDICATORE REGISTRAZIONE -->
-    <div id="recording-status-chip" class="hidden absolute z-40 pointer-events-auto cursor-pointer bg-gray-950/90 border border-red-900/80 text-red-200 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide shadow-lg" role="button" tabindex="0" title="Apri controlli registrazione">
+    <div id="recording-status-chip" class="hidden absolute z-40 pointer-events-auto cursor-pointer text-[10.5px] font-bold" role="button" tabindex="0" title="Apri controlli registrazione">
         <span class="recording-status-dot"></span>
         <span id="recording-status-text">REC</span>
     </div>
@@ -729,34 +729,53 @@
     <div id="toast-container" class="absolute bottom-3 left-3 z-50 flex flex-col gap-1.5 pointer-events-none max-w-xs"></div>
 
     <!-- MODALE AZIONE REGISTRAZIONE -->
-    <div id="modal-recording-action" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[100002] flex items-center justify-center p-3">
-        <div class="w-full max-w-xs bg-gray-950 border border-gray-800 rounded-2xl shadow-2xl p-4 space-y-4">
-            <div class="flex items-center gap-2 text-red-300">
-                <i data-lucide="circle-dot" class="w-4 h-4"></i>
-                <h3 class="font-bold text-xs uppercase tracking-wider">Registrazione</h3>
+    <div id="modal-recording-action" class="hidden fixed inset-0 bg-black/70 backdrop-blur-md z-[100002] flex items-center justify-center p-3">
+        <div class="recording-modal-card w-full max-w-xs rounded-2xl shadow-2xl p-5 space-y-4">
+            <div class="flex items-center gap-2.5">
+                <span class="recording-status-dot recording-modal-dot"></span>
+                <h3 class="font-bold text-xs uppercase tracking-[0.18em] text-red-200">Registrazione in corso</h3>
+            </div>
+            <div id="recording-action-summary" class="recording-modal-summary grid grid-cols-2 gap-2">
+                <div class="recording-modal-stat">
+                    <span class="recording-modal-stat-label">Durata</span>
+                    <span id="recording-action-elapsed" class="recording-modal-stat-value">00:00</span>
+                </div>
+                <div class="recording-modal-stat">
+                    <span class="recording-modal-stat-label">Punti</span>
+                    <span id="recording-action-points" class="recording-modal-stat-value">0</span>
+                </div>
             </div>
             <div class="grid grid-cols-2 gap-2">
-                <button id="btn-recording-action-pause" class="bg-amber-700/30 hover:bg-amber-700/50 text-amber-200 border border-amber-900 rounded-lg py-2 text-xs font-semibold">Pausa</button>
-                <button id="btn-recording-action-stop" class="bg-red-700/30 hover:bg-red-700/50 text-red-200 border border-red-900 rounded-lg py-2 text-xs font-semibold">Stop</button>
+                <button id="btn-recording-action-pause" class="recording-btn recording-btn-amber flex items-center justify-center gap-1.5">
+                    <i data-lucide="pause" class="w-3.5 h-3.5"></i>
+                    <span>Pausa</span>
+                </button>
+                <button id="btn-recording-action-stop" class="recording-btn recording-btn-red flex items-center justify-center gap-1.5">
+                    <i data-lucide="square" class="w-3.5 h-3.5"></i>
+                    <span>Stop</span>
+                </button>
             </div>
-            <button id="btn-recording-action-cancel" class="w-full bg-gray-900 hover:bg-gray-800 border border-gray-800 text-gray-300 rounded-lg py-2 text-xs font-semibold">Annulla</button>
+            <button id="btn-recording-action-cancel" class="recording-btn recording-btn-ghost w-full">Annulla</button>
         </div>
     </div>
 
     <!-- MODALE SALVATAGGIO REGISTRAZIONE -->
-    <div id="modal-recording-save" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[100002] flex items-center justify-center p-3">
-        <div class="w-full max-w-sm bg-gray-950 border border-gray-800 rounded-2xl shadow-2xl p-4 space-y-4">
-            <div class="flex items-center gap-2 text-red-300">
-                <i data-lucide="save" class="w-4 h-4"></i>
-                <h3 class="font-bold text-xs uppercase tracking-wider">Salva registrazione</h3>
+    <div id="modal-recording-save" class="hidden fixed inset-0 bg-black/70 backdrop-blur-md z-[100002] flex items-center justify-center p-3">
+        <div class="recording-modal-card w-full max-w-sm rounded-2xl shadow-2xl p-5 space-y-4">
+            <div class="flex items-center gap-2.5">
+                <i data-lucide="save" class="w-4 h-4 text-red-300"></i>
+                <h3 class="font-bold text-xs uppercase tracking-[0.18em] text-red-200">Salva registrazione</h3>
             </div>
-            <label class="block space-y-1">
-        <span class="text-[10px] text-gray-400 uppercase font-semibold tracking-wider">Nome file</span>
-        <input id="recording-save-name" type="text" class="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-red-500">
-      </label>
+            <label class="block space-y-1.5">
+                <span class="text-[10px] text-gray-400 uppercase font-semibold tracking-[0.16em]">Nome file</span>
+                <input id="recording-save-name" type="text" class="w-full bg-gray-950/80 border border-gray-800 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20 transition">
+            </label>
             <div class="grid grid-cols-2 gap-2">
-                <button id="btn-recording-save-cancel" class="bg-gray-900 hover:bg-gray-800 border border-gray-800 text-gray-300 rounded-lg py-2 text-xs font-semibold">Cancella</button>
-                <button id="btn-recording-save-confirm" class="bg-red-600 hover:bg-red-500 text-white rounded-lg py-2 text-xs font-bold">Salva</button>
+                <button id="btn-recording-save-cancel" class="recording-btn recording-btn-ghost">Cancella</button>
+                <button id="btn-recording-save-confirm" class="recording-btn recording-btn-primary flex items-center justify-center gap-1.5">
+                    <i data-lucide="check" class="w-3.5 h-3.5"></i>
+                    <span>Salva</span>
+                </button>
             </div>
         </div>
     </div>

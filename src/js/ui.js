@@ -208,7 +208,7 @@ function updateDeviceRecordingUi(status = {}) {
     }
     if (chipText) {
         const label = state === 'paused' ? 'PAUSA' : 'REC';
-        chipText.textContent = `${label} ${formatRecordingElapsed(status.elapsedMs)} ${status.pointsCount || 0} pt`;
+        chipText.textContent = `${label} ${formatRecordingElapsed(status.elapsedMs)} · ${status.pointsCount || 0} pt`;
     }
     if (badge) {
         badge.textContent = state === 'recording' ? 'REC' : (state === 'paused' ? 'Pausa' : 'Pronta');
@@ -218,6 +218,12 @@ function updateDeviceRecordingUi(status = {}) {
                 'text-[9px] bg-amber-950 text-amber-200 px-1.5 py-0.5 rounded border border-amber-900 font-bold uppercase' :
                 'text-[9px] bg-gray-950 text-gray-400 px-1.5 py-0.5 rounded border border-gray-800 font-bold uppercase');
     }
+
+    // Aggiorna anche le statistiche live dentro la modale azione (durata + punti)
+    const elapsedEl = document.getElementById('recording-action-elapsed');
+    const pointsEl = document.getElementById('recording-action-points');
+    if (elapsedEl) elapsedEl.textContent = formatRecordingElapsed(status.elapsedMs);
+    if (pointsEl) pointsEl.textContent = String(status.pointsCount || 0);
 }
 
 function permissionMeta(state) {
@@ -351,8 +357,12 @@ function openRecordingActionModal() {
     const status = _getDeviceRecordingStatus ? _getDeviceRecordingStatus() : { state: 'idle' };
     const pauseButton = document.getElementById('btn-recording-action-pause');
     if (pauseButton) {
-        pauseButton.textContent = status.state === 'paused' ? 'Riprendi' : 'Pausa';
+        const label = status.state === 'paused' ? 'Riprendi' : 'Pausa';
+        const iconName = status.state === 'paused' ? 'play' : 'pause';
+        pauseButton.innerHTML = `<i data-lucide="${iconName}" class="w-3.5 h-3.5"></i><span>${label}</span>`;
     }
+    // Aggiorna subito le statistiche live (la modale ascolta poi i tick).
+    updateDeviceRecordingUi(status);
     document.getElementById('modal-recording-action')?.classList.remove('hidden');
     refreshLucideIcons();
 }

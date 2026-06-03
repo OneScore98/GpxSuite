@@ -162,8 +162,24 @@ const APPLICATION_LAYER_ORDER = [
     'mapillary-current-fov-line-layer',
     'mapillary-current-image-halo-layer',
     'mapillary-current-image-layer',
-    'mapillary-current-image-direction-layer'
+    'mapillary-current-image-direction-layer',
+    // Overlay registrazione e localizzazione: sempre sopra tutto il resto
+    'device-recording-track-casing-layer',
+    'device-recording-track-layer',
+    'device-recording-current-point-halo-layer',
+    'device-recording-current-point-layer',
+    'device-location-halo-layer',
+    'device-location-heading-layer',
+    'device-location-dot-layer'
 ];
+
+// Hook opzionale richiamato dopo ogni style.load per permettere ai moduli
+// che gestiscono overlay live (registrazione, localizzazione) di ricreare
+// sorgenti/layer perduti durante il cambio basemap.
+let _onStyleRestoredHook = null;
+export function setStyleRestoredHook(handler) {
+    _onStyleRestoredHook = typeof handler === 'function' ? handler : null;
+}
 const MAPILLARY_JS_URL = 'https://unpkg.com/mapillary-js@4.1.2/dist/mapillary.js';
 const MAPILLARY_CSS_URL = 'https://unpkg.com/mapillary-js@4.1.2/dist/mapillary.css';
 
@@ -1578,12 +1594,15 @@ function restoreApplicationLayersAfterStyleLoad(reloadSerial) {
         map.setTerrain({ source: 'terrain-nextzen', exaggeration: 1.2 });
     }
 
-    // Timeout necessario per aggirare la race condition di MapLibre WebWorker 
+    // Timeout necessario per aggirare la race condition di MapLibre WebWorker
     // dove le chiamate a setData sincrone dopo addSource vengono scartate
     setTimeout(() => {
-        if (reloadSerial === _styleReloadSerial) {
-            updateMapData(true);
+        if (reloadSerial !== _styleReloadSerial) return;
+        updateMapData(true);
+        if (typeof _onStyleRestoredHook === 'function') {
+            try { _onStyleRestoredHook(); } catch (err) { console.warn(err); }
         }
+        ensureApplicationLayersAboveMap();
     }, 50);
 }
 

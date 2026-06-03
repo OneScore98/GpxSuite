@@ -72,6 +72,7 @@ let _recordingSettings = { ...DEFAULT_RECORDING_SETTINGS };
 let _recording = createEmptyRecording();
 let _lastRecordingPreviewAt = 0;
 let _recordingPreviewRetryScheduled = false;
+let _recordingTickIntervalId = null;
 
 export function initDeviceLocation(options = {}) {
     _showToast = typeof options.showToast === 'function' ? options.showToast : null;
@@ -165,6 +166,7 @@ export function startDeviceRecording() {
     };
     _lastRecordingPreviewAt = 0;
     if (_recordingSettings.showLiveTrack) refreshRecordingPreview(true);
+    startRecordingTick();
     notify("Registrazione avviata", "success");
     emitRecordingStatus();
     return true;
@@ -174,6 +176,7 @@ export function pauseDeviceRecording() {
     if (_recording.state !== 'recording') return false;
     _recording.state = 'paused';
     _recording.pausedAt = Date.now();
+    stopRecordingTick();
     notify("Registrazione in pausa", "info");
     emitRecordingStatus();
     return true;
@@ -187,6 +190,7 @@ export function resumeDeviceRecording() {
     }
     _recording.state = 'recording';
     _recording.pausedAt = null;
+    startRecordingTick();
     notify("Registrazione ripresa", "success");
     emitRecordingStatus();
     return true;
@@ -197,6 +201,7 @@ export async function finishDeviceRecording(name = getDefaultRecordingName()) {
 
     const recording = _recording;
     _recording = createEmptyRecording();
+    stopRecordingTick();
     emitRecordingStatus();
     clearRecordingPreview();
 
@@ -767,16 +772,25 @@ function ensureLocationMarkerLayers() {
             id: LOCATION_HEADING_LAYER_ID,
             type: 'symbol',
             source: LOCATION_SOURCE_ID,
-            filter: ['==', ['get', 'moving'], true],
+            filter: ['==', ['get', 'hasHeading'], true],
             layout: {
                 'icon-image': LOCATION_HEADING_ICON_ID,
-                'icon-size': 1.08,
+                'icon-size': 1.0,
                 'icon-rotate': ['get', 'heading'],
                 'icon-rotation-alignment': 'map',
+                'icon-pitch-alignment': 'map',
                 'icon-allow-overlap': true,
                 'icon-ignore-placement': true
+            },
+            paint: {
+                // Cono pieno quando ci si muove, più tenue quando il dato
+                // proviene solo dalla bussola (utente fermo).
+                'icon-opacity': ['case', ['get', 'moving'], 1.0, 0.78]
             }
         });
+    } else {
+        map.setPaintProperty(LOCATION_HEADING_LAYER_ID, 'icon-opacity',
+            ['case', ['get', 'moving'], 1.0, 0.78]);
     }
 
     if (!map.getLayer(LOCATION_DOT_LAYER_ID)) {
@@ -798,37 +812,104 @@ function ensureLocationMarkerLayers() {
 function ensureHeadingIcon() {
     if (!mapLoaded || !map || (typeof map.hasImage === 'function' && map.hasImage(LOCATION_HEADING_ICON_ID))) return;
 
-    const size = 64;
+    const size = 128;
     const canvas = document.createElement('canvas');
     canvas.width = size;
     canvas.height = size;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-
     ctx.clearRect(0, 0, size, size);
+
+    const cx = size / 2;
+    const cy = size / 2;
+
+    // ---- 1) Cono di direzione (campo visivo) -------------------------------
+    // Un settore di ~60° davanti al puntino, con sfumatura radiale che svanisce
+    // sui bordi: comunica la direzione anche da lontano senza coprire la mappa.
+    const fanRadius = 60;
+    const halfAngle = Math.PI / 6; // 30° per lato → 60° totale
+    const fanGradient = ctx.createRadialGradient(cx, cy, 6, cx, cy, fanRadius);
+    fanGradient.addColorStop(0, 'rgba(56, 189, 248, 0.9)');
+    fanGradient.addColorStop(0.55, 'rgba(56, 189, 248, 0.35)');
+    fanGradient.addColorStop(1, 'rgba(56, 189, 248, 0)');
     ctx.beginPath();
-    ctx.moveTo(32, 4);
-    ctx.lineTo(50, 40);
-    ctx.quadraticCurveTo(32, 31, 14, 40);
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, fanRadius, -Math.PI / 2 - halfAngle, -Math.PI / 2 + halfAngle);
     ctx.closePath();
-    ctx.fillStyle = '#0ea5e9';
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 5;
-    ctx.lineJoin = 'round';
-    ctx.stroke();
+    ctx.fillStyle = fanGradient;
     ctx.fill();
+
+    // Bordo sottile bianco lungo i lati del cono, per stacco su sfondi chiari.
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.sin(halfAngle) * fanRadius, cy - Math.cos(halfAngle) * fanRadius);
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx - Math.sin(halfAngle) * fanRadius, cy - Math.cos(halfAngle) * fanRadius);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // ---- 2) Chevron principale ---------------------------------------------
+    // Una freccia "a punta" allungata, leggermente staccata dal puntino blu
+    // per non confondersi. Spessa, con alone bianco e ombra per leggibilità.
+    const tipY = cy - 50;
+    const baseY = cy - 14;
+    const notchY = cy - 22;
+    const halfWidth = 18;
+
+    ctx.beginPath();
+    ctx.moveTo(cx, tipY);                 // punta in alto
+    ctx.lineTo(cx + halfWidth, baseY);    // spalla destra
+    ctx.lineTo(cx, notchY);               // tacca centrale → forma chevron
+    ctx.lineTo(cx - halfWidth, baseY);    // spalla sinistra
+    ctx.closePath();
+
+    // Ombra portata sotto al chevron per "sollevarlo" dalla mappa.
+    ctx.save();
+    ctx.shadowColor = 'rgba(2, 6, 23, 0.55)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 2;
+    ctx.fillStyle = '#0c4a6e';
+    ctx.fill();
+    ctx.restore();
+
+    // Alone bianco spesso per garantire contrasto su qualunque basemap.
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 6;
+    ctx.stroke();
+
+    // Riempimento con gradiente blu cielo → blu scuro per dare profondità.
+    const chevronGradient = ctx.createLinearGradient(cx, tipY, cx, baseY);
+    chevronGradient.addColorStop(0, '#7dd3fc');
+    chevronGradient.addColorStop(0.55, '#38bdf8');
+    chevronGradient.addColorStop(1, '#0284c7');
+    ctx.fillStyle = chevronGradient;
+    ctx.fill();
+
+    // Sottile riflesso bianco lungo il bordo sinistro della punta.
+    ctx.beginPath();
+    ctx.moveTo(cx - 1, tipY + 4);
+    ctx.lineTo(cx - halfWidth + 6, baseY - 4);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
 
     map.addImage(LOCATION_HEADING_ICON_ID, ctx.getImageData(0, 0, size, size), { pixelRatio: 2 });
 }
 
 function buildLocationFeatureCollection(fix, moving, heading) {
+    const hasHeading = Number.isFinite(heading);
     return {
         type: 'FeatureCollection',
         features: [{
             type: 'Feature',
             properties: {
                 moving: Boolean(moving),
-                heading: Number.isFinite(heading) ? heading : 0
+                hasHeading,
+                heading: hasHeading ? heading : 0
             },
             geometry: {
                 type: 'Point',
@@ -985,6 +1066,36 @@ function normalizeHeading(value) {
     const heading = Number(value);
     if (!Number.isFinite(heading)) return null;
     return ((heading % 360) + 360) % 360;
+}
+
+function startRecordingTick() {
+    stopRecordingTick();
+    _recordingTickIntervalId = setInterval(() => {
+        if (_recording.state !== 'recording') {
+            stopRecordingTick();
+            return;
+        }
+        emitRecordingStatus();
+    }, 1000);
+}
+
+function stopRecordingTick() {
+    if (_recordingTickIntervalId !== null) {
+        clearInterval(_recordingTickIntervalId);
+        _recordingTickIntervalId = null;
+    }
+}
+
+// Richiamato dopo un cambio basemap: MapLibre azzera sorgenti/layer, qui le
+// ricreiamo subito invece di attendere il prossimo fix GPS.
+export function restoreDeviceOverlays() {
+    if (!mapLoaded || !map) return;
+    if (_lastFix) {
+        updateLocationMarker(_lastFix, _isMoving, _lastHeading);
+    }
+    if (_recording.state !== 'idle' && _recordingSettings.showLiveTrack) {
+        refreshRecordingPreview(true);
+    }
 }
 
 function createEmptyRecording() {

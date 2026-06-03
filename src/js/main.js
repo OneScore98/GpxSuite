@@ -12,7 +12,8 @@ import {
     configureMapillaryToken,
     setMapillaryCoverageVisible,
     closeMapillaryViewer,
-    createBaseMapStyle
+    createBaseMapStyle,
+    setStyleRestoredHook
 } from './map.js';
 import { importGPX, exportGPX } from './gpx.js';
 import { addPointToActiveSegment, cutTrackAtPoint, handleBoxDeleteClick, saveHistoryState, triggerUndo, setSnapProfile } from './tracks.js';
@@ -32,7 +33,8 @@ import {
     getDeviceRecordingStatus,
     getRecordingSettings,
     updateRecordingSettings,
-    getDefaultRecordingName
+    getDefaultRecordingName,
+    restoreDeviceOverlays
 } from './location.js';
 import {
     togglePrintPlanning,
@@ -109,6 +111,9 @@ initDeviceLocation({
     schedulePersistTracks,
     saveHistoryState
 });
+
+// Ricrea overlay registrazione/localizzazione dopo ogni cambio basemap.
+setStyleRestoredHook(restoreDeviceOverlays);
 
 // Inietta le dipendenze circolari in ui.js prima che venga usata
 injectDeps({
