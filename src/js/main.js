@@ -17,7 +17,21 @@ import {
 import { importGPX, exportGPX } from './gpx.js';
 import { addPointToActiveSegment, cutTrackAtPoint, handleBoxDeleteClick, saveHistoryState, triggerUndo, setSnapProfile } from './tracks.js';
 import { addWaypointAtCoords, saveWaypointModifications, openWaypointEditor, updateWaypointsOnMap } from './waypoints.js';
-import { flushPersistedStateNow, schedulePersistAppSession } from './storage.js';
+import { flushPersistedStateNow, schedulePersistAppSession, schedulePersistTracks } from './storage.js';
+import {
+    initDeviceLocation,
+    setDeviceLocationStatusHandler,
+    toggleDeviceLocation,
+    setDeviceRecordingStatusHandler,
+    startDeviceRecording,
+    pauseDeviceRecording,
+    resumeDeviceRecording,
+    finishDeviceRecording,
+    getDeviceRecordingStatus,
+    getRecordingSettings,
+    updateRecordingSettings,
+    getDefaultRecordingName
+} from './location.js';
 import {
     togglePrintPlanning,
     disablePrintPlanning,
@@ -51,6 +65,7 @@ import {
     changeTrackWidth,
     toggleTrackVisibility,
     handleTrackContextMenu,
+    downloadTrackGPX,
     handleTrackPointerDown,
     clearTrackLongPress,
     handleTrackTreeClick,
@@ -84,6 +99,15 @@ import {
     searchNominatim
 } from './ui.js';
 
+initDeviceLocation({
+    showToast,
+    updateMapData,
+    renderGisTree,
+    updateActiveTracksHeader,
+    schedulePersistTracks,
+    saveHistoryState
+});
+
 // Inietta le dipendenze circolari in ui.js prima che venga usata
 injectDeps({
     updateMapData,
@@ -109,7 +133,18 @@ injectDeps({
     updatePrintGridScale,
     setPrintPlanningOrientation,
     generateHighResPrintPreview,
-    syncPrintOutputFromPreview
+    syncPrintOutputFromPreview,
+    toggleDeviceLocation,
+    setDeviceLocationStatusHandler,
+    setDeviceRecordingStatusHandler,
+    startDeviceRecording,
+    pauseDeviceRecording,
+    resumeDeviceRecording,
+    finishDeviceRecording,
+    getDeviceRecordingStatus,
+    getRecordingSettings,
+    updateRecordingSettings,
+    getDefaultRecordingName
 });
 
 // Esponi le funzioni richiamate dagli handler inline HTML (onclick="...")
@@ -120,6 +155,7 @@ window.changeTrackColor = changeTrackColor;
 window.changeTrackWidth = changeTrackWidth;
 window.toggleTrackVisibility = toggleTrackVisibility;
 window.handleTrackContextMenu = handleTrackContextMenu;
+window.downloadTrackGPX = downloadTrackGPX;
 window.handleTrackPointerDown = handleTrackPointerDown;
 window.clearTrackLongPress = clearTrackLongPress;
 window.handleTrackTreeClick = handleTrackTreeClick;

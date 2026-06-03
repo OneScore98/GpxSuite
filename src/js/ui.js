@@ -58,6 +58,17 @@ let _updatePrintGridScale = null;
 let _setPrintPlanningOrientation = null;
 let _generateHighResPrintPreview = null;
 let _syncPrintOutputFromPreview = null;
+let _toggleDeviceLocation = null;
+let _setDeviceLocationStatusHandler = null;
+let _setDeviceRecordingStatusHandler = null;
+let _startDeviceRecording = null;
+let _pauseDeviceRecording = null;
+let _resumeDeviceRecording = null;
+let _finishDeviceRecording = null;
+let _getDeviceRecordingStatus = null;
+let _getRecordingSettings = null;
+let _updateRecordingSettings = null;
+let _getDefaultRecordingName = null;
 let _localLibraryBound = false;
 let _gisDragPayload = null;
 let _trackContextMenu = null;
@@ -138,6 +149,143 @@ function updateMapillaryToolbarButton() {
     btn.classList.toggle('text-gray-300', !active);
 }
 
+function updateDeviceLocationToolbarButton(status = {}) {
+    const btn = document.getElementById('btn-device-location');
+    if (!btn) return;
+
+    const active = Boolean(status.active);
+    const waiting = Boolean(status.waiting);
+    const moving = Boolean(status.moving);
+    const enabled = active || waiting;
+    const state = waiting ? 'waiting' : (active ? (moving ? 'moving' : 'active') : 'idle');
+
+    btn.dataset.locationState = state;
+    btn.classList.toggle('bg-sky-600', enabled);
+    btn.classList.toggle('text-white', enabled);
+    btn.classList.toggle('text-gray-300', !enabled);
+    btn.title = waiting ?
+        'Localizzazione in corso...' :
+        (active ? 'Disattiva localizzazione dispositivo' : 'Attiva localizzazione dispositivo');
+}
+
+function formatRecordingElapsed(ms = 0) {
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function updateDeviceRecordingUi(status = {}) {
+    const btn = document.getElementById('btn-device-recording');
+    const chip = document.getElementById('recording-status-chip');
+    const chipText = document.getElementById('recording-status-text');
+    const badge = document.getElementById('recording-settings-badge');
+    const state = status.state || 'idle';
+
+    if (btn) {
+        btn.dataset.recordingState = state;
+        btn.title = state === 'recording' ?
+            'Pausa o termina registrazione' :
+            (state === 'paused' ? 'Riprendi registrazione' : 'Avvia registrazione traccia');
+    }
+
+    if (chip) {
+        chip.dataset.recordingState = state;
+        chip.classList.toggle('hidden', state === 'idle');
+    }
+    if (chipText) {
+        const label = state === 'paused' ? 'PAUSA' : 'REC';
+        chipText.textContent = `${label} ${formatRecordingElapsed(status.elapsedMs)} ${status.pointsCount || 0} pt`;
+    }
+    if (badge) {
+        badge.textContent = state === 'recording' ? 'REC' : (state === 'paused' ? 'Pausa' : 'Pronta');
+        badge.className = state === 'recording' ?
+            'text-[9px] bg-red-950 text-red-300 px-1.5 py-0.5 rounded border border-red-900 font-bold uppercase' :
+            (state === 'paused' ?
+                'text-[9px] bg-amber-950 text-amber-200 px-1.5 py-0.5 rounded border border-amber-900 font-bold uppercase' :
+                'text-[9px] bg-gray-950 text-gray-400 px-1.5 py-0.5 rounded border border-gray-800 font-bold uppercase');
+    }
+}
+
+function closeRecordingActionModal() {
+    document.getElementById('modal-recording-action')?.classList.add('hidden');
+}
+
+function openRecordingActionModal() {
+    document.getElementById('modal-recording-action')?.classList.remove('hidden');
+    refreshLucideIcons();
+}
+
+function closeRecordingSaveModal() {
+    document.getElementById('modal-recording-save')?.classList.add('hidden');
+}
+
+function openRecordingSaveModal() {
+    const input = document.getElementById('recording-save-name');
+    if (input) {
+        input.value = _getDefaultRecordingName ? _getDefaultRecordingName() : 'rec';
+        setTimeout(() => input.focus(), 30);
+    }
+    document.getElementById('modal-recording-save')?.classList.remove('hidden');
+    refreshLucideIcons();
+}
+
+function syncRecordingSettingsForm() {
+    if (!_getRecordingSettings) return;
+    const settings = _getRecordingSettings();
+    const setValue = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.value = value;
+    };
+    const setChecked = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.checked = Boolean(value);
+    };
+    setValue('recording-min-distance', settings.minDistanceM);
+    setValue('recording-min-interval', settings.minIntervalMs / 1000);
+    setValue('recording-max-accuracy', settings.maxAccuracyM);
+    setValue('recording-min-speed', settings.minSpeedMps);
+    setValue('recording-preview-max-points', settings.livePreviewMaxPoints);
+    setValue('recording-track-width', settings.trackWidth);
+    setValue('recording-track-color', settings.trackColor);
+    setChecked('recording-show-live-track', settings.showLiveTrack);
+    setChecked('recording-save-elevation', settings.saveElevation);
+}
+
+function bindRecordingSettingsForm() {
+    syncRecordingSettingsForm();
+    const bindNumber = (id, key, transform = value => value) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.onchange = () => {
+            const value = Number(el.value);
+            if (_updateRecordingSettings && Number.isFinite(value)) {
+                _updateRecordingSettings({ [key]: transform(value) });
+                syncRecordingSettingsForm();
+            }
+        };
+    };
+    bindNumber('recording-min-distance', 'minDistanceM');
+    bindNumber('recording-min-interval', 'minIntervalMs', value => value * 1000);
+    bindNumber('recording-max-accuracy', 'maxAccuracyM');
+    bindNumber('recording-min-speed', 'minSpeedMps');
+    bindNumber('recording-preview-max-points', 'livePreviewMaxPoints');
+    bindNumber('recording-track-width', 'trackWidth');
+
+    const liveToggle = document.getElementById('recording-show-live-track');
+    if (liveToggle) {
+        liveToggle.onchange = () => _updateRecordingSettings?.({ showLiveTrack: liveToggle.checked });
+    }
+    const eleToggle = document.getElementById('recording-save-elevation');
+    if (eleToggle) {
+        eleToggle.onchange = () => _updateRecordingSettings?.({ saveElevation: eleToggle.checked });
+    }
+    const colorInput = document.getElementById('recording-track-color');
+    if (colorInput) {
+        colorInput.onchange = () => _updateRecordingSettings?.({ trackColor: colorInput.value });
+    }
+}
+
 function clearBoxDeleteSelection() {
     setBoxDeleteCoords(null);
     updateBoxDeletePreview();
@@ -172,6 +320,17 @@ export function injectDeps(deps) {
     _setPrintPlanningOrientation = deps.setPrintPlanningOrientation;
     _generateHighResPrintPreview = deps.generateHighResPrintPreview;
     _syncPrintOutputFromPreview = deps.syncPrintOutputFromPreview;
+    _toggleDeviceLocation = deps.toggleDeviceLocation;
+    _setDeviceLocationStatusHandler = deps.setDeviceLocationStatusHandler;
+    _setDeviceRecordingStatusHandler = deps.setDeviceRecordingStatusHandler;
+    _startDeviceRecording = deps.startDeviceRecording;
+    _pauseDeviceRecording = deps.pauseDeviceRecording;
+    _resumeDeviceRecording = deps.resumeDeviceRecording;
+    _finishDeviceRecording = deps.finishDeviceRecording;
+    _getDeviceRecordingStatus = deps.getDeviceRecordingStatus;
+    _getRecordingSettings = deps.getRecordingSettings;
+    _updateRecordingSettings = deps.updateRecordingSettings;
+    _getDefaultRecordingName = deps.getDefaultRecordingName;
 }
 
 export function setupPrintUiEvents() {
@@ -562,6 +721,7 @@ function openTrackContextMenuAt(trackId, clientX, clientY) {
       ${createTreeContextMenuButton('scissors', 'Taglia', 'cutTreeSelection()')}
       ${createTreeContextMenuButton('copy-plus', 'Duplica', `duplicateTreeSelection('${track.id}')`)}
       ${createTreeContextMenuButton('route', 'Estrai tratti non asfaltati', `extractOffroadFromTrack('${track.id}')`, pointCount < 2)}
+      ${createTreeContextMenuButton('download', 'Scarica traccia', `downloadTrackGPX('${track.id}', 'context_menu')`)}
       <div class="my-1 border-t border-gray-800"></div>
       <button onclick="openTrackNameEditor('${track.id}')" class="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-gray-800 text-left">
         <i data-lucide="pencil" class="w-3.5 h-3.5"></i><span>Rinomina</span>
@@ -601,6 +761,26 @@ export function handleTrackContextMenu(event, trackId) {
     if (!selectionHas(makeTreeKey('track', trackId))) selectTreeItem('track', trackId, null, event);
     setTrackActive(trackId, false);
     openTrackContextMenuAt(trackId, event.clientX, event.clientY);
+}
+
+export function downloadTrackGPX(trackId = activeTrackId, source = 'toolbar') {
+    const track = (trackId ? tracks.find(tr => tr.id === trackId) : null)
+        || (activeTrackId ? tracks.find(tr => tr.id === activeTrackId) : null)
+        || tracks[0];
+    if (!track) {
+        showToast('Seleziona una traccia da scaricare', 'error');
+        return;
+    }
+
+    trackAnalyticsEvent('export_gpx', {
+        source,
+        trackId: track.id,
+        trackName: track.name,
+        tracks: 1
+    }).catch(err => console.warn(err));
+
+    if (_exportGPX) _exportGPX(track.id);
+    closeTrackContextMenu();
 }
 
 export function handleTrackPointerDown(event, trackId) {
@@ -2530,6 +2710,69 @@ export function setupEvents() {
         updateMapillaryToolbarButton();
     };
 
+    const btnDeviceLocation = document.getElementById('btn-device-location');
+    if (btnDeviceLocation) {
+        btnDeviceLocation.onclick = () => {
+            const active = _toggleDeviceLocation ? _toggleDeviceLocation() : false;
+            if (active && isCompactLayout()) {
+                closeMobileToolbar();
+                syncMobileBackdrop();
+            }
+        };
+    }
+    if (_setDeviceLocationStatusHandler) {
+        _setDeviceLocationStatusHandler(updateDeviceLocationToolbarButton);
+    }
+    updateDeviceLocationToolbarButton();
+
+    const btnDeviceRecording = document.getElementById('btn-device-recording');
+    if (btnDeviceRecording) {
+        btnDeviceRecording.onclick = () => {
+            const status = _getDeviceRecordingStatus ? _getDeviceRecordingStatus() : { state: 'idle' };
+            if (status.state === 'recording') {
+                openRecordingActionModal();
+                return;
+            }
+            if (status.state === 'paused') {
+                _resumeDeviceRecording?.();
+                return;
+            }
+            _startDeviceRecording?.();
+        };
+    }
+    document.getElementById('btn-recording-action-pause')?.addEventListener('click', () => {
+        _pauseDeviceRecording?.();
+        closeRecordingActionModal();
+    });
+    document.getElementById('btn-recording-action-stop')?.addEventListener('click', () => {
+        _pauseDeviceRecording?.();
+        closeRecordingActionModal();
+        openRecordingSaveModal();
+    });
+    document.getElementById('btn-recording-action-cancel')?.addEventListener('click', closeRecordingActionModal);
+    document.getElementById('btn-recording-save-cancel')?.addEventListener('click', () => {
+        closeRecordingSaveModal();
+        const status = _getDeviceRecordingStatus ? _getDeviceRecordingStatus() : { state: 'idle' };
+        if (status.state === 'paused') _resumeDeviceRecording?.();
+    });
+    document.getElementById('btn-recording-save-confirm')?.addEventListener('click', async() => {
+        const btn = document.getElementById('btn-recording-save-confirm');
+        const input = document.getElementById('recording-save-name');
+        const name = input?.value?.trim() || (_getDefaultRecordingName ? _getDefaultRecordingName() : 'rec');
+        btn?.setAttribute('disabled', 'true');
+        try {
+            await _finishDeviceRecording?.(name);
+            closeRecordingSaveModal();
+        } finally {
+            btn?.removeAttribute('disabled');
+        }
+    });
+    if (_setDeviceRecordingStatusHandler) {
+        _setDeviceRecordingStatusHandler(updateDeviceRecordingUi);
+    }
+    bindRecordingSettingsForm();
+    updateDeviceRecordingUi(_getDeviceRecordingStatus ? _getDeviceRecordingStatus() : { state: 'idle' });
+
     map.on('click', (e) => {
         const coords = e.lngLat;
         if (isDrawing) {
@@ -2616,8 +2859,7 @@ export function setupEvents() {
     };
 
     document.getElementById('btn-export-gpx').onclick = () => {
-        trackAnalyticsEvent('export_gpx', { tracks: tracks.length }).catch(err => console.warn(err));
-        _exportGPX();
+        downloadTrackGPX(activeTrackId, 'toolbar');
     };
 
     document.getElementById('btn-tree-new-track').onclick = () => {

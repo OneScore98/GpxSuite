@@ -4,7 +4,7 @@
 // per evitare di bloccare il main thread su file enormi. Se il Worker non è
 // disponibile (es. apertura via file://) si ricade sul parsing inline a chunk.
 
-import { tracks, map, setActiveSegmentId } from './state.js';
+import { tracks, activeTrackId, map, setActiveSegmentId } from './state.js';
 import { createNewTrack, showToast } from './ui.js';
 import { saveHistoryState } from './tracks.js';
 import { updateMapData } from './map.js';
@@ -180,33 +180,50 @@ async function parseInline(xmlText, fileName) {
 
 // ─── Export GPX ──────────────────────────────────────────────────────────────
 
-export function exportGPX() {
+function sanitizeGpxFilename(name) {
+    return String(name || 'gpxsuite_export')
+        .trim()
+        .replace(/[\\/:*?"<>|]+/g, '-')
+        .replace(/\s+/g, '_')
+        .replace(/_+/g, '_') || 'gpxsuite_export';
+}
+
+export function exportGPX(trackId = activeTrackId) {
     if (tracks.length === 0) {
         showToast("Nessun dato GIS da esportare", "error");
         return;
     }
+
+    const selectedTrack = (trackId ? tracks.find(track => track.id === trackId) : null)
+        || (activeTrackId ? tracks.find(track => track.id === activeTrackId) : null)
+        || tracks[0];
+    if (!selectedTrack) {
+        showToast("Seleziona una traccia da esportare", "error");
+        return;
+    }
+    const exportTracks = [selectedTrack];
 
     // Build con array di stringhe + join: molto più veloce di concatenazione su 100k+ punti
     const parts = [];
     parts.push(`<?xml version="1.0" encoding="UTF-8"?>\n`);
     parts.push(`<gpx version="1.1" creator="GpxSuite" xmlns="http://www.topografix.com/GPX/1/1">\n`);
 
-    tracks.forEach(track => {
-        track.waypoints.forEach(wp => {
+    exportTracks.forEach(track => {
+        (track.waypoints || []).forEach(wp => {
             parts.push(`  <wpt lat="${wp.lat.toFixed(6)}" lon="${wp.lon.toFixed(6)}">\n`);
             parts.push(`    <ele>${wp.ele}</ele>\n`);
             parts.push(`    <name>${escapeXml(wp.name)}</name>\n`);
-            parts.push(`    <desc>${escapeXml(wp.desc)}</desc>\n`);
+            parts.push(`    <desc>${escapeXml(wp.desc || '')}</desc>\n`);
             parts.push(`  </wpt>\n`);
         });
     });
 
-    tracks.forEach(track => {
+    exportTracks.forEach(track => {
         parts.push(`  <trk>\n`);
-        parts.push(`    <name>${escapeXml(track.name)}</name>\n`);
-        parts.push(`    <desc>${escapeXml(track.desc)}</desc>\n`);
+        parts.push(`    <name>${escapeXml(track.name || 'Traccia')}</name>\n`);
+        parts.push(`    <desc>${escapeXml(track.desc || '')}</desc>\n`);
 
-        track.segments.forEach(seg => {
+        (track.segments || []).forEach(seg => {
             parts.push(`    <trkseg>\n`);
 
             // Sull'export usiamo la versione iterativa (non ricorsiva): la versione
@@ -233,13 +250,13 @@ export function exportGPX() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${tracks[0]?.name || 'gpxsuite_export'}.gpx`;
+    a.download = `${sanitizeGpxFilename(selectedTrack.name)}.gpx`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    showToast("GPX esportato correttamente con minificazione!", "success");
+    showToast("Traccia GPX esportata correttamente", "success");
 }
 
 // Douglas-Peucker ITERATIVO (sostituisce la versione ricorsiva che faceva

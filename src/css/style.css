@@ -50,6 +50,7 @@ body.auth-locked #panel-bottom-stats,
 body.auth-locked #panel-print-setup,
 body.auth-locked #panel-mapillary-viewer,
 body.auth-locked #cursor-coordinates,
+body.auth-locked #recording-status-chip,
 body.auth-locked #print-drag-grid {
     display: none !important;
 }
@@ -755,6 +756,7 @@ body.auth-locked #print-drag-grid {
 #panel-print-setup,
 #panel-mapillary-viewer,
 #cursor-coordinates,
+#recording-status-chip,
 #toast-container {
     position: fixed;
 }
@@ -762,6 +764,162 @@ body.auth-locked #print-drag-grid {
 #map .maplibregl-ctrl-attrib,
 #map .maplibregl-ctrl-attrib a {
     color: #1f2937;
+}
+
+#btn-device-location[data-location-state="waiting"] .device-location-button-indicator {
+    background: #f59e0b;
+    animation: device-location-button-pulse 1s ease-in-out infinite;
+}
+
+#btn-device-location[data-location-state="active"] .device-location-button-indicator {
+    background: #38bdf8;
+}
+
+#btn-device-location[data-location-state="moving"] .device-location-button-indicator {
+    background: #22c55e;
+}
+
+#btn-device-recording[data-recording-state="recording"] {
+    background: #dc2626;
+    color: #ffffff;
+}
+
+#btn-device-recording[data-recording-state="paused"] {
+    background: #b45309;
+    color: #ffffff;
+}
+
+#btn-device-recording[data-recording-state="recording"] .device-recording-button-indicator {
+    background: #ffffff;
+    animation: device-location-button-pulse 1s ease-in-out infinite;
+}
+
+#btn-device-recording[data-recording-state="paused"] .device-recording-button-indicator {
+    background: #fbbf24;
+}
+
+.recording-status-dot {
+    display: inline-block;
+    width: 0.45rem;
+    height: 0.45rem;
+    margin-right: 0.35rem;
+    border-radius: 9999px;
+    background: #ef4444;
+    box-shadow: 0 0 0 0.2rem rgba(239, 68, 68, 0.16);
+    vertical-align: -0.03rem;
+    animation: device-location-button-pulse 1s ease-in-out infinite;
+}
+
+#recording-status-chip[data-recording-state="paused"] {
+    border-color: rgba(180, 83, 9, 0.8);
+    color: #fde68a;
+}
+
+#recording-status-chip[data-recording-state="paused"] .recording-status-dot {
+    background: #f59e0b;
+    box-shadow: 0 0 0 0.2rem rgba(245, 158, 11, 0.16);
+    animation: none;
+}
+
+.device-location-marker {
+    --device-heading: 0deg;
+    position: relative;
+    width: 2.75rem;
+    height: 2.75rem;
+    pointer-events: none;
+    filter: drop-shadow(0 0.45rem 0.75rem rgba(15, 23, 42, 0.35));
+}
+
+.device-location-pulse,
+.device-location-dot,
+.device-location-heading {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+}
+
+.device-location-pulse {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 9999px;
+    background: rgba(14, 165, 233, 0.2);
+    transform: translate(-50%, -50%);
+    animation: device-location-marker-pulse 2s ease-out infinite;
+}
+
+.device-location-dot {
+    width: 1rem;
+    height: 1rem;
+    border: 3px solid #ffffff;
+    border-radius: 9999px;
+    background: #2563eb;
+    box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.18);
+    transform: translate(-50%, -50%);
+    transition: width 160ms ease, height 160ms ease, background 160ms ease;
+}
+
+.device-location-heading {
+    inset: 0;
+    opacity: 0;
+    transform: rotate(var(--device-heading));
+    transform-origin: 50% 50%;
+    transition: opacity 160ms ease, transform 180ms ease;
+}
+
+.device-location-heading::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 0.05rem;
+    width: 0;
+    height: 0;
+    border-left: 0.45rem solid transparent;
+    border-right: 0.45rem solid transparent;
+    border-bottom: 1.15rem solid #0ea5e9;
+    transform: translateX(-50%);
+}
+
+.device-location-heading::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 0.28rem;
+    width: 0;
+    height: 0;
+    border-left: 0.26rem solid transparent;
+    border-right: 0.26rem solid transparent;
+    border-bottom: 0.65rem solid rgba(255, 255, 255, 0.72);
+    transform: translateX(-50%);
+}
+
+.device-location-marker--moving .device-location-heading {
+    opacity: 1;
+}
+
+.device-location-marker--moving .device-location-dot {
+    width: 1.1rem;
+    height: 1.1rem;
+    background: #0ea5e9;
+}
+
+@keyframes device-location-button-pulse {
+    0%, 100% {
+        opacity: 0.55;
+    }
+    50% {
+        opacity: 1;
+    }
+}
+
+@keyframes device-location-marker-pulse {
+    0% {
+        opacity: 0.65;
+        transform: translate(-50%, -50%) scale(0.55);
+    }
+    100% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(1.75);
+    }
 }
 
 #panel-mapillary-viewer {
@@ -1053,6 +1211,16 @@ textarea {
 button,
 label {
     touch-action: manipulation;
+}
+
+.gpx-track-context-menu {
+    box-sizing: border-box;
+    width: min(15rem, calc(100vw - 1rem));
+    max-width: calc(100vw - 1rem);
+    max-height: calc(var(--app-height, 100vh) - var(--safe-top, 0px) - var(--safe-bottom, 0px) - 1rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
 }
 
 #mobile-panel-backdrop {

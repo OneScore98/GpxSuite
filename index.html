@@ -255,6 +255,18 @@
         <i data-lucide="map-pin" class="w-4 h-4"></i>
       </button>
 
+            <!-- Localizzazione dispositivo -->
+            <button id="btn-device-location" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300 relative" title="Attiva localizzazione dispositivo" data-location-state="idle">
+        <i data-lucide="locate-fixed" class="w-4 h-4"></i>
+        <span class="device-location-button-indicator absolute bottom-1 right-1 w-2 h-2 rounded-full bg-gray-600 border border-gray-950"></span>
+      </button>
+
+            <!-- Registrazione traccia dispositivo -->
+            <button id="btn-device-recording" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300 relative" title="Avvia registrazione traccia" data-recording-state="idle">
+        <i data-lucide="circle-dot" class="w-4 h-4"></i>
+        <span class="device-recording-button-indicator absolute bottom-1 right-1 w-2 h-2 rounded-full bg-gray-600 border border-gray-950"></span>
+      </button>
+
             <div class="h-[1px] bg-gray-800 my-1 mx-1"></div>
 
             <!-- Toggle Mapillary -->
@@ -411,6 +423,52 @@
                     <button id="snap-profile-moto" class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Moto (OSRM)">🏍️</button>
                     <button id="snap-profile-car" class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Auto (OSRM)">🚗</button>
                 </div>
+            </div>
+
+            <!-- Impostazioni registrazione -->
+            <div class="space-y-3 bg-gray-900/50 p-2.5 rounded-xl border border-gray-800">
+                <div class="flex items-center justify-between">
+                    <label class="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">Impostazioni registrazione</label>
+                    <span id="recording-settings-badge" class="text-[9px] bg-gray-950 text-gray-400 px-1.5 py-0.5 rounded border border-gray-800 font-bold uppercase">Pronta</span>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <label class="space-y-1">
+            <span class="text-[9px] text-gray-500 uppercase font-semibold">Distanza min (m)</span>
+            <input type="number" id="recording-min-distance" min="0" step="1" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-red-500">
+          </label>
+                    <label class="space-y-1">
+            <span class="text-[9px] text-gray-500 uppercase font-semibold">Intervallo min (s)</span>
+            <input type="number" id="recording-min-interval" min="0" step="0.5" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-red-500">
+          </label>
+                    <label class="space-y-1">
+            <span class="text-[9px] text-gray-500 uppercase font-semibold">Precisione max (m)</span>
+            <input type="number" id="recording-max-accuracy" min="1" step="1" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-red-500">
+          </label>
+                    <label class="space-y-1">
+            <span class="text-[9px] text-gray-500 uppercase font-semibold">Velocità min (m/s)</span>
+            <input type="number" id="recording-min-speed" min="0" step="0.1" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-red-500">
+          </label>
+                    <label class="space-y-1">
+            <span class="text-[9px] text-gray-500 uppercase font-semibold">Punti max anteprima</span>
+            <input type="number" id="recording-preview-max-points" min="100" step="100" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-red-500">
+          </label>
+                    <label class="space-y-1">
+            <span class="text-[9px] text-gray-500 uppercase font-semibold">Spessore</span>
+            <input type="number" id="recording-track-width" min="1" max="10" step="1" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-red-500">
+          </label>
+                </div>
+                <label class="flex items-center justify-between gap-3 border-t border-gray-800 pt-2">
+          <span class="text-xs text-gray-300">Visualizza traccia live</span>
+          <input type="checkbox" id="recording-show-live-track" class="accent-red-500">
+        </label>
+                <label class="flex items-center justify-between gap-3">
+          <span class="text-xs text-gray-300">Salva quota GPS</span>
+          <input type="checkbox" id="recording-save-elevation" class="accent-red-500">
+        </label>
+                <label class="flex items-center justify-between gap-3">
+          <span class="text-xs text-gray-300">Colore traccia</span>
+          <input type="color" id="recording-track-color" class="w-9 h-7 bg-gray-950 border border-gray-800 rounded cursor-pointer">
+        </label>
             </div>
 
             <!-- Account e amministrazione -->
@@ -626,8 +684,47 @@
         --.------, --.------
     </div>
 
+    <!-- INDICATORE REGISTRAZIONE -->
+    <div id="recording-status-chip" class="hidden absolute top-3 left-1/2 -translate-x-1/2 z-40 pointer-events-none bg-gray-950/90 border border-red-900/80 text-red-200 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide shadow-lg">
+        <span class="recording-status-dot"></span>
+        <span id="recording-status-text">REC</span>
+    </div>
+
     <!-- NOTIFICHE TOAST -->
     <div id="toast-container" class="absolute bottom-3 left-3 z-50 flex flex-col gap-1.5 pointer-events-none max-w-xs"></div>
+
+    <!-- MODALE AZIONE REGISTRAZIONE -->
+    <div id="modal-recording-action" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[100002] flex items-center justify-center p-3">
+        <div class="w-full max-w-xs bg-gray-950 border border-gray-800 rounded-2xl shadow-2xl p-4 space-y-4">
+            <div class="flex items-center gap-2 text-red-300">
+                <i data-lucide="circle-dot" class="w-4 h-4"></i>
+                <h3 class="font-bold text-xs uppercase tracking-wider">Registrazione</h3>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+                <button id="btn-recording-action-pause" class="bg-amber-700/30 hover:bg-amber-700/50 text-amber-200 border border-amber-900 rounded-lg py-2 text-xs font-semibold">Pausa</button>
+                <button id="btn-recording-action-stop" class="bg-red-700/30 hover:bg-red-700/50 text-red-200 border border-red-900 rounded-lg py-2 text-xs font-semibold">Stop</button>
+            </div>
+            <button id="btn-recording-action-cancel" class="w-full bg-gray-900 hover:bg-gray-800 border border-gray-800 text-gray-300 rounded-lg py-2 text-xs font-semibold">Annulla</button>
+        </div>
+    </div>
+
+    <!-- MODALE SALVATAGGIO REGISTRAZIONE -->
+    <div id="modal-recording-save" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[100002] flex items-center justify-center p-3">
+        <div class="w-full max-w-sm bg-gray-950 border border-gray-800 rounded-2xl shadow-2xl p-4 space-y-4">
+            <div class="flex items-center gap-2 text-red-300">
+                <i data-lucide="save" class="w-4 h-4"></i>
+                <h3 class="font-bold text-xs uppercase tracking-wider">Salva registrazione</h3>
+            </div>
+            <label class="block space-y-1">
+        <span class="text-[10px] text-gray-400 uppercase font-semibold tracking-wider">Nome file</span>
+        <input id="recording-save-name" type="text" class="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-red-500">
+      </label>
+            <div class="grid grid-cols-2 gap-2">
+                <button id="btn-recording-save-cancel" class="bg-gray-900 hover:bg-gray-800 border border-gray-800 text-gray-300 rounded-lg py-2 text-xs font-semibold">Annulla</button>
+                <button id="btn-recording-save-confirm" class="bg-red-600 hover:bg-red-500 text-white rounded-lg py-2 text-xs font-bold">Scegli posizione</button>
+            </div>
+        </div>
+    </div>
 
     <!-- VIEWER MAPILLARY -->
     <div id="panel-mapillary-viewer" class="hidden absolute left-1/2 bottom-3 -translate-x-1/2 z-30 w-[22rem] max-w-[calc(100vw-1.5rem)] bg-gray-950/96 backdrop-blur-md border border-gray-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
