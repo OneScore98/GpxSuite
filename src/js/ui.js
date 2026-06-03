@@ -348,6 +348,11 @@ function closeRecordingActionModal() {
 }
 
 function openRecordingActionModal() {
+    const status = _getDeviceRecordingStatus ? _getDeviceRecordingStatus() : { state: 'idle' };
+    const pauseButton = document.getElementById('btn-recording-action-pause');
+    if (pauseButton) {
+        pauseButton.textContent = status.state === 'paused' ? 'Riprendi' : 'Pausa';
+    }
     document.getElementById('modal-recording-action')?.classList.remove('hidden');
     refreshLucideIcons();
 }
@@ -420,6 +425,25 @@ function bindRecordingSettingsForm() {
     const colorInput = document.getElementById('recording-track-color');
     if (colorInput) {
         colorInput.onchange = () => _updateRecordingSettings?.({ trackColor: colorInput.value });
+    }
+}
+
+function handleDeviceRecordingButtonClick(source = 'toolbar') {
+    const status = _getDeviceRecordingStatus ? _getDeviceRecordingStatus() : { state: 'idle' };
+    if (status.state === 'recording') {
+        openRecordingActionModal();
+        return;
+    }
+    if (status.state === 'paused') {
+        if (source === 'chip') {
+            openRecordingActionModal();
+        } else {
+            _resumeDeviceRecording?.();
+        }
+        return;
+    }
+    if (source !== 'chip') {
+        _startDeviceRecording?.();
     }
 }
 
@@ -2877,21 +2901,18 @@ export function setupEvents() {
 
     const btnDeviceRecording = document.getElementById('btn-device-recording');
     if (btnDeviceRecording) {
-        btnDeviceRecording.onclick = () => {
-            const status = _getDeviceRecordingStatus ? _getDeviceRecordingStatus() : { state: 'idle' };
-            if (status.state === 'recording') {
-                openRecordingActionModal();
-                return;
-            }
-            if (status.state === 'paused') {
-                _resumeDeviceRecording?.();
-                return;
-            }
-            _startDeviceRecording?.();
-        };
+        btnDeviceRecording.onclick = () => handleDeviceRecordingButtonClick('toolbar');
     }
+    document.getElementById('recording-status-chip')?.addEventListener('click', () => handleDeviceRecordingButtonClick('chip'));
+    document.getElementById('recording-status-chip')?.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        handleDeviceRecordingButtonClick('chip');
+    });
     document.getElementById('btn-recording-action-pause')?.addEventListener('click', () => {
-        _pauseDeviceRecording?.();
+        const status = _getDeviceRecordingStatus ? _getDeviceRecordingStatus() : { state: 'idle' };
+        if (status.state === 'paused') _resumeDeviceRecording?.();
+        else _pauseDeviceRecording?.();
         closeRecordingActionModal();
     });
     document.getElementById('btn-recording-action-stop')?.addEventListener('click', () => {

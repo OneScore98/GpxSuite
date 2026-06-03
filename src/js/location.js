@@ -13,7 +13,7 @@ const INITIAL_LOCATION_ZOOM = 16.5;
 const MOVEMENT_MIN_DISTANCE_M = 5;
 const MOVEMENT_MIN_SPEED_MPS = 0.7;
 const FOLLOW_MIN_INTERVAL_MS = 800;
-const USER_EXPLORING_RECENTER_DELAY_MS = 12000;
+const USER_EXPLORING_RECENTER_DELAY_MS = 6000;
 const LOCATION_CENTERED_DISTANCE_M = 25;
 const RECENTERED_CONTROL_GRACE_MS = 2200;
 const LOCATION_SOURCE_ID = 'device-location';
@@ -23,6 +23,9 @@ const LOCATION_HEADING_LAYER_ID = 'device-location-heading-layer';
 const LOCATION_HEADING_ICON_ID = 'device-location-heading-icon';
 const RECORDING_SOURCE_ID = 'device-recording-track';
 const RECORDING_LAYER_ID = 'device-recording-track-layer';
+const RECORDING_CASING_LAYER_ID = 'device-recording-track-casing-layer';
+const RECORDING_POINT_LAYER_ID = 'device-recording-current-point-layer';
+const RECORDING_POINT_HALO_LAYER_ID = 'device-recording-current-point-halo-layer';
 const RECORDING_PREVIEW_THROTTLE_MS = 1000;
 
 const DEFAULT_RECORDING_SETTINGS = {
@@ -455,15 +458,23 @@ function isMapCenteredOnLastFix() {
 function followPosition(fix) {
     if (!mapLoaded || !map) return;
     const now = Date.now();
-    if (now - _lastFollowAt < FOLLOW_MIN_INTERVAL_MS) return;
+    const timing = getFollowTiming();
+    if (now - _lastFollowAt < timing.intervalMs) return;
     if (now < _userExploringUntil) return;
     _lastFollowAt = now;
     _recentCenteredUntil = now + RECENTERED_CONTROL_GRACE_MS;
     map.easeTo({
         center: [fix.lon, fix.lat],
-        duration: 550,
+        duration: timing.durationMs,
         essential: true
     });
+}
+
+function getFollowTiming() {
+    const zoom = typeof map?.getZoom === 'function' ? map.getZoom() : 16;
+    if (zoom < 11) return { intervalMs: 450, durationMs: 900 };
+    if (zoom < 14) return { intervalMs: 600, durationMs: 720 };
+    return { intervalMs: FOLLOW_MIN_INTERVAL_MS, durationMs: 550 };
 }
 
 function bindMapExplorationDetection() {
@@ -514,10 +525,10 @@ function captureRecordingPoint(fix) {
 
 function shouldAcceptRecordingFix(fix) {
     if (!Number.isFinite(fix.lon) || !Number.isFinite(fix.lat)) return false;
-    const firstPoint = _recording.points.length === 0;
-    if (!firstPoint && Number.isFinite(fix.accuracy) && fix.accuracy > _recordingSettings.maxAccuracyM) {
+    if (Number.isFinite(fix.accuracy) && fix.accuracy > _recordingSettings.maxAccuracyM) {
         return false;
     }
+    const firstPoint = _recording.points.length === 0;
     if (!firstPoint && Number.isFinite(fix.speed) && fix.speed < _recordingSettings.minSpeedMps) {
         return false;
     }
@@ -529,7 +540,12 @@ function shouldAcceptRecordingFix(fix) {
     if (elapsed < _recordingSettings.minIntervalMs) return false;
 
     const distance = distanceMeters(last, fix);
-    return distance >= _recordingSettings.minDistanceM;
+    const isMoving = Number.isFinite(fix.speed) && fix.speed >= MOVEMENT_MIN_SPEED_MPS;
+    if (isMoving) return distance >= _recordingSettings.minDistanceM;
+
+    const accuracy = Number.isFinite(fix.accuracy) ? fix.accuracy : _recordingSettings.maxAccuracyM;
+    const stationaryMinDistance = Math.max(_recordingSettings.minDistanceM, 8, Math.min(16, accuracy * 0.8));
+    return distance >= stationaryMinDistance;
 }
 
 function refreshRecordingPreview(force = false) {
@@ -559,11 +575,29 @@ function ensureRecordingPreviewLayer() {
         });
     }
 
+    if (!map.getLayer(RECORDING_CASING_LAYER_ID)) {
+        map.addLayer({
+            id: RECORDING_CASING_LAYER_ID,
+            type: 'line',
+            source: RECORDING_SOURCE_ID,
+            filter: ['==', ['get', 'kind'], 'line'],
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: {
+                'line-color': '#ffffff',
+                'line-width': Math.max(3, _recordingSettings.trackWidth + 3),
+                'line-opacity': 0.58
+            }
+        });
+    } else {
+        map.setPaintProperty(RECORDING_CASING_LAYER_ID, 'line-width', Math.max(3, _recordingSettings.trackWidth + 3));
+    }
+
     if (!map.getLayer(RECORDING_LAYER_ID)) {
         map.addLayer({
             id: RECORDING_LAYER_ID,
             type: 'line',
             source: RECORDING_SOURCE_ID,
+            filter: ['==', ['get', 'kind'], 'line'],
             layout: { 'line-join': 'round', 'line-cap': 'round' },
             paint: {
                 'line-color': _recordingSettings.trackColor,
@@ -574,6 +608,42 @@ function ensureRecordingPreviewLayer() {
     } else {
         map.setPaintProperty(RECORDING_LAYER_ID, 'line-color', _recordingSettings.trackColor);
         map.setPaintProperty(RECORDING_LAYER_ID, 'line-width', _recordingSettings.trackWidth);
+    }
+
+    if (!map.getLayer(RECORDING_POINT_HALO_LAYER_ID)) {
+        map.addLayer({
+            id: RECORDING_POINT_HALO_LAYER_ID,
+            type: 'circle',
+            source: RECORDING_SOURCE_ID,
+            filter: ['==', ['get', 'kind'], 'current-point'],
+            paint: {
+                'circle-radius': 13,
+                'circle-color': _recordingSettings.trackColor,
+                'circle-opacity': 0.24,
+                'circle-stroke-width': 1,
+                'circle-stroke-color': 'rgba(255,255,255,0.7)'
+            }
+        });
+    } else {
+        map.setPaintProperty(RECORDING_POINT_HALO_LAYER_ID, 'circle-color', _recordingSettings.trackColor);
+    }
+
+    if (!map.getLayer(RECORDING_POINT_LAYER_ID)) {
+        map.addLayer({
+            id: RECORDING_POINT_LAYER_ID,
+            type: 'circle',
+            source: RECORDING_SOURCE_ID,
+            filter: ['==', ['get', 'kind'], 'current-point'],
+            paint: {
+                'circle-radius': 6,
+                'circle-color': _recordingSettings.trackColor,
+                'circle-stroke-width': 3,
+                'circle-stroke-color': '#ffffff',
+                'circle-opacity': 1
+            }
+        });
+    } else {
+        map.setPaintProperty(RECORDING_POINT_LAYER_ID, 'circle-color', _recordingSettings.trackColor);
     }
 }
 
@@ -599,14 +669,23 @@ function buildRecordingPreviewGeoJson() {
         }
     }
 
-    return {
-        type: 'FeatureCollection',
-        features: coordinates.length >= 2 ? [{
+    const features = [];
+    if (coordinates.length >= 2) {
+        features.push({
             type: 'Feature',
-            properties: {},
+            properties: { kind: 'line' },
             geometry: { type: 'LineString', coordinates }
-        }] : []
-    };
+        });
+    }
+    if (last) {
+        features.push({
+            type: 'Feature',
+            properties: { kind: 'current-point' },
+            geometry: { type: 'Point', coordinates: [last.lon, last.lat] }
+        });
+    }
+
+    return { type: 'FeatureCollection', features };
 }
 
 function emptyRecordingPreview() {
@@ -639,10 +718,10 @@ function ensureLocationMarkerLayers() {
             type: 'circle',
             source: LOCATION_SOURCE_ID,
             paint: {
-                'circle-radius': ['case', ['get', 'moving'], 20, 16],
+                'circle-radius': ['case', ['get', 'moving'], 28, 16],
                 'circle-color': '#0ea5e9',
-                'circle-opacity': ['case', ['get', 'moving'], 0.24, 0.18],
-                'circle-stroke-width': 1,
+                'circle-opacity': ['case', ['get', 'moving'], 0.32, 0.18],
+                'circle-stroke-width': ['case', ['get', 'moving'], 2, 1],
                 'circle-stroke-color': 'rgba(255,255,255,0.55)'
             }
         });
@@ -656,7 +735,7 @@ function ensureLocationMarkerLayers() {
             filter: ['==', ['get', 'moving'], true],
             layout: {
                 'icon-image': LOCATION_HEADING_ICON_ID,
-                'icon-size': 0.78,
+                'icon-size': 1.08,
                 'icon-rotate': ['get', 'heading'],
                 'icon-rotation-alignment': 'map',
                 'icon-allow-overlap': true,
@@ -671,9 +750,9 @@ function ensureLocationMarkerLayers() {
             type: 'circle',
             source: LOCATION_SOURCE_ID,
             paint: {
-                'circle-radius': ['case', ['get', 'moving'], 7, 6],
+                'circle-radius': ['case', ['get', 'moving'], 9, 6],
                 'circle-color': '#2563eb',
-                'circle-stroke-width': 3,
+                'circle-stroke-width': ['case', ['get', 'moving'], 4, 3],
                 'circle-stroke-color': '#ffffff',
                 'circle-opacity': 1
             }
@@ -739,10 +818,11 @@ function purgeLegacyDomLocationMarkers() {
 }
 
 function resolveHeading(fix, previousFix, distance, moving) {
-    let heading = Number.isFinite(fix.heading) ? fix.heading : null;
+    const courseHeading = previousFix && distance >= 2 ? bearingDegrees(previousFix, fix) : null;
+    let heading = moving && courseHeading !== null ? courseHeading : null;
 
-    if (heading === null && previousFix && distance >= 2) {
-        heading = bearingDegrees(previousFix, fix);
+    if (heading === null && Number.isFinite(fix.heading)) {
+        heading = fix.heading;
     }
 
     if (heading === null && Number.isFinite(_orientationHeading)) {
