@@ -14,6 +14,11 @@ const MOVEMENT_MIN_DISTANCE_M = 5;
 const MOVEMENT_MIN_SPEED_MPS = 0.7;
 const FOLLOW_MIN_INTERVAL_MS = 800;
 const USER_EXPLORING_RECENTER_DELAY_MS = 12000;
+const LOCATION_SOURCE_ID = 'device-location';
+const LOCATION_DOT_LAYER_ID = 'device-location-dot-layer';
+const LOCATION_HALO_LAYER_ID = 'device-location-halo-layer';
+const LOCATION_HEADING_LAYER_ID = 'device-location-heading-layer';
+const LOCATION_HEADING_ICON_ID = 'device-location-heading-icon';
 const RECORDING_SOURCE_ID = 'device-recording-track';
 const RECORDING_LAYER_ID = 'device-recording-track-layer';
 const RECORDING_PREVIEW_THROTTLE_MS = 1000;
@@ -37,8 +42,6 @@ const GEOLOCATION_OPTIONS = {
 };
 
 let _watchId = null;
-let _marker = null;
-let _markerEl = null;
 let _lastFix = null;
 let _lastHeading = null;
 let _orientationHeading = null;
@@ -262,6 +265,7 @@ export function startDeviceLocation() {
     _lastFix = null;
     _lastHeading = null;
     _lastFollowAt = 0;
+    purgeLegacyDomLocationMarkers();
     emitStatus();
     bindMapExplorationDetection();
     startOrientationTracking();
@@ -297,7 +301,7 @@ export function stopDeviceLocation(reason = 'programmatic') {
     _lastFix = null;
     _lastHeading = null;
     _lastFollowAt = 0;
-    removeMarker();
+    clearLocationMarker();
     stopOrientationTracking();
     emitStatus();
 
@@ -334,8 +338,7 @@ function handlePosition(position) {
     _isMoving = moving;
     _waitingForFirstFix = false;
 
-    ensureMarker();
-    updateMarker(fix, moving, heading);
+    updateLocationMarker(fix, moving, heading);
 
     if (isFirstFix) {
         focusInitialPosition(fix);
@@ -534,38 +537,129 @@ function emptyRecordingPreview() {
     return { type: 'FeatureCollection', features: [] };
 }
 
-function ensureMarker() {
-    if (_marker || !mapLoaded || !map || !window.maplibregl) return;
-
-    _markerEl = document.createElement('div');
-    _markerEl.className = 'device-location-marker';
-    _markerEl.setAttribute('aria-label', 'Posizione dispositivo');
-    _markerEl.innerHTML = `
-        <span class="device-location-heading" aria-hidden="true"></span>
-        <span class="device-location-pulse" aria-hidden="true"></span>
-        <span class="device-location-dot" aria-hidden="true"></span>
-    `;
-
-    _marker = new window.maplibregl.Marker({
-        element: _markerEl,
-        anchor: 'center'
-    }).addTo(map);
+function updateLocationMarker(fix, moving, heading) {
+    purgeLegacyDomLocationMarkers();
+    ensureLocationMarkerLayers();
+    const source = mapLoaded && map ? map.getSource(LOCATION_SOURCE_ID) : null;
+    if (!source) return;
+    source.setData(buildLocationFeatureCollection(fix, moving, heading));
 }
 
-function updateMarker(fix, moving, heading) {
-    if (!_marker || !_markerEl) return;
-    _marker.setLngLat([fix.lon, fix.lat]);
-    _markerEl.classList.toggle('device-location-marker--moving', moving);
-    _markerEl.style.setProperty('--device-heading', `${Number.isFinite(heading) ? heading : 0}deg`);
-    _markerEl.title = moving ? 'Posizione in movimento' : 'Posizione dispositivo';
-}
+function ensureLocationMarkerLayers() {
+    if (!mapLoaded || !map || (typeof map.isStyleLoaded === 'function' && !map.isStyleLoaded())) return;
 
-function removeMarker() {
-    if (_marker) {
-        _marker.remove();
+    ensureHeadingIcon();
+
+    if (!map.getSource(LOCATION_SOURCE_ID)) {
+        map.addSource(LOCATION_SOURCE_ID, {
+            type: 'geojson',
+            data: emptyLocationFeatureCollection()
+        });
     }
-    _marker = null;
-    _markerEl = null;
+
+    if (!map.getLayer(LOCATION_HALO_LAYER_ID)) {
+        map.addLayer({
+            id: LOCATION_HALO_LAYER_ID,
+            type: 'circle',
+            source: LOCATION_SOURCE_ID,
+            paint: {
+                'circle-radius': ['case', ['get', 'moving'], 20, 16],
+                'circle-color': '#0ea5e9',
+                'circle-opacity': ['case', ['get', 'moving'], 0.24, 0.18],
+                'circle-stroke-width': 1,
+                'circle-stroke-color': 'rgba(255,255,255,0.55)'
+            }
+        });
+    }
+
+    if (!map.getLayer(LOCATION_HEADING_LAYER_ID)) {
+        map.addLayer({
+            id: LOCATION_HEADING_LAYER_ID,
+            type: 'symbol',
+            source: LOCATION_SOURCE_ID,
+            filter: ['==', ['get', 'moving'], true],
+            layout: {
+                'icon-image': LOCATION_HEADING_ICON_ID,
+                'icon-size': 0.78,
+                'icon-rotate': ['get', 'heading'],
+                'icon-rotation-alignment': 'map',
+                'icon-allow-overlap': true,
+                'icon-ignore-placement': true
+            }
+        });
+    }
+
+    if (!map.getLayer(LOCATION_DOT_LAYER_ID)) {
+        map.addLayer({
+            id: LOCATION_DOT_LAYER_ID,
+            type: 'circle',
+            source: LOCATION_SOURCE_ID,
+            paint: {
+                'circle-radius': ['case', ['get', 'moving'], 7, 6],
+                'circle-color': '#2563eb',
+                'circle-stroke-width': 3,
+                'circle-stroke-color': '#ffffff',
+                'circle-opacity': 1
+            }
+        });
+    }
+}
+
+function ensureHeadingIcon() {
+    if (!mapLoaded || !map || (typeof map.hasImage === 'function' && map.hasImage(LOCATION_HEADING_ICON_ID))) return;
+
+    const size = 64;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, size, size);
+    ctx.beginPath();
+    ctx.moveTo(32, 4);
+    ctx.lineTo(50, 40);
+    ctx.quadraticCurveTo(32, 31, 14, 40);
+    ctx.closePath();
+    ctx.fillStyle = '#0ea5e9';
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 5;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+    ctx.fill();
+
+    map.addImage(LOCATION_HEADING_ICON_ID, ctx.getImageData(0, 0, size, size), { pixelRatio: 2 });
+}
+
+function buildLocationFeatureCollection(fix, moving, heading) {
+    return {
+        type: 'FeatureCollection',
+        features: [{
+            type: 'Feature',
+            properties: {
+                moving: Boolean(moving),
+                heading: Number.isFinite(heading) ? heading : 0
+            },
+            geometry: {
+                type: 'Point',
+                coordinates: [fix.lon, fix.lat]
+            }
+        }]
+    };
+}
+
+function emptyLocationFeatureCollection() {
+    return { type: 'FeatureCollection', features: [] };
+}
+
+function clearLocationMarker() {
+    const source = mapLoaded && map ? map.getSource(LOCATION_SOURCE_ID) : null;
+    if (source) source.setData(emptyLocationFeatureCollection());
+    purgeLegacyDomLocationMarkers();
+}
+
+function purgeLegacyDomLocationMarkers() {
+    document.querySelectorAll('.device-location-marker').forEach(element => element.remove());
 }
 
 function resolveHeading(fix, previousFix, distance, moving) {
@@ -628,9 +722,9 @@ function handleDeviceOrientation(event) {
     if (!Number.isFinite(heading)) return;
 
     _orientationHeading = heading;
-    if (_isMoving && _markerEl) {
+    if (_isMoving && _lastFix) {
         _lastHeading = heading;
-        _markerEl.style.setProperty('--device-heading', `${heading}deg`);
+        updateLocationMarker(_lastFix, true, heading);
     }
 }
 
