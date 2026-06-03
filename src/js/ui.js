@@ -85,12 +85,17 @@ let _treeSelection = [];
 let _treeLastSelected = null;
 let _treeClipboard = null;
 const _compactLayoutMedia = window.matchMedia('(max-width: 767px)');
+const MAP_FOCUS_ANIMATION_MS = 1700;
 const TOOL_CURSORS = {
     draw: createSvgCursor('<line x1="5" y1="19" x2="19" y2="5" stroke="#f8fafc" stroke-width="3" stroke-linecap="round"/><line x1="4" y1="20" x2="9" y2="19" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/><path d="M16 4l4 4" stroke="#f8fafc" stroke-width="2" stroke-linecap="round"/>', 4, 20),
     cut: createSvgCursor('<circle cx="7" cy="7" r="3" fill="none" stroke="#f8fafc" stroke-width="2"/><circle cx="7" cy="17" r="3" fill="none" stroke="#f8fafc" stroke-width="2"/><path d="M10 9l11 9M10 15L21 6" stroke="#f8fafc" stroke-width="2.4" stroke-linecap="round"/>', 12, 12),
     box: createSvgCursor('<rect x="4" y="5" width="16" height="14" rx="1.5" fill="rgba(239,68,68,.18)" stroke="#ef4444" stroke-width="2.4" stroke-dasharray="4 2"/><path d="M7 8l10 8M17 8L7 16" stroke="#f8fafc" stroke-width="1.8" stroke-linecap="round"/>', 12, 12),
     waypoint: createSvgCursor('<path d="M12 22s7-6.2 7-12a7 7 0 10-14 0c0 5.8 7 12 7 12z" fill="#2563eb" stroke="#f8fafc" stroke-width="2"/><circle cx="12" cy="10" r="2.5" fill="#f8fafc"/>', 12, 22)
 };
+
+function easeInOutCubic(t) {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
 
 function createSvgCursor(svgBody, hotX, hotY) {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">${svgBody}</svg>`;
@@ -579,13 +584,20 @@ function focusPointsOnMap(points) {
     }
 
     if (points.length === 1 || (minLon === maxLon && minLat === maxLat)) {
-        map.flyTo({ center: [firstPoint.lon, firstPoint.lat], zoom: 15, pitch: 45 });
+        map.flyTo({
+            center: [firstPoint.lon, firstPoint.lat],
+            zoom: 15,
+            pitch: 45,
+            duration: MAP_FOCUS_ANIMATION_MS,
+            easing: easeInOutCubic
+        });
         return;
     }
 
     map.fitBounds([[minLon, minLat], [maxLon, maxLat]], {
         padding: 60,
-        duration: 900,
+        duration: MAP_FOCUS_ANIMATION_MS,
+        easing: easeInOutCubic,
         pitch: is3D ? map.getPitch() : 0,
         bearing: is3D ? map.getBearing() : 0
     });
