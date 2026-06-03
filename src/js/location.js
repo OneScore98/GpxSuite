@@ -58,6 +58,7 @@ let _isMoving = false;
 let _lastFollowAt = 0;
 let _userExploringUntil = 0;
 let _recentCenteredUntil = 0;
+let _focusAnimationUntil = 0;
 let _mapExplorationBound = false;
 let _showToast = null;
 let _onStatusChange = null;
@@ -70,6 +71,7 @@ let _saveHistoryState = null;
 let _recordingSettings = { ...DEFAULT_RECORDING_SETTINGS };
 let _recording = createEmptyRecording();
 let _lastRecordingPreviewAt = 0;
+let _recordingPreviewRetryScheduled = false;
 
 export function initDeviceLocation(options = {}) {
     _showToast = typeof options.showToast === 'function' ? options.showToast : null;
@@ -315,6 +317,7 @@ export function startDeviceLocation() {
     _lastHeading = null;
     _lastFollowAt = 0;
     _recentCenteredUntil = 0;
+    _focusAnimationUntil = 0;
     purgeLegacyDomLocationMarkers();
     emitStatus();
     bindMapExplorationDetection();
@@ -352,6 +355,7 @@ export function stopDeviceLocation(reason = 'programmatic') {
     _lastHeading = null;
     _lastFollowAt = 0;
     _recentCenteredUntil = 0;
+    _focusAnimationUntil = 0;
     clearLocationMarker();
     stopOrientationTracking();
     emitStatus();
@@ -423,6 +427,7 @@ function focusInitialPosition(fix) {
     if (!mapLoaded || !map) return;
     const currentZoom = typeof map.getZoom === 'function' ? map.getZoom() : 0;
     _recentCenteredUntil = Date.now() + RECENTERED_CONTROL_GRACE_MS;
+    _focusAnimationUntil = Date.now() + 1300;
     map.flyTo({
         center: [fix.lon, fix.lat],
         zoom: Math.max(currentZoom, INITIAL_LOCATION_ZOOM),
@@ -436,6 +441,7 @@ function centerOnCurrentDeviceLocation() {
     _userExploringUntil = 0;
     _lastFollowAt = 0;
     _recentCenteredUntil = Date.now() + RECENTERED_CONTROL_GRACE_MS;
+    _focusAnimationUntil = Date.now() + 700;
     map.easeTo({
         center: [_lastFix.lon, _lastFix.lat],
         duration: 650,
@@ -459,6 +465,7 @@ function followPosition(fix) {
     if (!mapLoaded || !map) return;
     const now = Date.now();
     const timing = getFollowTiming();
+    if (now < _focusAnimationUntil) return;
     if (now - _lastFollowAt < timing.intervalMs) return;
     if (now < _userExploringUntil) return;
     _lastFollowAt = now;
@@ -498,6 +505,7 @@ function bindMapExplorationDetection() {
 function markUserExploring() {
     _userExploringUntil = Date.now() + USER_EXPLORING_RECENTER_DELAY_MS;
     _recentCenteredUntil = 0;
+    _focusAnimationUntil = 0;
     emitStatus();
 }
 
@@ -554,6 +562,10 @@ function refreshRecordingPreview(force = false) {
         return;
     }
     if (!mapLoaded || !map) return;
+    if (typeof map.isStyleLoaded === 'function' && !map.isStyleLoaded()) {
+        scheduleRecordingPreviewRetry();
+        return;
+    }
 
     const now = Date.now();
     if (!force && now - _lastRecordingPreviewAt < RECORDING_PREVIEW_THROTTLE_MS) return;
@@ -566,7 +578,11 @@ function refreshRecordingPreview(force = false) {
 }
 
 function ensureRecordingPreviewLayer() {
-    if (!mapLoaded || !map || !map.isStyleLoaded?.()) return;
+    if (!mapLoaded || !map) return;
+    if (typeof map.isStyleLoaded === 'function' && !map.isStyleLoaded()) {
+        scheduleRecordingPreviewRetry();
+        return;
+    }
 
     if (!map.getSource(RECORDING_SOURCE_ID)) {
         map.addSource(RECORDING_SOURCE_ID, {
@@ -648,8 +664,27 @@ function ensureRecordingPreviewLayer() {
 }
 
 function clearRecordingPreview() {
+    _recordingPreviewRetryScheduled = false;
     const source = mapLoaded && map ? map.getSource(RECORDING_SOURCE_ID) : null;
     if (source) source.setData(emptyRecordingPreview());
+}
+
+function scheduleRecordingPreviewRetry() {
+    if (_recordingPreviewRetryScheduled || !mapLoaded || !map) return;
+    _recordingPreviewRetryScheduled = true;
+
+    const retry = () => {
+        _recordingPreviewRetryScheduled = false;
+        if (_recording.state !== 'idle' && _recordingSettings.showLiveTrack) {
+            refreshRecordingPreview(true);
+        }
+    };
+
+    if (typeof map.once === 'function') {
+        map.once('idle', retry);
+    } else {
+        setTimeout(retry, 300);
+    }
 }
 
 function buildRecordingPreviewGeoJson() {
