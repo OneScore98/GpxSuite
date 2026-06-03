@@ -431,12 +431,40 @@
                 </div>
             </div>
 
-            <!-- Impostazioni registrazione -->
-            <div class="space-y-3 bg-gray-900/50 p-2.5 rounded-xl border border-gray-800">
+            <!-- Permessi dispositivo -->
+            <div class="space-y-2 bg-gray-900/50 p-2.5 rounded-xl border border-gray-800">
                 <div class="flex items-center justify-between">
-                    <label class="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">Impostazioni registrazione</label>
-                    <span id="recording-settings-badge" class="text-[9px] bg-gray-950 text-gray-400 px-1.5 py-0.5 rounded border border-gray-800 font-bold uppercase">Pronta</span>
+                    <label class="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">Permessi dispositivo</label>
+                    <span id="device-permissions-badge" class="text-[9px] bg-gray-950 text-gray-400 px-1.5 py-0.5 rounded border border-gray-800 font-bold uppercase">Verifica</span>
                 </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="btn-location-permission" class="bg-gray-950 hover:bg-gray-800 border border-gray-800 rounded-lg p-2 text-left transition-colors" type="button">
+            <span class="flex items-center gap-1.5 text-xs text-gray-200">
+              <i data-lucide="locate-fixed" class="w-3.5 h-3.5 text-sky-300"></i>
+              Posizione
+            </span>
+            <span id="location-permission-state" class="mt-1 inline-flex text-[9px] bg-gray-900 text-gray-400 px-1.5 py-0.5 rounded border border-gray-800 font-bold uppercase">Verifica</span>
+          </button>
+                    <button id="btn-orientation-permission" class="bg-gray-950 hover:bg-gray-800 border border-gray-800 rounded-lg p-2 text-left transition-colors" type="button">
+            <span class="flex items-center gap-1.5 text-xs text-gray-200">
+              <i data-lucide="compass" class="w-3.5 h-3.5 text-emerald-300"></i>
+              Orientamento
+            </span>
+            <span id="orientation-permission-state" class="mt-1 inline-flex text-[9px] bg-gray-900 text-gray-400 px-1.5 py-0.5 rounded border border-gray-800 font-bold uppercase">Verifica</span>
+          </button>
+                </div>
+            </div>
+
+            <!-- Impostazioni registrazione -->
+            <div id="recording-settings-panel" class="space-y-3 bg-gray-900/50 p-2.5 rounded-xl border border-gray-800" data-expanded="false">
+                <button id="recording-settings-toggle" class="w-full flex items-center justify-between gap-2 text-left" type="button" aria-expanded="false" aria-controls="recording-settings-content">
+                    <span class="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">Impostazioni registrazione</span>
+                    <span class="flex items-center gap-1.5">
+            <span id="recording-settings-badge" class="text-[9px] bg-gray-950 text-gray-400 px-1.5 py-0.5 rounded border border-gray-800 font-bold uppercase">Pronta</span>
+            <i id="recording-settings-chevron" data-lucide="chevron-down" class="w-3.5 h-3.5 text-gray-500 transition-transform"></i>
+          </span>
+                </button>
+                <div id="recording-settings-content" class="hidden space-y-3">
                 <div class="grid grid-cols-2 gap-2">
                     <label class="space-y-1">
             <span class="text-[9px] text-gray-500 uppercase font-semibold">Distanza min (m)</span>
@@ -475,6 +503,7 @@
           <span class="text-xs text-gray-300">Colore traccia</span>
           <input type="color" id="recording-track-color" class="w-9 h-7 bg-gray-950 border border-gray-800 rounded cursor-pointer">
         </label>
+                </div>
             </div>
 
             <!-- Account e amministrazione -->

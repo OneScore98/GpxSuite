@@ -59,6 +59,8 @@ let _setPrintPlanningOrientation = null;
 let _generateHighResPrintPreview = null;
 let _syncPrintOutputFromPreview = null;
 let _toggleDeviceLocation = null;
+let _requestDeviceLocationPermission = null;
+let _requestDeviceOrientationPermission = null;
 let _setDeviceLocationStatusHandler = null;
 let _setDeviceRecordingStatusHandler = null;
 let _startDeviceRecording = null;
@@ -73,6 +75,9 @@ let _localLibraryBound = false;
 let _gisDragPayload = null;
 let _trackContextMenu = null;
 let _trackLongPressTimer = null;
+let _lastDeviceLocationStatus = {};
+let _permissionRefreshTimer = null;
+let _lastPermissionRefreshAt = 0;
 let _trackNameLongPressTimer = null;
 let _lastTrackNamePointer = { trackId: null, time: 0 };
 let _lastTrackNameClick = { trackId: null, time: 0 };
@@ -150,27 +155,30 @@ function updateMapillaryToolbarButton() {
 }
 
 function updateDeviceLocationToolbarButton(status = {}) {
+    _lastDeviceLocationStatus = { ...status };
     const buttons = ['btn-device-location-main', 'btn-device-location']
         .map(id => document.getElementById(id))
         .filter(Boolean);
-    if (buttons.length === 0) return;
 
     const active = Boolean(status.active);
     const waiting = Boolean(status.waiting);
     const moving = Boolean(status.moving);
+    const centered = Boolean(status.centered);
     const enabled = active || waiting;
     const state = waiting ? 'waiting' : (active ? (moving ? 'moving' : 'active') : 'idle');
     const title = waiting ?
         'Localizzazione in corso...' :
-        (active ? 'Centra sulla posizione dispositivo' : 'Attiva localizzazione dispositivo');
+        (active ? (centered ? 'Disattiva localizzazione dispositivo' : 'Centra sulla posizione dispositivo') : 'Attiva localizzazione dispositivo');
 
     buttons.forEach(btn => {
         btn.dataset.locationState = state;
+        btn.dataset.locationCentered = centered ? 'true' : 'false';
         btn.classList.toggle('bg-sky-600', enabled);
         btn.classList.toggle('text-white', enabled);
         btn.classList.toggle('text-gray-300', !enabled);
         btn.title = title;
     });
+    scheduleDevicePermissionRefresh(false);
 }
 
 function formatRecordingElapsed(ms = 0) {
@@ -210,6 +218,129 @@ function updateDeviceRecordingUi(status = {}) {
                 'text-[9px] bg-amber-950 text-amber-200 px-1.5 py-0.5 rounded border border-amber-900 font-bold uppercase' :
                 'text-[9px] bg-gray-950 text-gray-400 px-1.5 py-0.5 rounded border border-gray-800 font-bold uppercase');
     }
+}
+
+function permissionMeta(state) {
+    switch (state) {
+        case 'granted':
+            return {
+                label: 'Attivo',
+                classes: 'bg-emerald-950 text-emerald-300 border-emerald-900'
+            };
+        case 'requesting':
+            return {
+                label: 'Richiesta',
+                classes: 'bg-sky-950 text-sky-300 border-sky-900'
+            };
+        case 'prompt':
+            return {
+                label: 'Da autorizzare',
+                classes: 'bg-amber-950 text-amber-200 border-amber-900'
+            };
+        case 'denied':
+            return {
+                label: 'Negato',
+                classes: 'bg-red-950 text-red-300 border-red-900'
+            };
+        case 'unsupported':
+            return {
+                label: 'Non supportato',
+                classes: 'bg-gray-950 text-gray-500 border-gray-800'
+            };
+        default:
+            return {
+                label: 'Non verificato',
+                classes: 'bg-gray-950 text-gray-400 border-gray-800'
+            };
+    }
+}
+
+function setPermissionBadge(id, state, withMargin = true) {
+    const badge = document.getElementById(id);
+    if (!badge) return;
+    const meta = permissionMeta(state);
+    badge.textContent = meta.label;
+    badge.className = `${withMargin ? 'mt-1 ' : ''}inline-flex text-[9px] ${meta.classes} px-1.5 py-0.5 rounded border font-bold uppercase`;
+}
+
+async function queryBrowserPermission(name) {
+    if (!navigator.permissions || typeof navigator.permissions.query !== 'function') return 'unknown';
+    try {
+        const permission = await navigator.permissions.query({ name });
+        return permission?.state || 'unknown';
+    } catch {
+        return 'unknown';
+    }
+}
+
+function getOrientationPermissionState() {
+    if (typeof window.DeviceOrientationEvent === 'undefined') return 'unsupported';
+    const OrientationEvent = window.DeviceOrientationEvent;
+    if (typeof OrientationEvent.requestPermission === 'function') return 'prompt';
+    return 'granted';
+}
+
+async function refreshDevicePermissionUi(force = false) {
+    const now = Date.now();
+    if (!force && now - _lastPermissionRefreshAt < 3000) return;
+    _lastPermissionRefreshAt = now;
+
+    const geoState = _lastDeviceLocationStatus.error === 'permission-denied' ?
+        'denied' :
+        (_lastDeviceLocationStatus.waiting ? 'requesting' :
+            (_lastDeviceLocationStatus.active ? 'granted' : await queryBrowserPermission('geolocation')));
+    const orientationState = _lastDeviceLocationStatus.orientationPermission || getOrientationPermissionState();
+
+    setPermissionBadge('location-permission-state', geoState);
+    setPermissionBadge('orientation-permission-state', orientationState);
+
+    const overall = document.getElementById('device-permissions-badge');
+    if (overall) {
+        const states = [geoState, orientationState];
+        const overallState = states.includes('denied') ? 'denied' :
+            (states.includes('prompt') || states.includes('requesting') ? 'prompt' :
+                (states.includes('unsupported') ? 'unsupported' : 'granted'));
+        const meta = permissionMeta(overallState);
+        overall.textContent = overallState === 'granted' ? 'OK' :
+            (overallState === 'prompt' ? 'Da autorizzare' : meta.label);
+        overall.className = `text-[9px] ${meta.classes} px-1.5 py-0.5 rounded border font-bold uppercase`;
+    }
+
+    const orientationButton = document.getElementById('btn-orientation-permission');
+    if (orientationButton) {
+        const unsupported = orientationState === 'unsupported';
+        orientationButton.disabled = unsupported;
+        orientationButton.classList.toggle('opacity-50', unsupported);
+        orientationButton.classList.toggle('cursor-not-allowed', unsupported);
+    }
+}
+
+function scheduleDevicePermissionRefresh(force = false) {
+    if (_permissionRefreshTimer) clearTimeout(_permissionRefreshTimer);
+    _permissionRefreshTimer = setTimeout(() => {
+        refreshDevicePermissionUi(force).catch(err => console.warn(err));
+    }, force ? 0 : 150);
+}
+
+function setRecordingSettingsExpanded(expanded) {
+    const panel = document.getElementById('recording-settings-panel');
+    const toggle = document.getElementById('recording-settings-toggle');
+    const content = document.getElementById('recording-settings-content');
+    if (!panel || !toggle || !content) return;
+    panel.dataset.expanded = expanded ? 'true' : 'false';
+    toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    content.classList.toggle('hidden', !expanded);
+}
+
+function bindRecordingSettingsPanel() {
+    const toggle = document.getElementById('recording-settings-toggle');
+    if (!toggle || toggle.dataset.bound === 'true') return;
+    toggle.dataset.bound = 'true';
+    setRecordingSettingsExpanded(false);
+    toggle.addEventListener('click', () => {
+        const panel = document.getElementById('recording-settings-panel');
+        setRecordingSettingsExpanded(panel?.dataset.expanded !== 'true');
+    });
 }
 
 function closeRecordingActionModal() {
@@ -258,6 +389,7 @@ function syncRecordingSettingsForm() {
 }
 
 function bindRecordingSettingsForm() {
+    bindRecordingSettingsPanel();
     syncRecordingSettingsForm();
     const bindNumber = (id, key, transform = value => value) => {
         const el = document.getElementById(id);
@@ -326,6 +458,8 @@ export function injectDeps(deps) {
     _generateHighResPrintPreview = deps.generateHighResPrintPreview;
     _syncPrintOutputFromPreview = deps.syncPrintOutputFromPreview;
     _toggleDeviceLocation = deps.toggleDeviceLocation;
+    _requestDeviceLocationPermission = deps.requestDeviceLocationPermission;
+    _requestDeviceOrientationPermission = deps.requestDeviceOrientationPermission;
     _setDeviceLocationStatusHandler = deps.setDeviceLocationStatusHandler;
     _setDeviceRecordingStatusHandler = deps.setDeviceRecordingStatusHandler;
     _startDeviceRecording = deps.startDeviceRecording;
@@ -2730,6 +2864,16 @@ export function setupEvents() {
         _setDeviceLocationStatusHandler(updateDeviceLocationToolbarButton);
     }
     updateDeviceLocationToolbarButton();
+    document.getElementById('btn-location-permission')?.addEventListener('click', () => {
+        _requestDeviceLocationPermission?.();
+        scheduleDevicePermissionRefresh(true);
+        setTimeout(() => scheduleDevicePermissionRefresh(true), 1200);
+    });
+    document.getElementById('btn-orientation-permission')?.addEventListener('click', async() => {
+        await _requestDeviceOrientationPermission?.();
+        scheduleDevicePermissionRefresh(true);
+    });
+    scheduleDevicePermissionRefresh(true);
 
     const btnDeviceRecording = document.getElementById('btn-device-recording');
     if (btnDeviceRecording) {

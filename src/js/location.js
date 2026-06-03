@@ -14,6 +14,8 @@ const MOVEMENT_MIN_DISTANCE_M = 5;
 const MOVEMENT_MIN_SPEED_MPS = 0.7;
 const FOLLOW_MIN_INTERVAL_MS = 800;
 const USER_EXPLORING_RECENTER_DELAY_MS = 12000;
+const LOCATION_CENTERED_DISTANCE_M = 25;
+const RECENTERED_CONTROL_GRACE_MS = 2200;
 const LOCATION_SOURCE_ID = 'device-location';
 const LOCATION_DOT_LAYER_ID = 'device-location-dot-layer';
 const LOCATION_HALO_LAYER_ID = 'device-location-halo-layer';
@@ -46,11 +48,13 @@ let _lastFix = null;
 let _lastHeading = null;
 let _orientationHeading = null;
 let _orientationListening = false;
+let _orientationPermissionGranted = false;
 let _orientationRequestToken = 0;
 let _waitingForFirstFix = false;
 let _isMoving = false;
 let _lastFollowAt = 0;
 let _userExploringUntil = 0;
+let _recentCenteredUntil = 0;
 let _mapExplorationBound = false;
 let _showToast = null;
 let _onStatusChange = null;
@@ -241,14 +245,52 @@ export async function finishDeviceRecording(name = getDefaultRecordingName()) {
 
 export function toggleDeviceLocation() {
     if (_watchId !== null) {
+        if (_waitingForFirstFix) {
+            notify("Localizzazione in attesa del primo fix", "info");
+            return true;
+        }
+        if (isMapCenteredOnLastFix()) {
+            stopDeviceLocation('manual');
+            return false;
+        }
         if (centerOnCurrentDeviceLocation()) {
             notify("Vista centrata sulla posizione", "info");
-        } else if (_waitingForFirstFix) {
-            notify("Localizzazione in attesa del primo fix", "info");
+            emitStatus();
         }
         return true;
     }
     return startDeviceLocation();
+}
+
+export function requestDeviceLocationPermission() {
+    if (_watchId !== null) {
+        notify("Permesso localizzazione gia attivo", "info");
+        emitStatus();
+        return true;
+    }
+    return startDeviceLocation();
+}
+
+export async function requestDeviceOrientationPermission() {
+    if (typeof window.DeviceOrientationEvent === 'undefined') {
+        notify("Orientamento dispositivo non supportato", "error");
+        emitStatus({ orientationPermission: 'unsupported' });
+        return false;
+    }
+
+    const granted = await requestOrientationAccess();
+    if (!granted) {
+        notify("Permesso orientamento non concesso", "error");
+        emitStatus({ orientationPermission: 'denied' });
+        return false;
+    }
+
+    notify("Permesso orientamento attivo", "success");
+    if (_watchId !== null) {
+        startOrientationTracking();
+    }
+    emitStatus({ orientationPermission: 'granted' });
+    return true;
 }
 
 export function startDeviceLocation() {
@@ -269,6 +311,7 @@ export function startDeviceLocation() {
     _lastFix = null;
     _lastHeading = null;
     _lastFollowAt = 0;
+    _recentCenteredUntil = 0;
     purgeLegacyDomLocationMarkers();
     emitStatus();
     bindMapExplorationDetection();
@@ -305,6 +348,7 @@ export function stopDeviceLocation(reason = 'programmatic') {
     _lastFix = null;
     _lastHeading = null;
     _lastFollowAt = 0;
+    _recentCenteredUntil = 0;
     clearLocationMarker();
     stopOrientationTracking();
     emitStatus();
@@ -375,6 +419,7 @@ function handleLocationError(error) {
 function focusInitialPosition(fix) {
     if (!mapLoaded || !map) return;
     const currentZoom = typeof map.getZoom === 'function' ? map.getZoom() : 0;
+    _recentCenteredUntil = Date.now() + RECENTERED_CONTROL_GRACE_MS;
     map.flyTo({
         center: [fix.lon, fix.lat],
         zoom: Math.max(currentZoom, INITIAL_LOCATION_ZOOM),
@@ -387,6 +432,7 @@ function centerOnCurrentDeviceLocation() {
     if (!mapLoaded || !map || !_lastFix) return false;
     _userExploringUntil = 0;
     _lastFollowAt = 0;
+    _recentCenteredUntil = Date.now() + RECENTERED_CONTROL_GRACE_MS;
     map.easeTo({
         center: [_lastFix.lon, _lastFix.lat],
         duration: 650,
@@ -395,12 +441,24 @@ function centerOnCurrentDeviceLocation() {
     return true;
 }
 
+function isMapCenteredOnLastFix() {
+    if (!mapLoaded || !map || !_lastFix) return false;
+    if (Date.now() < _recentCenteredUntil) return true;
+    if (typeof map.getCenter !== 'function') return false;
+    const center = map.getCenter();
+    const lon = Number(center?.lng ?? center?.lon);
+    const lat = Number(center?.lat);
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) return false;
+    return distanceMeters({ lon, lat }, _lastFix) <= LOCATION_CENTERED_DISTANCE_M;
+}
+
 function followPosition(fix) {
     if (!mapLoaded || !map) return;
     const now = Date.now();
     if (now - _lastFollowAt < FOLLOW_MIN_INTERVAL_MS) return;
     if (now < _userExploringUntil) return;
     _lastFollowAt = now;
+    _recentCenteredUntil = now + RECENTERED_CONTROL_GRACE_MS;
     map.easeTo({
         center: [fix.lon, fix.lat],
         duration: 550,
@@ -428,6 +486,8 @@ function bindMapExplorationDetection() {
 
 function markUserExploring() {
     _userExploringUntil = Date.now() + USER_EXPLORING_RECENTER_DELAY_MS;
+    _recentCenteredUntil = 0;
+    emitStatus();
 }
 
 function captureRecordingPoint(fix) {
@@ -704,21 +764,32 @@ async function startOrientationTracking() {
     if (_orientationListening || typeof window.DeviceOrientationEvent === 'undefined') return;
     const requestToken = ++_orientationRequestToken;
 
-    try {
-        const OrientationEvent = window.DeviceOrientationEvent;
-        if (typeof OrientationEvent.requestPermission === 'function') {
-            const permission = await OrientationEvent.requestPermission();
-            if (permission !== 'granted') return;
-        }
-    } catch (err) {
-        console.warn('Orientamento dispositivo non disponibile', err);
-        return;
-    }
+    const granted = await requestOrientationAccess();
+    if (!granted) return;
 
     if (requestToken !== _orientationRequestToken || _watchId === null) return;
     window.addEventListener('deviceorientationabsolute', handleDeviceOrientation, true);
     window.addEventListener('deviceorientation', handleDeviceOrientation, true);
     _orientationListening = true;
+}
+
+async function requestOrientationAccess() {
+    if (typeof window.DeviceOrientationEvent === 'undefined') return false;
+    if (_orientationPermissionGranted) return true;
+
+    try {
+        const OrientationEvent = window.DeviceOrientationEvent;
+        if (typeof OrientationEvent.requestPermission === 'function') {
+            const permission = await OrientationEvent.requestPermission();
+            _orientationPermissionGranted = permission === 'granted';
+            return _orientationPermissionGranted;
+        }
+        _orientationPermissionGranted = true;
+        return true;
+    } catch (err) {
+        console.warn('Orientamento dispositivo non disponibile', err);
+        return false;
+    }
 }
 
 function stopOrientationTracking() {
@@ -750,6 +821,7 @@ function emitStatus(extra = {}) {
         active: _watchId !== null,
         waiting: _waitingForFirstFix,
         moving: _isMoving,
+        centered: isMapCenteredOnLastFix(),
         ...extra
     });
 }

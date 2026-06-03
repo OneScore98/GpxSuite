@@ -776,6 +776,10 @@ body.stats-panel-open #recording-status-chip {
     bottom: calc(var(--safe-bottom) + 14.5rem);
 }
 
+#recording-settings-panel[data-expanded="true"] #recording-settings-chevron {
+    transform: rotate(180deg);
+}
+
 #btn-device-location-main[data-location-state="waiting"] .device-location-button-indicator,
 #btn-device-location[data-location-state="waiting"] .device-location-button-indicator {
     background: #f59e0b;
