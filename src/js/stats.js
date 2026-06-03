@@ -63,8 +63,23 @@ function createChart() {
             normalized: true,           // i dati sono ordinati: skip ulteriori ordinamenti interni
             plugins: { legend: { display: false } },
             scales: {
-                x: { grid: { display: false }, ticks: { color: '#6b7280', font: { size: 9 } } },
-                y: { grid: { color: '#374151' }, ticks: { color: '#6b7280', font: { size: 9 } } }
+                x: {
+                    type: 'linear',
+                    grid: { display: false },
+                    ticks: {
+                        color: '#6b7280',
+                        font: { size: 9 },
+                        callback: value => `${Number(value).toFixed(2)} km`
+                    }
+                },
+                y: {
+                    grid: { color: '#374151' },
+                    ticks: {
+                        color: '#6b7280',
+                        font: { size: 9 },
+                        callback: value => `${Math.round(Number(value))} m`
+                    }
+                }
             }
         }
     });
@@ -230,12 +245,19 @@ function _doUpdateStats() {
         // Chart.js viene caricato solo quando il pannello statistiche viene aperto.
         ensureChart().then(currentChart => {
             if (!currentChart) return;
-            const labels = new Array(chartXs.length);
-            for (let i = 0; i < chartXs.length; i++) labels[i] = chartXs[i].toFixed(2) + ' km';
-            currentChart.data.labels = labels;
-            currentChart.data.datasets[0].data = chartYs;
+            const chartData = new Array(chartXs.length);
+            for (let i = 0; i < chartXs.length; i++) {
+                chartData[i] = { x: chartXs[i], y: chartYs[i] };
+            }
+            currentChart.data.labels = [];
+            currentChart.data.datasets[0].data = chartData;
+            currentChart.resize();
             currentChart.update('none');
         });
+    } else if (chart) {
+        chart.data.labels = [];
+        chart.data.datasets[0].data = [];
+        chart.update('none');
     }
 }
 

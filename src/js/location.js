@@ -13,6 +13,7 @@ const INITIAL_LOCATION_ZOOM = 16.5;
 const MOVEMENT_MIN_DISTANCE_M = 5;
 const MOVEMENT_MIN_SPEED_MPS = 0.7;
 const FOLLOW_MIN_INTERVAL_MS = 800;
+const RECORDING_FOLLOW_MIN_INTERVAL_MS = 120;
 const USER_EXPLORING_RECENTER_DELAY_MS = 6000;
 const LOCATION_CENTERED_DISTANCE_M = 25;
 const RECENTERED_CONTROL_GRACE_MS = 2200;
@@ -24,17 +25,47 @@ const LOCATION_HEADING_ICON_ID = 'device-location-heading-icon';
 const RECORDING_SOURCE_ID = 'device-recording-track';
 const RECORDING_LAYER_ID = 'device-recording-track-layer';
 const RECORDING_CASING_LAYER_ID = 'device-recording-track-casing-layer';
+const RECORDING_HEADING_CASING_LAYER_ID = 'device-recording-heading-casing-layer';
+const RECORDING_HEADING_LAYER_ID = 'device-recording-heading-layer';
+const RECORDING_HEADING_TIP_LAYER_ID = 'device-recording-heading-tip-layer';
 const RECORDING_POINT_LAYER_ID = 'device-recording-current-point-layer';
 const RECORDING_POINT_HALO_LAYER_ID = 'device-recording-current-point-halo-layer';
-const RECORDING_PREVIEW_THROTTLE_MS = 1000;
+const RECORDING_PREVIEW_THROTTLE_MS = 120;
+const RECORDING_PREVIEW_MIN_MOVE_M = 0.4;
+const SIMULATED_WATCH_ID = '__gpxsuite_simulated_location__';
+
+// --- Costanti ispirate alle app di tracking sportivo (Strava/Komoot/Wikiloc) ---
+// Warmup: i primi N fix sono spesso imprecisi (cold-start GPS), allarghiamo
+// temporaneamente la soglia di accuracy per non perdere l'avvio del percorso.
+const RECORDING_WARMUP_FIXES = 3;
+const RECORDING_WARMUP_ACCURACY_MULTIPLIER = 2.2;
+// Outlier filter: scarta fix che implicherebbero velocità impossibili tra
+// due punti accettati consecutivi (teleport da multipath GPS). 70 m/s = 252 km/h
+// → ragionevole per pedoni/bici/moto, opzionale via setting per scenari estremi.
+const RECORDING_OUTLIER_MAX_SPEED_MPS = 70;
+// Smoothing pesato sull'accuracy: come un filtro Kalman semplificato.
+// alpha = ACC_REF / (ACC_REF + accuracy)  → con accuracy 8 m, alpha ≈ 0.5
+const RECORDING_SMOOTHING_ACCURACY_REF = 8;
+const RECORDING_SMOOTHING_ALPHA_MIN = 0.18; // più piccolo → più filtro
+const RECORDING_SMOOTHING_ALPHA_MAX = 0.85;
+const RECORDING_ELEVATION_GAIN_MIN_M = 1;   // ignora rumore di quota sotto 1 m
+// Persistenza locale: snapshot della sessione corrente per recovery da crash.
+const RECORDING_PERSIST_KEY = 'gpxsuite-recording-snapshot-v1';
+const RECORDING_PERSIST_DEBOUNCE_MS = 5000;
+const RECORDING_SNAPSHOT_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+const ORIENTATION_PERMISSION_KEY = 'gpxsuite-orientation-permission-v1';
 
 const DEFAULT_RECORDING_SETTINGS = {
-    minDistanceM: 3,
-    minIntervalMs: 1000,
-    maxAccuracyM: 50,
+    minDistanceM: 1,
+    minIntervalMs: 500,
+    maxAccuracyM: 30,             // soglia base più stretta, warmup la rilassa
     minSpeedMps: 0,
     showLiveTrack: true,
     saveElevation: true,
+    smoothingEnabled: false,       // default raw: marker e traccia live devono coincidere
+    outlierFilterEnabled: true,    // scarta teleport GPS
+    autoPauseOnLockMs: 0,          // 0 = disattivato (per uso futuro)
+    keepScreenOn: true,            // Wake Lock API
     livePreviewMaxPoints: 3000,
     trackColor: '#ef4444',
     trackWidth: 4
@@ -42,8 +73,8 @@ const DEFAULT_RECORDING_SETTINGS = {
 
 const GEOLOCATION_OPTIONS = {
     enableHighAccuracy: true,
-    maximumAge: 1000,
-    timeout: 15000
+    maximumAge: 0,                  // niente cache: sempre fix nuovi
+    timeout: 20000
 };
 
 let _watchId = null;
@@ -51,7 +82,7 @@ let _lastFix = null;
 let _lastHeading = null;
 let _orientationHeading = null;
 let _orientationListening = false;
-let _orientationPermissionGranted = false;
+let _orientationPermissionGranted = readPersistedOrientationGrant();
 let _orientationRequestToken = 0;
 let _waitingForFirstFix = false;
 let _isMoving = false;
@@ -73,6 +104,10 @@ let _recording = createEmptyRecording();
 let _lastRecordingPreviewAt = 0;
 let _recordingPreviewRetryScheduled = false;
 let _recordingTickIntervalId = null;
+let _wakeLock = null;
+let _wakeLockVisibilityBound = false;
+let _persistSnapshotTimer = null;
+let _simulationIntervalId = null;
 
 export function initDeviceLocation(options = {}) {
     _showToast = typeof options.showToast === 'function' ? options.showToast : null;
@@ -90,6 +125,10 @@ export function setDeviceLocationStatusHandler(handler) {
 
 export function isDeviceLocationActive() {
     return _watchId !== null;
+}
+
+export function isDeviceLocationSimulationAvailable() {
+    return isLocalSimulationHost();
 }
 
 export function setDeviceRecordingStatusHandler(handler) {
@@ -132,7 +171,7 @@ export function updateRecordingSettings(settings = {}) {
     }
     _recordingSettings = next;
 
-    if (_recording.points.length > 0) {
+    if (hasRecordingPreviewData()) {
         if (_recordingSettings.showLiveTrack) {
             refreshRecordingPreview(true);
         } else {
@@ -155,18 +194,15 @@ export function startDeviceRecording() {
     if (_recording.state !== 'idle') return false;
     if (!isDeviceLocationActive() && !startDeviceLocation()) return false;
 
-    _recording = {
-        state: 'recording',
-        startedAt: Date.now(),
-        pausedAt: null,
-        totalPausedMs: 0,
-        points: [],
-        lastAcceptedFix: null,
-        skipped: 0
-    };
+    _recording = createEmptyRecording();
+    _recording.state = 'recording';
+    _recording.startedAt = Date.now();
     _lastRecordingPreviewAt = 0;
+    clearPersistedRecordingSnapshot();
+    if (_lastFix) updateRecordingLivePreview(_lastFix, false);
     if (_recordingSettings.showLiveTrack) refreshRecordingPreview(true);
     startRecordingTick();
+    acquireWakeLock().catch(() => {});
     notify("Registrazione avviata", "success");
     emitRecordingStatus();
     return true;
@@ -177,6 +213,8 @@ export function pauseDeviceRecording() {
     _recording.state = 'paused';
     _recording.pausedAt = Date.now();
     stopRecordingTick();
+    releaseWakeLock();
+    persistRecordingSnapshot();
     notify("Registrazione in pausa", "info");
     emitRecordingStatus();
     return true;
@@ -191,6 +229,7 @@ export function resumeDeviceRecording() {
     _recording.state = 'recording';
     _recording.pausedAt = null;
     startRecordingTick();
+    acquireWakeLock().catch(() => {});
     notify("Registrazione ripresa", "success");
     emitRecordingStatus();
     return true;
@@ -202,10 +241,13 @@ export async function finishDeviceRecording(name = getDefaultRecordingName()) {
     const recording = _recording;
     _recording = createEmptyRecording();
     stopRecordingTick();
+    releaseWakeLock();
     emitRecordingStatus();
     clearRecordingPreview();
+    clearPersistedRecordingSnapshot();
 
-    if (recording.points.length === 0) {
+    const recordedPoints = chooseRecordedPointsForSave(recording);
+    if (recordedPoints.length === 0) {
         notify("Nessun punto registrato", "error");
         return null;
     }
@@ -227,7 +269,7 @@ export async function finishDeviceRecording(name = getDefaultRecordingName()) {
         segments: [{
             id: segmentId,
             name: 'Registrazione 1',
-            points: recording.points.map(point => ({
+            points: recordedPoints.map(point => ({
                 lat: point.lat,
                 lon: point.lon,
                 ele: point.ele,
@@ -250,7 +292,7 @@ export async function finishDeviceRecording(name = getDefaultRecordingName()) {
 
     const fileResult = await saveRecordingGpx(track, `${trackName}.gpx`);
     notify(fileResult.savedFile ? "Registrazione salvata" : "Registrazione salvata in mappa", "success");
-    return { track, pointsCount: recording.points.length, ...fileResult };
+    return { track, pointsCount: recordedPoints.length, ...fileResult };
 }
 
 export function toggleDeviceLocation() {
@@ -349,8 +391,11 @@ export function startDeviceLocation() {
 }
 
 export function stopDeviceLocation(reason = 'programmatic') {
+    clearLocationSimulationTimer();
     if (_watchId !== null) {
-        navigator.geolocation.clearWatch(_watchId);
+        if (_watchId !== SIMULATED_WATCH_ID) {
+            navigator.geolocation.clearWatch(_watchId);
+        }
     }
 
     _watchId = null;
@@ -368,6 +413,52 @@ export function stopDeviceLocation(reason = 'programmatic') {
     if (reason === 'manual') {
         notify("Localizzazione disattivata", "info");
     }
+}
+
+export function startDeviceRecordingSimulation(options = {}) {
+    if (!isLocalSimulationHost()) {
+        notify("Simulazione GPS disponibile solo in locale", "error");
+        return false;
+    }
+    if (!mapLoaded || !map) {
+        notify("Mappa non ancora pronta per la simulazione GPS", "info");
+        return false;
+    }
+
+    startSimulatedDeviceLocation();
+    if (_recording.state === 'idle' && !startDeviceRecording()) return false;
+    if (_recording.state !== 'recording') {
+        notify("La registrazione deve essere attiva per simulare il GPS", "info");
+        return false;
+    }
+
+    clearLocationSimulationTimer();
+    const route = buildSimulatedRoute(options);
+    const intervalMs = Math.max(80, Number(options.intervalMs) || 350);
+    let index = 0;
+
+    const emitNext = () => {
+        if (_recording.state !== 'recording' || index >= route.length) {
+            clearLocationSimulationTimer();
+            if (index >= route.length) notify("Simulazione GPS completata", "success");
+            return;
+        }
+        handlePosition(createSimulatedPosition(route[index], index, route));
+        index += 1;
+    };
+
+    emitNext();
+    _simulationIntervalId = setInterval(emitNext, intervalMs);
+    notify("Simulazione GPS avviata", "info");
+    return { points: route.length, intervalMs };
+}
+
+export function stopDeviceRecordingSimulation() {
+    clearLocationSimulationTimer();
+    if (_watchId === SIMULATED_WATCH_ID) {
+        stopDeviceLocation('simulation');
+    }
+    return true;
 }
 
 function handlePosition(position) {
@@ -398,7 +489,7 @@ function handlePosition(position) {
     _isMoving = moving;
     _waitingForFirstFix = false;
 
-    updateLocationMarker(fix, moving, heading);
+    updateLiveLocationFrame(fix, moving, heading);
 
     if (isFirstFix) {
         focusInitialPosition(fix);
@@ -428,10 +519,83 @@ function handleLocationError(error) {
     emitStatus({ error: error?.code || 'unknown' });
 }
 
+function startSimulatedDeviceLocation() {
+    if (_watchId !== null && _watchId !== SIMULATED_WATCH_ID) {
+        navigator.geolocation.clearWatch(_watchId);
+    }
+
+    _watchId = SIMULATED_WATCH_ID;
+    _waitingForFirstFix = true;
+    _isMoving = false;
+    _lastFix = null;
+    _lastHeading = null;
+    _lastFollowAt = 0;
+    _recentCenteredUntil = 0;
+    _focusAnimationUntil = 0;
+    purgeLegacyDomLocationMarkers();
+    bindMapExplorationDetection();
+    emitStatus({ simulated: true });
+}
+
+function clearLocationSimulationTimer() {
+    if (_simulationIntervalId !== null) {
+        clearInterval(_simulationIntervalId);
+        _simulationIntervalId = null;
+    }
+}
+
+function buildSimulatedRoute(options = {}) {
+    const count = Math.max(4, Math.min(200, Math.round(Number(options.count) || 28)));
+    const center = typeof map?.getCenter === 'function' ? map.getCenter() : null;
+    const startLat = Number.isFinite(Number(options.lat)) ? Number(options.lat) :
+        Number(center?.lat ?? 44.164178);
+    const startLon = Number.isFinite(Number(options.lon)) ? Number(options.lon) :
+        Number(center?.lng ?? center?.lon ?? 7.512308);
+    const stepLat = Number.isFinite(Number(options.stepLat)) ? Number(options.stepLat) : 0.000035;
+    const stepLon = Number.isFinite(Number(options.stepLon)) ? Number(options.stepLon) : 0.000055;
+
+    const route = [];
+    for (let i = 0; i < count; i += 1) {
+        route.push({
+            lat: startLat + stepLat * i + Math.sin(i / 2.4) * 0.000012,
+            lon: startLon + stepLon * i + Math.cos(i / 3) * 0.000010,
+            ele: 500 + Math.round(i * 0.8)
+        });
+    }
+    return route;
+}
+
+function createSimulatedPosition(point, index, route) {
+    const previous = index > 0 ? route[index - 1] : null;
+    const next = route[index + 1] || point;
+    const heading = previous ? bearingDegrees(previous, point) : bearingDegrees(point, next);
+    return {
+        coords: {
+            longitude: point.lon,
+            latitude: point.lat,
+            altitude: point.ele,
+            accuracy: 4,
+            speed: 1.6,
+            heading
+        },
+        timestamp: Date.now()
+    };
+}
+
+function isLocalSimulationHost() {
+    const host = window.location.hostname;
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '';
+}
+
 function focusInitialPosition(fix) {
     if (!mapLoaded || !map) return;
     const currentZoom = typeof map.getZoom === 'function' ? map.getZoom() : 0;
     _recentCenteredUntil = Date.now() + RECENTERED_CONTROL_GRACE_MS;
+    if (_recording.state === 'recording') {
+        _focusAnimationUntil = 0;
+        jumpToCurrentFix(fix, { zoom: Math.max(currentZoom, INITIAL_LOCATION_ZOOM) });
+        return;
+    }
     _focusAnimationUntil = Date.now() + 1300;
     map.flyTo({
         center: [fix.lon, fix.lat],
@@ -471,15 +635,36 @@ function followPosition(fix) {
     const now = Date.now();
     const timing = getFollowTiming();
     if (now < _focusAnimationUntil) return;
-    if (now - _lastFollowAt < timing.intervalMs) return;
+    const recording = _recording.state === 'recording';
+    const minIntervalMs = recording ? RECORDING_FOLLOW_MIN_INTERVAL_MS : timing.intervalMs;
+    if (now - _lastFollowAt < minIntervalMs) return;
     if (now < _userExploringUntil) return;
     _lastFollowAt = now;
     _recentCenteredUntil = now + RECENTERED_CONTROL_GRACE_MS;
+
+    if (recording) {
+        jumpToCurrentFix(fix);
+        return;
+    }
+
     map.easeTo({
         center: [fix.lon, fix.lat],
         duration: timing.durationMs,
         essential: true
     });
+}
+
+function jumpToCurrentFix(fix, extra = {}) {
+    const camera = {
+        center: [fix.lon, fix.lat],
+        ...extra
+    };
+    if (typeof map.stop === 'function') map.stop();
+    if (typeof map.jumpTo === 'function') {
+        map.jumpTo(camera);
+    } else {
+        map.easeTo({ ...camera, duration: 0, essential: true });
+    }
 }
 
 function getFollowTiming() {
@@ -514,6 +699,66 @@ function markUserExploring() {
     emitStatus();
 }
 
+function updateRecordingLivePreview(fix, refresh = true, heading = fix.heading) {
+    if (_recording.state !== 'recording') return;
+    if (!Number.isFinite(fix.lon) || !Number.isFinite(fix.lat)) return;
+
+    const point = createRecordingPoint(fix, fix.lat, fix.lon, heading);
+    _recording.liveFix = point;
+    appendRecordingPreviewPoint(point);
+
+    if (refresh && _recordingSettings.showLiveTrack) {
+        refreshRecordingPreview(true);
+    }
+}
+
+function updateLiveLocationFrame(fix, moving, heading) {
+    updateRecordingLivePreview(fix, false, heading);
+    if (_recordingSettings.showLiveTrack && hasRecordingPreviewData()) {
+        refreshRecordingPreview(true);
+    }
+    updateLocationMarker(fix, moving, heading);
+    if (mapLoaded && map && typeof map.triggerRepaint === 'function') {
+        map.triggerRepaint();
+    }
+}
+
+function appendRecordingPreviewPoint(point) {
+    const previewPoints = _recording.previewPoints;
+    const last = previewPoints[previewPoints.length - 1] || null;
+    if (!last) {
+        previewPoints.push(point);
+        return;
+    }
+
+    if (point.time === last.time || distanceMeters(last, point) < RECORDING_PREVIEW_MIN_MOVE_M) {
+        previewPoints[previewPoints.length - 1] = point;
+        return;
+    }
+
+    previewPoints.push(point);
+}
+
+function createRecordingPoint(fix, lat = fix.lat, lon = fix.lon, heading = fix.heading) {
+    return {
+        lat,
+        lon,
+        ele: _recordingSettings.saveElevation && Number.isFinite(fix.ele) ? Math.round(fix.ele) : 0,
+        time: fix.timestamp,
+        accuracy: Number.isFinite(fix.accuracy) ? fix.accuracy : null,
+        speed: Number.isFinite(fix.speed) ? fix.speed : null,
+        heading: Number.isFinite(heading) ? heading : null
+    };
+}
+
+function hasRecordingPreviewData() {
+    return Boolean(
+        _recording.liveFix ||
+        _recording.previewPoints.length > 0 ||
+        _recording.points.length > 0
+    );
+}
+
 function captureRecordingPoint(fix) {
     if (_recording.state !== 'recording') return;
     if (!shouldAcceptRecordingFix(fix)) {
@@ -522,47 +767,112 @@ function captureRecordingPoint(fix) {
         return;
     }
 
-    const point = {
-        lat: fix.lat,
-        lon: fix.lon,
-        ele: _recordingSettings.saveElevation && Number.isFinite(fix.ele) ? Math.round(fix.ele) : 0,
-        time: fix.timestamp,
-        accuracy: Number.isFinite(fix.accuracy) ? fix.accuracy : null,
-        speed: Number.isFinite(fix.speed) ? fix.speed : null
-    };
+    // ---- Smoothing pesato sull'accuracy (Kalman-like 1D) -------------------
+    // Tecnica usata anche da molte app di tracking sportivo: invece di salvare
+    // il fix raw, lo si combina con la stima precedente con un peso che dipende
+    // dalla qualità del segnale. Con segnale buono (accuracy bassa) ci si fida
+    // del nuovo fix (alpha alto); con segnale rumoroso si tiene la stima vecchia.
+    let lat = fix.lat;
+    let lon = fix.lon;
+    if (_recordingSettings.smoothingEnabled !== false && _recording.smoothed) {
+        const acc = Number.isFinite(fix.accuracy) ? fix.accuracy : RECORDING_SMOOTHING_ACCURACY_REF * 2;
+        const ratio = RECORDING_SMOOTHING_ACCURACY_REF / (RECORDING_SMOOTHING_ACCURACY_REF + acc);
+        const alpha = Math.max(
+            RECORDING_SMOOTHING_ALPHA_MIN,
+            Math.min(RECORDING_SMOOTHING_ALPHA_MAX, ratio)
+        );
+        lat = _recording.smoothed.lat * (1 - alpha) + fix.lat * alpha;
+        lon = _recording.smoothed.lon * (1 - alpha) + fix.lon * alpha;
+    }
+    _recording.smoothed = { lat, lon };
+
+    const point = createRecordingPoint(fix, lat, lon);
+
+    // ---- Accumulatori live ------------------------------------------------
+    const lastAccepted = _recording.lastAcceptedFix;
+    const prevPoint = _recording.points[_recording.points.length - 1] || null;
+    if (lastAccepted && prevPoint) {
+        const segDist = distanceMeters({ lat: prevPoint.lat, lon: prevPoint.lon }, { lat, lon });
+        _recording.totalDistanceM += segDist;
+        const elapsedMs = Math.max(0, fix.timestamp - lastAccepted.timestamp);
+        const impliedSpeed = elapsedMs > 0 ? segDist / (elapsedMs / 1000) : 0;
+        const isMoving = (Number.isFinite(fix.speed) && fix.speed >= MOVEMENT_MIN_SPEED_MPS) ||
+            impliedSpeed >= 0.5;
+        if (isMoving) _recording.movingMs += elapsedMs;
+        _recording.currentSpeed = Number.isFinite(fix.speed) ? Math.max(0, fix.speed) : impliedSpeed;
+        if (Number.isFinite(point.ele) && Number.isFinite(prevPoint.ele)) {
+            const dEle = point.ele - prevPoint.ele;
+            if (dEle >= RECORDING_ELEVATION_GAIN_MIN_M) _recording.totalGainM += dEle;
+        }
+    } else {
+        _recording.firstFixAccuracy = Number.isFinite(fix.accuracy) ? fix.accuracy : null;
+        _recording.currentSpeed = Number.isFinite(fix.speed) ? Math.max(0, fix.speed) : 0;
+    }
+    _recording.lastEle = Number.isFinite(point.ele) ? point.ele : _recording.lastEle;
+
     _recording.points.push(point);
     _recording.lastAcceptedFix = fix;
-    refreshRecordingPreview(false);
+    schedulePersistRecordingSnapshot();
     emitRecordingStatus();
 }
 
 function shouldAcceptRecordingFix(fix) {
     if (!Number.isFinite(fix.lon) || !Number.isFinite(fix.lat)) return false;
-    if (Number.isFinite(fix.accuracy) && fix.accuracy > _recordingSettings.maxAccuracyM) {
-        return false;
-    }
-    const firstPoint = _recording.points.length === 0;
-    if (!firstPoint && Number.isFinite(fix.speed) && fix.speed < _recordingSettings.minSpeedMps) {
-        return false;
-    }
 
     const last = _recording.lastAcceptedFix;
+    const accepted = _recording.points.length;
+
+    // 1) Accuracy gating con warmup: i primi fix sono spesso poco precisi.
+    //    Allarghiamo la soglia per RECORDING_WARMUP_FIXES per non perdere
+    //    l'avvio del percorso (cold-start GPS).
+    const warming = accepted < RECORDING_WARMUP_FIXES;
+    const accuracyLimit = warming ?
+        _recordingSettings.maxAccuracyM * RECORDING_WARMUP_ACCURACY_MULTIPLIER :
+        _recordingSettings.maxAccuracyM;
+    if (Number.isFinite(fix.accuracy) && fix.accuracy > accuracyLimit) return false;
+
+    // 2) Outlier (teleport) rejection: scarta fix che implicherebbero velocità
+    //    impossibili rispetto all'ultimo accettato (multipath GPS, fix corrotti).
+    if (last && _recordingSettings.outlierFilterEnabled !== false) {
+        const elapsedSec = Math.max(0.001, (fix.timestamp - last.timestamp) / 1000);
+        const dist = distanceMeters(last, fix);
+        const impliedSpeed = dist / elapsedSec;
+        if (impliedSpeed > RECORDING_OUTLIER_MAX_SPEED_MPS) return false;
+    }
+
+    // 3) Filtro velocità minima (per evitare drift mentre il dispositivo
+    //    è fermo, se l'utente ha impostato una soglia > 0).
+    const firstPoint = accepted === 0;
+    if (!firstPoint && Number.isFinite(fix.speed) && _recordingSettings.minSpeedMps > 0 &&
+        fix.speed < _recordingSettings.minSpeedMps) {
+        return false;
+    }
+
     if (!last) return true;
 
-    const elapsed = Math.max(0, fix.timestamp - last.timestamp);
-    if (elapsed < _recordingSettings.minIntervalMs) return false;
-
+    // 4) Intervallo minimo tra fix accettati.
+    const elapsedMs = Math.max(0, fix.timestamp - last.timestamp);
     const distance = distanceMeters(last, fix);
-    const isMoving = Number.isFinite(fix.speed) && fix.speed >= MOVEMENT_MIN_SPEED_MPS;
-    if (isMoving) return distance >= _recordingSettings.minDistanceM;
+    const impliedSpeed = elapsedMs > 0 ? distance / (elapsedMs / 1000) : 0;
+    const isMoving = (Number.isFinite(fix.speed) && fix.speed >= MOVEMENT_MIN_SPEED_MPS) ||
+        impliedSpeed >= 0.5;
+    if (elapsedMs < _recordingSettings.minIntervalMs) {
+        if (!isMoving || distance < Math.max(1, _recordingSettings.minDistanceM)) {
+            return false;
+        }
+    }
 
-    const accuracy = Number.isFinite(fix.accuracy) ? fix.accuracy : _recordingSettings.maxAccuracyM;
-    const stationaryMinDistance = Math.max(_recordingSettings.minDistanceM, 8, Math.min(16, accuracy * 0.8));
-    return distance >= stationaryMinDistance;
+    if (isMoving) {
+        return distance >= _recordingSettings.minDistanceM;
+    }
+
+    const acc = Number.isFinite(fix.accuracy) ? fix.accuracy : _recordingSettings.maxAccuracyM;
+    const requiredStationary = Math.max(_recordingSettings.minDistanceM, 8, Math.min(22, acc * 0.85));
+    return distance >= requiredStationary;
 }
 
 function refreshRecordingPreview(force = false) {
-    if (!_recordingSettings.showLiveTrack || _recording.points.length === 0) {
+    if (!_recordingSettings.showLiveTrack || !hasRecordingPreviewData()) {
         clearRecordingPreview();
         return;
     }
@@ -631,6 +941,54 @@ function ensureRecordingPreviewLayer() {
         map.setPaintProperty(RECORDING_LAYER_ID, 'line-width', _recordingSettings.trackWidth);
     }
 
+    if (!map.getLayer(RECORDING_HEADING_CASING_LAYER_ID)) {
+        map.addLayer({
+            id: RECORDING_HEADING_CASING_LAYER_ID,
+            type: 'line',
+            source: RECORDING_SOURCE_ID,
+            filter: ['==', ['get', 'kind'], 'heading-line'],
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: {
+                'line-color': '#ffffff',
+                'line-width': 7,
+                'line-opacity': 0.95
+            }
+        });
+    }
+
+    if (!map.getLayer(RECORDING_HEADING_LAYER_ID)) {
+        map.addLayer({
+            id: RECORDING_HEADING_LAYER_ID,
+            type: 'line',
+            source: RECORDING_SOURCE_ID,
+            filter: ['==', ['get', 'kind'], 'heading-line'],
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: {
+                'line-color': '#0284c7',
+                'line-width': 4,
+                'line-opacity': 1
+            }
+        });
+    } else {
+        map.setPaintProperty(RECORDING_HEADING_LAYER_ID, 'line-color', '#0284c7');
+    }
+
+    if (!map.getLayer(RECORDING_HEADING_TIP_LAYER_ID)) {
+        map.addLayer({
+            id: RECORDING_HEADING_TIP_LAYER_ID,
+            type: 'circle',
+            source: RECORDING_SOURCE_ID,
+            filter: ['==', ['get', 'kind'], 'heading-tip'],
+            paint: {
+                'circle-radius': 4,
+                'circle-color': '#0284c7',
+                'circle-stroke-width': 2,
+                'circle-stroke-color': '#ffffff',
+                'circle-opacity': 1
+            }
+        });
+    }
+
     if (!map.getLayer(RECORDING_POINT_HALO_LAYER_ID)) {
         map.addLayer({
             id: RECORDING_POINT_HALO_LAYER_ID,
@@ -693,7 +1051,7 @@ function scheduleRecordingPreviewRetry() {
 }
 
 function buildRecordingPreviewGeoJson() {
-    const points = _recording.points;
+    const points = _recording.previewPoints.length > 0 ? _recording.previewPoints : _recording.points;
     const maxPoints = _recordingSettings.livePreviewMaxPoints;
     const step = points.length > maxPoints ? Math.ceil(points.length / maxPoints) : 1;
     const coordinates = [];
@@ -701,8 +1059,10 @@ function buildRecordingPreviewGeoJson() {
     for (let i = 0; i < points.length; i += step) {
         coordinates.push([points[i].lon, points[i].lat]);
     }
-    const last = points[points.length - 1];
-    if (last && coordinates.length > 0) {
+    const last = _recording.liveFix || points[points.length - 1] || _recording.points[_recording.points.length - 1];
+    if (last && coordinates.length === 0) {
+        coordinates.push([last.lon, last.lat]);
+    } else if (last && coordinates.length > 0) {
         const lastCoord = coordinates[coordinates.length - 1];
         if (lastCoord[0] !== last.lon || lastCoord[1] !== last.lat) {
             coordinates.push([last.lon, last.lat]);
@@ -718,14 +1078,68 @@ function buildRecordingPreviewGeoJson() {
         });
     }
     if (last) {
+        const hasHeading = Number.isFinite(last.heading);
+        if (hasHeading) {
+            const tip = destinationPoint(last, last.heading, headingIndicatorDistanceMeters(last.lat));
+            features.push({
+                type: 'Feature',
+                properties: { kind: 'heading-line' },
+                geometry: {
+                    type: 'LineString',
+                    coordinates: [[last.lon, last.lat], [tip.lon, tip.lat]]
+                }
+            });
+            features.push({
+                type: 'Feature',
+                properties: { kind: 'heading-tip' },
+                geometry: { type: 'Point', coordinates: [tip.lon, tip.lat] }
+            });
+        }
         features.push({
             type: 'Feature',
-            properties: { kind: 'current-point' },
+            properties: {
+                kind: 'current-point',
+                hasHeading,
+                heading: hasHeading ? last.heading : 0
+            },
             geometry: { type: 'Point', coordinates: [last.lon, last.lat] }
         });
     }
 
     return { type: 'FeatureCollection', features };
+}
+
+function headingIndicatorDistanceMeters(lat) {
+    const zoom = typeof map?.getZoom === 'function' ? map.getZoom() : 16;
+    const latitude = Number.isFinite(lat) ? lat : 0;
+    const metersPerPixel = 156543.03392 * Math.cos(latitude * Math.PI / 180) / (2 ** zoom);
+    return Math.max(10, Math.min(42, metersPerPixel * 28));
+}
+
+function destinationPoint(point, bearing, distanceM) {
+    const radius = 6371000;
+    const angular = distanceM / radius;
+    const bearingRad = bearing * Math.PI / 180;
+    const lat1 = point.lat * Math.PI / 180;
+    const lon1 = point.lon * Math.PI / 180;
+    const sinLat1 = Math.sin(lat1);
+    const cosLat1 = Math.cos(lat1);
+    const sinAngular = Math.sin(angular);
+    const cosAngular = Math.cos(angular);
+
+    const lat2 = Math.asin(
+        sinLat1 * cosAngular +
+        cosLat1 * sinAngular * Math.cos(bearingRad)
+    );
+    const lon2 = lon1 + Math.atan2(
+        Math.sin(bearingRad) * sinAngular * cosLat1,
+        cosAngular - sinLat1 * Math.sin(lat2)
+    );
+
+    return {
+        lat: lat2 * 180 / Math.PI,
+        lon: lon2 * 180 / Math.PI
+    };
 }
 
 function emptyRecordingPreview() {
@@ -1086,6 +1500,178 @@ function stopRecordingTick() {
     }
 }
 
+// ---- Wake Lock: tiene la pagina sveglia durante la registrazione. -------
+// Le app di tracking nativo girano in background; sul web la soluzione
+// più portatile è il Wake Lock API. Quando lo schermo si spegne il browser
+// throttle drasticamente i timer e watchPosition smette di emettere fix.
+async function acquireWakeLock() {
+    if (!_recordingSettings.keepScreenOn) return;
+    if (!('wakeLock' in navigator)) return;
+    if (_wakeLock) return;
+    try {
+        _wakeLock = await navigator.wakeLock.request('screen');
+        _wakeLock.addEventListener('release', () => {
+            // Il sistema può rilasciarlo (es. cambio tab); lo recuperiamo
+            // alla prossima visibility change.
+            _wakeLock = null;
+        });
+    } catch (err) {
+        // Tipicamente AbortError o NotAllowedError: non bloccante.
+        console.warn('Wake Lock non disponibile', err);
+    }
+
+    if (!_wakeLockVisibilityBound) {
+        _wakeLockVisibilityBound = true;
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' &&
+                _recording.state === 'recording') {
+                acquireWakeLock().catch(() => {});
+            }
+        });
+    }
+}
+
+function releaseWakeLock() {
+    if (!_wakeLock) return;
+    const lock = _wakeLock;
+    _wakeLock = null;
+    lock.release().catch(() => {});
+}
+
+// ---- Persistenza locale della registrazione attiva ---------------------
+// Snapshot debounced ogni RECORDING_PERSIST_DEBOUNCE_MS: se l'utente chiude
+// la tab o l'OS la termina, alla riapertura troviamo i punti già registrati
+// e possiamo decidere se riprendere/salvare.
+function schedulePersistRecordingSnapshot() {
+    if (_persistSnapshotTimer) return;
+    _persistSnapshotTimer = setTimeout(() => {
+        _persistSnapshotTimer = null;
+        persistRecordingSnapshot();
+    }, RECORDING_PERSIST_DEBOUNCE_MS);
+}
+
+function persistRecordingSnapshot() {
+    if (typeof localStorage === 'undefined') return;
+    if (_recording.state === 'idle') {
+        try { localStorage.removeItem(RECORDING_PERSIST_KEY); } catch (e) {}
+        return;
+    }
+    try {
+        const snapshot = {
+            v: 1,
+            savedAt: Date.now(),
+            state: _recording.state,
+            startedAt: _recording.startedAt,
+            pausedAt: _recording.pausedAt,
+            totalPausedMs: _recording.totalPausedMs,
+            points: _recording.points,
+            totalDistanceM: _recording.totalDistanceM,
+            totalGainM: _recording.totalGainM,
+            movingMs: _recording.movingMs,
+            firstFixAccuracy: _recording.firstFixAccuracy
+        };
+        localStorage.setItem(RECORDING_PERSIST_KEY, JSON.stringify(snapshot));
+    } catch (err) {
+        // Probabilmente quota piena: ignoriamo, non vogliamo bloccare il tracking.
+        console.warn('Snapshot registrazione fallito', err);
+    }
+}
+
+function clearPersistedRecordingSnapshot() {
+    if (_persistSnapshotTimer) {
+        clearTimeout(_persistSnapshotTimer);
+        _persistSnapshotTimer = null;
+    }
+    try { localStorage.removeItem(RECORDING_PERSIST_KEY); } catch (e) {}
+}
+
+function readPersistedRecordingSnapshot() {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+        const raw = localStorage.getItem(RECORDING_PERSIST_KEY);
+        if (!raw) return null;
+        const snap = JSON.parse(raw);
+        if (!snap || snap.v !== 1) return null;
+        if (!Array.isArray(snap.points) || snap.points.length === 0) return null;
+        if (Date.now() - (snap.savedAt || 0) > RECORDING_SNAPSHOT_MAX_AGE_MS) {
+            try { localStorage.removeItem(RECORDING_PERSIST_KEY); } catch (e) {}
+            return null;
+        }
+        return snap;
+    } catch (err) {
+        return null;
+    }
+}
+
+// ---- Permesso orientamento dispositivo (iOS richiede gesto utente) -----
+// La permission API per DeviceOrientation NON espone uno stato persistito,
+// quindi memorizziamo noi l'esito del primo prompt, evitando di mostrare
+// per sempre "Da autorizzare" all'utente che ha già accettato.
+function readPersistedOrientationGrant() {
+    try {
+        return localStorage.getItem(ORIENTATION_PERMISSION_KEY) === 'granted';
+    } catch (err) {
+        return false;
+    }
+}
+
+function persistOrientationGrant(granted) {
+    try {
+        if (granted) localStorage.setItem(ORIENTATION_PERMISSION_KEY, 'granted');
+        else localStorage.removeItem(ORIENTATION_PERMISSION_KEY);
+    } catch (err) {}
+}
+
+export function hasGrantedOrientationPermission() {
+    return _orientationPermissionGranted;
+}
+
+// ---- Recovery sessione registrazione (da chiamare a init) ---------------
+export function getPendingRecordingSnapshot() {
+    return readPersistedRecordingSnapshot();
+}
+
+export function discardPendingRecordingSnapshot() {
+    clearPersistedRecordingSnapshot();
+}
+
+export function resumePendingRecordingSnapshot() {
+    const snap = readPersistedRecordingSnapshot();
+    if (!snap) return false;
+    if (!isDeviceLocationActive() && !startDeviceLocation()) {
+        // Anche senza GPS attivo possiamo presentare i punti, poi l'utente
+        // attiverà la geo. Ma per ora richiediamo geo per "continuare".
+        return false;
+    }
+
+    _recording = {
+        state: 'paused',
+        startedAt: snap.startedAt || Date.now(),
+        pausedAt: Date.now(),
+        totalPausedMs: snap.totalPausedMs || 0,
+        points: snap.points.slice(),
+        lastAcceptedFix: null,
+        skipped: 0,
+        previewPoints: snap.points.slice(),
+        liveFix: snap.points.length ? snap.points[snap.points.length - 1] : null,
+        smoothed: snap.points.length ? {
+            lat: snap.points[snap.points.length - 1].lat,
+            lon: snap.points[snap.points.length - 1].lon
+        } : null,
+        totalDistanceM: Number(snap.totalDistanceM) || 0,
+        totalGainM: Number(snap.totalGainM) || 0,
+        movingMs: Number(snap.movingMs) || 0,
+        lastEle: snap.points.length ? snap.points[snap.points.length - 1].ele : null,
+        firstFixAccuracy: snap.firstFixAccuracy ?? null,
+        currentSpeed: 0
+    };
+    _lastRecordingPreviewAt = 0;
+    if (_recordingSettings.showLiveTrack) refreshRecordingPreview(true);
+    emitRecordingStatus();
+    notify("Registrazione ripristinata in pausa", "info");
+    return true;
+}
+
 // Richiamato dopo un cambio basemap: MapLibre azzera sorgenti/layer, qui le
 // ricreiamo subito invece di attendere il prossimo fix GPS.
 export function restoreDeviceOverlays() {
@@ -1106,8 +1692,24 @@ function createEmptyRecording() {
         totalPausedMs: 0,
         points: [],
         lastAcceptedFix: null,
-        skipped: 0
+        skipped: 0,
+        previewPoints: [],         // punti raw per anteprima immediata
+        liveFix: null,             // ultimo fix visualizzato in tempo reale
+        smoothed: null,           // ultimo punto smoothed (Kalman-like)
+        totalDistanceM: 0,        // distanza percorsa cumulata (m)
+        totalGainM: 0,            // dislivello positivo cumulato (m)
+        movingMs: 0,              // tempo in movimento (escluse pause/fermi)
+        lastEle: null,
+        firstFixAccuracy: null,   // accuracy del primo fix (debug/diagnosi)
+        currentSpeed: 0           // velocità istantanea ultima nota (m/s)
     };
+}
+
+function chooseRecordedPointsForSave(recording) {
+    if (recording.points.length >= 2 || recording.previewPoints.length < 2) {
+        return recording.points;
+    }
+    return recording.previewPoints;
 }
 
 function sanitizeRecordingName(name) {
