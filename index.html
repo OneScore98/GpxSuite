@@ -216,7 +216,7 @@
     </div>
 
     <!-- DASHBOARD DATI DISPOSITIVO -->
-    <div id="device-dashboard" class="device-dashboard hidden absolute inset-0 z-[12] pointer-events-none" aria-live="polite">
+    <div id="device-dashboard" class="device-dashboard hidden absolute inset-0 z-[12] pointer-events-none" data-dashboard-size="compact" aria-live="polite">
         <div class="device-dashboard-zone device-dashboard-zone--top-left" data-dashboard-zone="top-left"></div>
         <div class="device-dashboard-zone device-dashboard-zone--top-right" data-dashboard-zone="top-right"></div>
         <div class="device-dashboard-zone device-dashboard-zone--bottom-left" data-dashboard-zone="bottom-left"></div>
@@ -473,6 +473,22 @@
           </span>
                 </button>
                 <div id="device-dashboard-settings-content" class="hidden space-y-2">
+                    <div class="device-dashboard-setting-row">
+                        <label class="flex items-center gap-2 min-w-0">
+              <span class="min-w-0">
+                <span class="flex items-center gap-1.5 text-xs text-gray-200">
+                  <i data-lucide="maximize-2" class="w-3.5 h-3.5 text-slate-300"></i>
+                  Dimensione widget
+                </span>
+                <span class="block text-[9px] text-gray-500">Scala dei dati sulla mappa</span>
+              </span>
+            </label>
+                        <select id="dashboard-widget-size" class="device-dashboard-position-select">
+              <option value="compact">Piccola</option>
+              <option value="medium">Media</option>
+              <option value="large">Grande</option>
+            </select>
+                    </div>
                     <div class="device-dashboard-setting-row">
                         <label class="flex items-center gap-2 min-w-0">
               <input type="checkbox" id="dashboard-field-compass" data-dashboard-field="compass" class="accent-sky-500">

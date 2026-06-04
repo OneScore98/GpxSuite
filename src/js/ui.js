@@ -94,6 +94,8 @@ const TOOL_CURSORS = {
 };
 const DEVICE_DASHBOARD_STORAGE_KEY = 'gpxsuite-device-dashboard-v1';
 const DEVICE_DASHBOARD_POSITIONS = ['top-right', 'top-left', 'bottom-right', 'bottom-left'];
+const DEVICE_DASHBOARD_SIZES = ['compact', 'medium', 'large'];
+const DEFAULT_DEVICE_DASHBOARD_SIZE = 'compact';
 const DEVICE_DASHBOARD_FIELDS = [{
         id: 'compass',
         label: 'Bussola',
@@ -150,6 +152,7 @@ function createDefaultDeviceDashboardSettings() {
     });
     return {
         version: 1,
+        size: DEFAULT_DEVICE_DASHBOARD_SIZE,
         fields
     };
 }
@@ -157,6 +160,7 @@ function createDefaultDeviceDashboardSettings() {
 function normalizeDeviceDashboardSettings(settings) {
     const defaults = createDefaultDeviceDashboardSettings();
     const fields = {};
+    const size = DEVICE_DASHBOARD_SIZES.includes(settings?.size) ? settings.size : defaults.size;
     DEVICE_DASHBOARD_FIELDS.forEach(field => {
         const saved = settings?.fields?.[field.id] || {};
         const savedPosition = DEVICE_DASHBOARD_POSITIONS.includes(saved.position) ? saved.position : defaults.fields[field.id].position;
@@ -167,6 +171,7 @@ function normalizeDeviceDashboardSettings(settings) {
     });
     return {
         version: 1,
+        size,
         fields
     };
 }
@@ -219,6 +224,9 @@ function setDeviceDashboardSettingsExpanded(expanded) {
 }
 
 function syncDeviceDashboardSettingsForm() {
+    const sizeSelect = document.getElementById('dashboard-widget-size');
+    if (sizeSelect) sizeSelect.value = _deviceDashboardSettings.size || DEFAULT_DEVICE_DASHBOARD_SIZE;
+
     DEVICE_DASHBOARD_FIELDS.forEach(field => {
         const fieldSettings = _deviceDashboardSettings.fields[field.id];
         const toggle = document.querySelector(`[data-dashboard-field="${field.id}"]`);
@@ -242,6 +250,19 @@ function bindDeviceDashboardSettingsForm() {
         toggle.addEventListener('click', () => {
             const panel = document.getElementById('device-dashboard-settings-panel');
             setDeviceDashboardSettingsExpanded(panel?.dataset.expanded !== 'true');
+        });
+    }
+
+    const sizeInput = document.getElementById('dashboard-widget-size');
+    if (sizeInput && sizeInput.dataset.bound !== 'true') {
+        sizeInput.dataset.bound = 'true';
+        sizeInput.addEventListener('change', () => {
+            _deviceDashboardSettings.size = DEVICE_DASHBOARD_SIZES.includes(sizeInput.value) ?
+                sizeInput.value :
+                DEFAULT_DEVICE_DASHBOARD_SIZE;
+            persistDeviceDashboardSettings();
+            renderDeviceDashboard();
+            schedulePersistAppSession();
         });
     }
 
@@ -388,6 +409,9 @@ function renderDeviceDashboardCard(field, status) {
 function renderDeviceDashboard() {
     const dashboard = document.getElementById('device-dashboard');
     if (!dashboard) return;
+    dashboard.dataset.dashboardSize = DEVICE_DASHBOARD_SIZES.includes(_deviceDashboardSettings.size) ?
+        _deviceDashboardSettings.size :
+        DEFAULT_DEVICE_DASHBOARD_SIZE;
     const zoneEls = {};
     DEVICE_DASHBOARD_POSITIONS.forEach(position => {
         const zone = dashboard.querySelector(`[data-dashboard-zone="${position}"]`);
