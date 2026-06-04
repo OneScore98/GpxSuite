@@ -1313,11 +1313,12 @@ body.stats-panel-open #recording-status-chip {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.04rem;
+    gap: 0.06rem;
+    box-sizing: border-box;
 
     width: var(--ddc-tile);
     min-height: var(--ddc-tile);
-    padding: 0.18rem 0.08rem;
+    padding: 0.2rem 0.18rem;
 
     border: 1px solid rgba(99, 179, 237, 0.22);
     border-radius: 0.4rem;
@@ -1365,7 +1366,7 @@ body.stats-panel-open #recording-status-chip {
 
 .device-dashboard-card--altitude,
 .device-dashboard-card--speed {
-    --ddc-value-size: 0.68rem;
+    --ddc-value-size: 0.6rem;
 }
 
 .device-dashboard-card--altitude .device-dashboard-value {
@@ -1389,14 +1390,15 @@ body.stats-panel-open #recording-status-chip {
 
 .device-dashboard-value {
     font-size: var(--ddc-value-size);
-    line-height: 1.15;
+    line-height: 1.2;
     font-weight: 800;
     color: #ffffff;
     text-align: center;
     white-space: normal;
     word-break: break-word;
     overflow: hidden;
-    max-width: 100%;
+    width: 100%;
+    min-width: 0;
 }
 
 .device-dashboard-label {
@@ -1410,7 +1412,8 @@ body.stats-panel-open #recording-status-chip {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 100%;
+    width: 100%;
+    min-width: 0;
 }
 
 .device-dashboard-value--coords {
@@ -1432,6 +1435,7 @@ body.stats-panel-open #recording-status-chip {
     --ddc-icon-size: 1.3rem;
     --ddc-label-size: 0.36rem;
     --ddc-value-size: 0.78rem;
+    padding: 0.32rem 0.28rem;
     border-radius: 0.52rem;
     background: rgba(6, 12, 24, 0.8);
 }
@@ -1441,23 +1445,26 @@ body.stats-panel-open #recording-status-chip {
     --ddc-icon-size: 1.9rem;
     --ddc-label-size: 0.48rem;
     --ddc-value-size: 1.1rem;
+    padding: 0.55rem 0.45rem;
     border-radius: 0.7rem;
     background: rgba(6, 12, 24, 0.84);
     box-shadow: 0 0.26rem 0.7rem rgba(2, 6, 23, 0.3), inset 0 1px 0 rgba(255,255,255,0.06);
 }
 
 /* — Stile: Outdoor — cerchio badge solido, niente blur — */
+/* padding >= (1 - 1/√2)/2 × tile ≈ 15% del tile per stare nell'area iscritta del cerchio */
 .device-dashboard-card[data-dashboard-style="outdoor"] {
     border-radius: 50%;
     border: 2px solid rgba(74, 222, 128, 0.75);
     background: rgba(5, 46, 22, 0.97);
     color: #bbf7d0;
+    padding: 0.32rem 0.32rem;
     box-shadow:
         0 0 0.55rem rgba(74, 222, 128, 0.22),
         0 0.22rem 0.6rem rgba(0, 0, 0, 0.55);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-    overflow: hidden;
+    overflow: visible;
 }
 
 .device-dashboard-card[data-dashboard-style="outdoor"] .device-dashboard-icon {
@@ -1474,6 +1481,14 @@ body.stats-panel-open #recording-status-chip {
     color: rgba(74, 222, 128, 0.65);
 }
 
+/* padding cerchio medium e large: (tile - tile/√2) / 2 ≈ 15% del tile */
+.device-dashboard-card[data-dashboard-size="medium"][data-dashboard-style="outdoor"] {
+    padding: 0.5rem 0.5rem;
+}
+.device-dashboard-card[data-dashboard-size="large"][data-dashboard-style="outdoor"] {
+    padding: 0.75rem 0.75rem;
+}
+
 /* — Stile: Notte — rettangolo spigoloso, bordo sinistro accento, piatto — */
 .device-dashboard-card[data-dashboard-style="night"] {
     border-radius: 0.15rem;
@@ -1481,11 +1496,18 @@ body.stats-panel-open #recording-status-chip {
     border-left: 3px solid #f59e0b;
     background: rgba(8, 5, 0, 0.97);
     color: #fef3c7;
+    padding: 0.2rem 0.22rem 0.2rem 0.2rem;
     box-shadow: 0.12rem 0.18rem 0.5rem rgba(0, 0, 0, 0.65);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-    padding-left: 0.14rem;
-    padding-right: 0.14rem;
+}
+
+.device-dashboard-card[data-dashboard-size="medium"][data-dashboard-style="night"] {
+    padding: 0.32rem 0.32rem 0.32rem 0.28rem;
+}
+
+.device-dashboard-card[data-dashboard-size="large"][data-dashboard-style="night"] {
+    padding: 0.55rem 0.5rem 0.55rem 0.42rem;
 }
 
 .device-dashboard-card[data-dashboard-style="night"] .device-dashboard-icon {
