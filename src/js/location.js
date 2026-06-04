@@ -25,9 +25,6 @@ const LOCATION_HEADING_ICON_ID = 'device-location-heading-icon';
 const RECORDING_SOURCE_ID = 'device-recording-track';
 const RECORDING_LAYER_ID = 'device-recording-track-layer';
 const RECORDING_CASING_LAYER_ID = 'device-recording-track-casing-layer';
-const RECORDING_HEADING_CASING_LAYER_ID = 'device-recording-heading-casing-layer';
-const RECORDING_HEADING_LAYER_ID = 'device-recording-heading-layer';
-const RECORDING_HEADING_TIP_LAYER_ID = 'device-recording-heading-tip-layer';
 const RECORDING_POINT_LAYER_ID = 'device-recording-current-point-layer';
 const RECORDING_POINT_HALO_LAYER_ID = 'device-recording-current-point-halo-layer';
 const RECORDING_PREVIEW_THROTTLE_MS = 120;
@@ -941,54 +938,6 @@ function ensureRecordingPreviewLayer() {
         map.setPaintProperty(RECORDING_LAYER_ID, 'line-width', _recordingSettings.trackWidth);
     }
 
-    if (!map.getLayer(RECORDING_HEADING_CASING_LAYER_ID)) {
-        map.addLayer({
-            id: RECORDING_HEADING_CASING_LAYER_ID,
-            type: 'line',
-            source: RECORDING_SOURCE_ID,
-            filter: ['==', ['get', 'kind'], 'heading-line'],
-            layout: { 'line-join': 'round', 'line-cap': 'round' },
-            paint: {
-                'line-color': '#ffffff',
-                'line-width': 7,
-                'line-opacity': 0.95
-            }
-        });
-    }
-
-    if (!map.getLayer(RECORDING_HEADING_LAYER_ID)) {
-        map.addLayer({
-            id: RECORDING_HEADING_LAYER_ID,
-            type: 'line',
-            source: RECORDING_SOURCE_ID,
-            filter: ['==', ['get', 'kind'], 'heading-line'],
-            layout: { 'line-join': 'round', 'line-cap': 'round' },
-            paint: {
-                'line-color': '#0284c7',
-                'line-width': 4,
-                'line-opacity': 1
-            }
-        });
-    } else {
-        map.setPaintProperty(RECORDING_HEADING_LAYER_ID, 'line-color', '#0284c7');
-    }
-
-    if (!map.getLayer(RECORDING_HEADING_TIP_LAYER_ID)) {
-        map.addLayer({
-            id: RECORDING_HEADING_TIP_LAYER_ID,
-            type: 'circle',
-            source: RECORDING_SOURCE_ID,
-            filter: ['==', ['get', 'kind'], 'heading-tip'],
-            paint: {
-                'circle-radius': 4,
-                'circle-color': '#0284c7',
-                'circle-stroke-width': 2,
-                'circle-stroke-color': '#ffffff',
-                'circle-opacity': 1
-            }
-        });
-    }
-
     if (!map.getLayer(RECORDING_POINT_HALO_LAYER_ID)) {
         map.addLayer({
             id: RECORDING_POINT_HALO_LAYER_ID,
@@ -1079,22 +1028,6 @@ function buildRecordingPreviewGeoJson() {
     }
     if (last) {
         const hasHeading = Number.isFinite(last.heading);
-        if (hasHeading) {
-            const tip = destinationPoint(last, last.heading, headingIndicatorDistanceMeters(last.lat));
-            features.push({
-                type: 'Feature',
-                properties: { kind: 'heading-line' },
-                geometry: {
-                    type: 'LineString',
-                    coordinates: [[last.lon, last.lat], [tip.lon, tip.lat]]
-                }
-            });
-            features.push({
-                type: 'Feature',
-                properties: { kind: 'heading-tip' },
-                geometry: { type: 'Point', coordinates: [tip.lon, tip.lat] }
-            });
-        }
         features.push({
             type: 'Feature',
             properties: {
@@ -1107,39 +1040,6 @@ function buildRecordingPreviewGeoJson() {
     }
 
     return { type: 'FeatureCollection', features };
-}
-
-function headingIndicatorDistanceMeters(lat) {
-    const zoom = typeof map?.getZoom === 'function' ? map.getZoom() : 16;
-    const latitude = Number.isFinite(lat) ? lat : 0;
-    const metersPerPixel = 156543.03392 * Math.cos(latitude * Math.PI / 180) / (2 ** zoom);
-    return Math.max(10, Math.min(42, metersPerPixel * 28));
-}
-
-function destinationPoint(point, bearing, distanceM) {
-    const radius = 6371000;
-    const angular = distanceM / radius;
-    const bearingRad = bearing * Math.PI / 180;
-    const lat1 = point.lat * Math.PI / 180;
-    const lon1 = point.lon * Math.PI / 180;
-    const sinLat1 = Math.sin(lat1);
-    const cosLat1 = Math.cos(lat1);
-    const sinAngular = Math.sin(angular);
-    const cosAngular = Math.cos(angular);
-
-    const lat2 = Math.asin(
-        sinLat1 * cosAngular +
-        cosLat1 * sinAngular * Math.cos(bearingRad)
-    );
-    const lon2 = lon1 + Math.atan2(
-        Math.sin(bearingRad) * sinAngular * cosLat1,
-        cosAngular - sinLat1 * Math.sin(lat2)
-    );
-
-    return {
-        lat: lat2 * 180 / Math.PI,
-        lon: lon2 * 180 / Math.PI
-    };
 }
 
 function emptyRecordingPreview() {
