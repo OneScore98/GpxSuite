@@ -101,17 +101,19 @@ function readHikingTrailsVisibility() {
 }
 
 function buildSessionSnapshot() {
+    const persistedTracks = appTracks.filter(track => track.localSource !== 'recording-live');
+    const activeTrack = appTracks.find(track => track.id === activeTrackId);
     const snapshot = {
         version: 1,
         savedAt: Date.now(),
-        activeTrackId: activeTrackId || null,
-        activeSegmentId: activeSegmentId || null,
+        activeTrackId: activeTrack?.localSource === 'recording-live' ? null : (activeTrackId || null),
+        activeSegmentId: activeTrack?.localSource === 'recording-live' ? null : (activeSegmentId || null),
         currentStyle,
         currentSnapProfile,
         is3D,
         hikingTrailsVisible: readHikingTrailsVisibility(),
         mapillaryVisible: isMapillaryVisible,
-        trackOrder: appTracks.map(track => track.localFileId || track.id)
+        trackOrder: persistedTracks.map(track => track.localFileId || track.id)
     };
 
     if (map) {
@@ -159,6 +161,7 @@ export function schedulePersistAppSession() {
 
 async function persistTracksNow(trackList) {
     for (let i = 0; i < trackList.length; i++) {
+        if (trackList[i]?.localSource === 'recording-live') continue;
         try {
             await putTrackRecord(trackList[i]);
         } catch (err) {
@@ -168,7 +171,7 @@ async function persistTracksNow(trackList) {
 }
 
 export function schedulePersistTracks(trackList) {
-    _persistQueuedTracks = trackList.slice();
+    _persistQueuedTracks = trackList.filter(track => track?.localSource !== 'recording-live');
     clearTimeout(_persistTimer);
     _persistTimer = setTimeout(async() => {
         const toPersist = _persistQueuedTracks.slice();
@@ -185,7 +188,7 @@ export async function flushPersistedStateNow() {
     clearTimeout(_sessionTimer);
     _persistTimer = null;
     _sessionTimer = null;
-    _persistQueuedTracks = appTracks.slice();
+    _persistQueuedTracks = appTracks.filter(track => track?.localSource !== 'recording-live');
     await persistTracksNow(_persistQueuedTracks);
     persistAppSessionNow();
 }

@@ -154,20 +154,14 @@ const APPLICATION_LAYER_ORDER = [
     'gpx-waypoints-cluster-layer',
     'gpx-waypoints-cluster-count-layer',
     'gpx-waypoints-hit-layer',
-    'gpx-waypoints-circle-layer',
-    'gpx-waypoints-ring-layer',
-    'gpx-waypoints-symbol-layer',
+    'gpx-waypoints-marker-layer',
     'gpx-edit-points-layer',
     'mapillary-current-fov-fill-layer',
     'mapillary-current-fov-line-layer',
     'mapillary-current-image-halo-layer',
     'mapillary-current-image-layer',
     'mapillary-current-image-direction-layer',
-    // Overlay registrazione e localizzazione: sempre sopra tutto il resto
-    'device-recording-track-casing-layer',
-    'device-recording-track-layer',
-    'device-recording-current-point-halo-layer',
-    'device-recording-current-point-layer',
+    // Localizzazione dispositivo: sempre sopra tutto il resto
     'device-location-halo-layer',
     'device-location-heading-layer',
     'device-location-dot-layer'
@@ -399,6 +393,7 @@ function collectMissingElevationPoints(limit = 120) {
     for (let ti = 0; ti < tracks.length && candidates.length < limit; ti++) {
         const track = tracks[ti];
         if (track.visible === false) continue;
+        if (track.localSource === 'recording-live') continue;
         for (let si = 0; si < track.segments.length && candidates.length < limit; si++) {
             const segment = track.segments[si];
             if (segment.visible === false) continue;

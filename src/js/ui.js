@@ -399,7 +399,6 @@ function syncRecordingSettingsForm() {
     setValue('recording-min-interval', settings.minIntervalMs / 1000);
     setValue('recording-max-accuracy', settings.maxAccuracyM);
     setValue('recording-min-speed', settings.minSpeedMps);
-    setValue('recording-preview-max-points', settings.livePreviewMaxPoints);
     setValue('recording-track-width', settings.trackWidth);
     setValue('recording-track-color', settings.trackColor);
     setChecked('recording-show-live-track', settings.showLiveTrack);
@@ -424,7 +423,6 @@ function bindRecordingSettingsForm() {
     bindNumber('recording-min-interval', 'minIntervalMs', value => value * 1000);
     bindNumber('recording-max-accuracy', 'maxAccuracyM');
     bindNumber('recording-min-speed', 'minSpeedMps');
-    bindNumber('recording-preview-max-points', 'livePreviewMaxPoints');
     bindNumber('recording-track-width', 'trackWidth');
 
     const liveToggle = document.getElementById('recording-show-live-track');
@@ -2952,8 +2950,8 @@ export function setupEvents() {
         const name = input?.value?.trim() || (_getDefaultRecordingName ? _getDefaultRecordingName() : 'rec');
         btn?.setAttribute('disabled', 'true');
         try {
-            await _finishDeviceRecording?.(name);
-            closeRecordingSaveModal();
+            const result = await _finishDeviceRecording?.(name);
+            if (result) closeRecordingSaveModal();
         } finally {
             btn?.removeAttribute('disabled');
         }

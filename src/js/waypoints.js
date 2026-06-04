@@ -22,6 +22,74 @@ let _waypointInteractionsBound = false;
 let _draggingWaypoint = null;
 let _dragMoved = false;
 let _suppressNextWaypointClick = false;
+const ID_MARKER_WAYPOINT_LEAFLET = 'gpx-waypoint-leaflet-marker';
+const URL_ICONA_WAYPOINT_LEAFLET = 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png';
+const URL_OMBRA_WAYPOINT_LEAFLET = 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png';
+let _markerWaypointLeaflet = null;
+let _markerWaypointLeafletPromise = null;
+const _immaginiWaypointLeaflet = new Map();
+
+function caricaImmagineWaypointLeaflet(url) {
+    if (_immaginiWaypointLeaflet.has(url)) return _immaginiWaypointLeaflet.get(url);
+
+    const promise = new Promise((resolve, reject) => {
+        const image = new Image();
+        image.crossOrigin = 'anonymous';
+        image.onload = () => resolve(image);
+        image.onerror = () => {
+            _immaginiWaypointLeaflet.delete(url);
+            reject(new Error(`Impossibile caricare ${url}`));
+        };
+        image.src = url;
+    });
+
+    _immaginiWaypointLeaflet.set(url, promise);
+    return promise;
+}
+
+function costruisciMarkerWaypointLeaflet() {
+    if (_markerWaypointLeaflet) return Promise.resolve(_markerWaypointLeaflet);
+    if (_markerWaypointLeafletPromise) return _markerWaypointLeafletPromise;
+
+    _markerWaypointLeafletPromise = Promise.all([
+        caricaImmagineWaypointLeaflet(URL_ICONA_WAYPOINT_LEAFLET),
+        caricaImmagineWaypointLeaflet(URL_OMBRA_WAYPOINT_LEAFLET)
+    ]).then(([icona, ombra]) => {
+        const scala = 2;
+        const larghezza = 58;
+        const altezza = 41;
+        const ancoraX = 12;
+        const x = (larghezza / 2) - ancoraX;
+        const canvas = document.createElement('canvas');
+        canvas.width = larghezza * scala;
+        canvas.height = altezza * scala;
+        const ctx = canvas.getContext('2d');
+        ctx.scale(scala, scala);
+        ctx.drawImage(ombra, x, 0, 41, 41);
+        ctx.drawImage(icona, x, 0, 25, 41);
+        _markerWaypointLeaflet = {
+            imageData: ctx.getImageData(0, 0, canvas.width, canvas.height),
+            pixelRatio: scala
+        };
+        return _markerWaypointLeaflet;
+    }).catch(err => {
+        _markerWaypointLeafletPromise = null;
+        throw err;
+    });
+
+    return _markerWaypointLeafletPromise;
+}
+
+function registraMarkerWaypointLeaflet() {
+    if (!map || map.hasImage(ID_MARKER_WAYPOINT_LEAFLET)) return;
+
+    costruisciMarkerWaypointLeaflet()
+        .then(({ imageData, pixelRatio }) => {
+            if (!map || map.hasImage(ID_MARKER_WAYPOINT_LEAFLET)) return;
+            map.addImage(ID_MARKER_WAYPOINT_LEAFLET, imageData, { pixelRatio });
+        })
+        .catch(err => console.warn('Errore caricamento marker waypoint Leaflet:', err));
+}
 
 function buildWaypointFeatureCollection() {
     const features = [];
@@ -104,6 +172,7 @@ export function setupWaypointLayers() {
             clusterRadius: 42
         });
     }
+    registraMarkerWaypointLeaflet();
 
     if (!map.getLayer('gpx-waypoints-cluster-halo-layer')) {
         map.addLayer({
@@ -199,93 +268,28 @@ export function setupWaypointLayers() {
             filter: ['!', ['has', 'point_count']],
             minzoom: 12,
             paint: {
-                'circle-radius': 16,
+                'circle-radius': 22,
                 'circle-color': '#000000',
-                'circle-opacity': 0
+                'circle-opacity': 0,
+                'circle-translate': [0, -20],
+                'circle-translate-anchor': 'viewport'
             }
         });
     }
 
-    if (!map.getLayer('gpx-waypoints-circle-layer')) {
+    if (!map.getLayer('gpx-waypoints-marker-layer')) {
         map.addLayer({
-            id: 'gpx-waypoints-circle-layer',
-            type: 'circle',
-            source: 'gpx-waypoints',
-            filter: ['!', ['has', 'point_count']],
-            minzoom: 12,
-            paint: {
-                'circle-radius': [
-                    'interpolate', ['linear'],
-                    ['zoom'],
-                    12, 5,
-                    14, 7,
-                    17, 9
-                ],
-                'circle-color': ['get', 'color'],
-                'circle-opacity': 0.95,
-                'circle-stroke-width': [
-                    'interpolate', ['linear'],
-                    ['zoom'],
-                    6, 1.2,
-                    14, 2,
-                    17, 2.5
-                ],
-                'circle-stroke-color': 'rgba(255,255,255,0.96)'
-            }
-        });
-    }
-
-    if (!map.getLayer('gpx-waypoints-ring-layer')) {
-        map.addLayer({
-            id: 'gpx-waypoints-ring-layer',
-            type: 'circle',
-            source: 'gpx-waypoints',
-            filter: ['!', ['has', 'point_count']],
-            minzoom: 13,
-            paint: {
-                'circle-radius': [
-                    'interpolate', ['linear'],
-                    ['zoom'],
-                    13, 9,
-                    14, 11,
-                    17, 14
-                ],
-                'circle-color': 'rgba(255,255,255,0)',
-                'circle-stroke-width': [
-                    'interpolate', ['linear'],
-                    ['zoom'],
-                    8, 0.5,
-                    14, 1.4,
-                    17, 2
-                ],
-                'circle-stroke-color': ['get', 'color'],
-                'circle-opacity': 0.38
-            }
-        });
-    }
-
-    if (!map.getLayer('gpx-waypoints-symbol-layer')) {
-        map.addLayer({
-            id: 'gpx-waypoints-symbol-layer',
+            id: 'gpx-waypoints-marker-layer',
             type: 'symbol',
             source: 'gpx-waypoints',
             filter: ['!', ['has', 'point_count']],
-            minzoom: 13,
+            minzoom: 12,
             layout: {
-                'text-field': ['get', 'symbol'],
-                'text-size': [
-                    'interpolate', ['linear'],
-                    ['zoom'],
-                    13, 11,
-                    17, 14
-                ],
-                'text-allow-overlap': true,
-                'text-ignore-placement': true
-            },
-            paint: {
-                'text-color': '#ffffff',
-                'text-halo-color': 'rgba(15,23,42,0.62)',
-                'text-halo-width': 1
+                'icon-image': ID_MARKER_WAYPOINT_LEAFLET,
+                'icon-anchor': 'bottom',
+                'icon-size': 1,
+                'icon-allow-overlap': true,
+                'icon-ignore-placement': true
             }
         });
     }
