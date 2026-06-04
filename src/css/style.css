@@ -1153,9 +1153,9 @@ body.stats-panel-open #recording-status-chip {
     position: absolute;
     display: flex;
     flex-direction: column;
-    gap: 0.42rem;
+    gap: 0.22rem;
     width: max-content;
-    max-width: min(17rem, calc(50vw - 1rem));
+    max-width: min(8.5rem, calc(50vw - 1rem));
 }
 
 .device-dashboard-zone--top-left {
@@ -1185,30 +1185,35 @@ body.stats-panel-open #recording-status-chip {
 .device-dashboard-card {
     --device-dashboard-heading: 0deg;
     display: grid;
-    grid-template-columns: 1.85rem minmax(0, 1fr);
-    gap: 0.5rem;
-    min-width: 9.4rem;
-    max-width: 15rem;
-    padding: 0.48rem 0.55rem;
-    border: 1px solid rgba(31, 41, 55, 0.92);
-    border-radius: 0.5rem;
-    background: rgba(3, 7, 18, 0.88);
+    grid-template-columns: 1.15rem minmax(0, 1fr);
+    gap: 0.26rem;
+    min-width: 5.8rem;
+    max-width: 8rem;
+    padding: 0.24rem 0.3rem;
+    border: 1px solid rgba(31, 41, 55, 0.58);
+    border-radius: 0.38rem;
+    background: rgba(3, 7, 18, 0.68);
     color: #e5e7eb;
-    box-shadow: 0 0.65rem 1.4rem rgba(2, 6, 23, 0.32);
-    backdrop-filter: blur(0.65rem) saturate(1.08);
-    -webkit-backdrop-filter: blur(0.65rem) saturate(1.08);
+    box-shadow: 0 0.35rem 0.8rem rgba(2, 6, 23, 0.22);
+    backdrop-filter: blur(0.45rem) saturate(1.02);
+    -webkit-backdrop-filter: blur(0.45rem) saturate(1.02);
 }
 
 .device-dashboard-icon {
-    width: 1.85rem;
-    height: 1.85rem;
-    border-radius: 0.45rem;
+    width: 1.15rem;
+    height: 1.15rem;
+    border-radius: 0.28rem;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(15, 23, 42, 0.92);
-    border: 1px solid rgba(55, 65, 81, 0.72);
+    background: rgba(15, 23, 42, 0.58);
+    border: 1px solid rgba(55, 65, 81, 0.42);
     color: #93c5fd;
+}
+
+.device-dashboard-icon svg {
+    width: 0.72rem;
+    height: 0.72rem;
 }
 
 .device-dashboard-card--compass .device-dashboard-icon {
@@ -1218,7 +1223,7 @@ body.stats-panel-open #recording-status-chip {
 }
 
 .device-dashboard-label {
-    font-size: 0.56rem;
+    font-size: 0.42rem;
     line-height: 1;
     font-weight: 800;
     color: #9ca3af;
@@ -1229,8 +1234,8 @@ body.stats-panel-open #recording-status-chip {
 }
 
 .device-dashboard-value {
-    margin-top: 0.12rem;
-    font-size: 0.95rem;
+    margin-top: 0.03rem;
+    font-size: 0.68rem;
     line-height: 1.1;
     font-weight: 800;
     color: #ffffff;
@@ -1241,20 +1246,14 @@ body.stats-panel-open #recording-status-chip {
 
 .device-dashboard-value--coords {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-    font-size: 0.68rem;
+    font-size: 0.48rem;
     line-height: 1.15;
     white-space: normal;
     overflow-wrap: anywhere;
 }
 
 .device-dashboard-meta {
-    margin-top: 0.06rem;
-    font-size: 0.6rem;
-    line-height: 1.12;
-    color: #6b7280;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    display: none;
 }
 
 .device-dashboard-setting-row {
@@ -2036,8 +2035,8 @@ label {
     }
 
     .device-dashboard-zone {
-        max-width: calc(50vw - 0.85rem);
-        gap: 0.32rem;
+        max-width: min(7rem, calc(50vw - 0.85rem));
+        gap: 0.2rem;
     }
 
     .device-dashboard-zone--top-left {
@@ -2061,33 +2060,29 @@ label {
     }
 
     .device-dashboard-card {
-        grid-template-columns: 1.55rem minmax(0, 1fr);
-        gap: 0.38rem;
-        min-width: min(8.2rem, calc(50vw - 0.85rem));
-        max-width: calc(50vw - 0.85rem);
-        padding: 0.42rem 0.46rem;
+        grid-template-columns: 1rem minmax(0, 1fr);
+        gap: 0.24rem;
+        min-width: min(5.3rem, calc(50vw - 0.85rem));
+        max-width: min(7rem, calc(50vw - 0.85rem));
+        padding: 0.22rem 0.28rem;
     }
 
     .device-dashboard-icon {
-        width: 1.55rem;
-        height: 1.55rem;
-        border-radius: 0.4rem;
+        width: 1rem;
+        height: 1rem;
+        border-radius: 0.26rem;
     }
 
     .device-dashboard-label {
-        font-size: 0.5rem;
+        font-size: 0.38rem;
     }
 
     .device-dashboard-value {
-        font-size: 0.78rem;
+        font-size: 0.62rem;
     }
 
     .device-dashboard-value--coords {
-        font-size: 0.56rem;
-    }
-
-    .device-dashboard-meta {
-        font-size: 0.54rem;
+        font-size: 0.44rem;
     }
 
     .device-dashboard-setting-row {
