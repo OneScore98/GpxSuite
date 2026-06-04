@@ -169,7 +169,6 @@ function updateDeviceLocationToolbarButton(status = {}) {
     const waiting = Boolean(status.waiting);
     const moving = Boolean(status.moving);
     const centered = Boolean(status.centered);
-    const enabled = active || waiting;
     const state = waiting ? 'waiting' : (active ? (moving ? 'moving' : 'active') : 'idle');
     const title = waiting ?
         'Localizzazione in corso...' :
@@ -178,9 +177,8 @@ function updateDeviceLocationToolbarButton(status = {}) {
     buttons.forEach(btn => {
         btn.dataset.locationState = state;
         btn.dataset.locationCentered = centered ? 'true' : 'false';
-        btn.classList.toggle('bg-sky-600', enabled);
-        btn.classList.toggle('text-white', enabled);
-        btn.classList.toggle('text-gray-300', !enabled);
+        btn.classList.remove('bg-sky-600', 'text-white');
+        btn.classList.add('text-gray-300');
         btn.title = title;
     });
     scheduleDevicePermissionRefresh(false);
