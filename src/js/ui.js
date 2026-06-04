@@ -3233,7 +3233,7 @@ export function setupEvents() {
         updateMapToolCursor();
     };
 
-    const profiles = ['off', 'foot', 'bike', 'moto', 'car'];
+    const profiles = ['off', 'foot', 'bike', 'moto', 'car', 'water'];
     profiles.forEach(p => {
         document.getElementById(`snap-profile-${p}`).onclick = () => {
             _setSnapProfile(p);

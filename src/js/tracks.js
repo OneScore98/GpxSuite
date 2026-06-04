@@ -162,6 +162,10 @@ export async function addPointToActiveSegment(lon, lat) {
                 });
             });
         } else {
+            if (currentSnapProfile === 'water') {
+                showToast("Routing acqua non disponibile: scegli punti su corsi d'acqua connessi", "error");
+                return;
+            }
             segment.points.push({
                 lat: lat,
                 lon: lon,
@@ -171,7 +175,11 @@ export async function addPointToActiveSegment(lon, lat) {
             });
         }
     } catch (err) {
-        console.warn('Errore routing OSRM:', err);
+        console.warn('Errore routing:', err);
+        if (currentSnapProfile === 'water') {
+            showToast("Routing acqua non disponibile: scegli punti su corsi d'acqua connessi", "error");
+            return;
+        }
         showToast("Routing non disponibile: punto aggiunto in linea d'aria", "error");
         segment.points.push({
             lat: lat,
@@ -188,6 +196,11 @@ export async function addPointToActiveSegment(lon, lat) {
 
 function snapRouteCandidates(profile) {
     const endpoints = [];
+    if (profile === 'water') {
+        endpoints.push({ type: 'brouter', profile: 'river', label: 'BRouter river' });
+        return endpoints;
+    }
+
     const brouterProfile = profile === 'bike' ? 'fastbike' : (profile === 'foot' ? 'trekking' : 'car-fast');
     endpoints.push({ type: 'brouter', profile: brouterProfile, label: `BRouter ${brouterProfile}` });
 
@@ -384,10 +397,12 @@ export function handleBoxDeleteClick(lngLat) {
 export function setSnapProfile(profile, options = {}) {
     setCurrentSnapProfile(profile);
     setIsSnapActive(profile !== 'off');
+    const profileLabel = profile === 'water' ? 'ACQUA' : profile.toUpperCase();
 
-    const profiles = ['off', 'foot', 'bike', 'moto', 'car'];
+    const profiles = ['off', 'foot', 'bike', 'moto', 'car', 'water'];
     profiles.forEach(p => {
         const el = document.getElementById(`snap-profile-${p}`);
+        if (!el) return;
         if (p === profile) {
             el.className = "text-[10px] font-bold py-1 rounded bg-blue-600 text-white";
         } else {
@@ -399,10 +414,11 @@ export function setSnapProfile(profile, options = {}) {
     const badge = document.getElementById('routing-badge');
     if (profile !== 'off') {
         indicator.className = "absolute bottom-1 right-1 w-2 h-2 rounded-full bg-green-500 border border-gray-950 animate-pulse";
-        badge.innerText = `Attivo (${profile.toUpperCase()})`;
+        badge.innerText = `Attivo (${profileLabel})`;
         badge.className = "text-[9px] bg-green-950 text-green-400 px-1.5 py-0.5 rounded border border-green-900 font-bold uppercase";
         if (!options.silent) {
-            showToast(`Snap stradale attivato: Profilo ${profile.toUpperCase()}`, 'success');
+            const tipoSnap = profile === 'water' ? 'acqua' : 'stradale';
+            showToast(`Snap ${tipoSnap} attivato: Profilo ${profileLabel}`, 'success');
         }
     } else {
         indicator.className = "absolute bottom-1 right-1 w-2 h-2 rounded-full bg-red-500 border border-gray-950";
