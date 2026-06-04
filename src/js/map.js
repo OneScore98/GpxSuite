@@ -157,6 +157,7 @@ const APPLICATION_LAYER_ORDER = [
     'gpx-waypoints-point-layer',
     'gpx-waypoints-hit-layer',
     'gpx-waypoints-marker-layer',
+    'gpx-waypoints-label-layer',
     'gpx-edit-points-layer',
     'mapillary-current-fov-fill-layer',
     'mapillary-current-fov-line-layer',

@@ -329,6 +329,37 @@ export function setupWaypointLayers() {
             }
         });
     }
+
+    if (!map.getLayer('gpx-waypoints-label-layer')) {
+        map.addLayer({
+            id: 'gpx-waypoints-label-layer',
+            type: 'symbol',
+            source: 'gpx-waypoints',
+            filter: ['!', ['has', 'point_count']],
+            minzoom: 9,
+            layout: {
+                'text-field': ['coalesce', ['get', 'name'], 'Waypoint'],
+                'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+                'text-size': [
+                    'interpolate', ['linear'],
+                    ['zoom'],
+                    9, 10,
+                    14, 12
+                ],
+                'text-anchor': 'top',
+                'text-offset': [0, 0.35],
+                'text-allow-overlap': false,
+                'text-ignore-placement': false
+            },
+            paint: {
+                'text-color': '#0f172a',
+                'text-halo-color': 'rgba(255,255,255,0.94)',
+                'text-halo-width': 1.8
+            }
+        });
+    }
+
+    updateWaypointsOnMap();
 }
 
 export function updateWaypointsOnMap() {
