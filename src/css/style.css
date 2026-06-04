@@ -1256,12 +1256,7 @@ body.stats-panel-open #recording-status-chip {
     display: none;
 }
 
-#device-dashboard[data-dashboard-size="medium"] .device-dashboard-zone {
-    gap: 0.32rem;
-    max-width: min(11.5rem, calc(50vw - 1rem));
-}
-
-#device-dashboard[data-dashboard-size="medium"] .device-dashboard-card {
+.device-dashboard-card[data-dashboard-size="medium"] {
     grid-template-columns: 1.45rem minmax(0, 1fr);
     gap: 0.34rem;
     min-width: 7.2rem;
@@ -1273,36 +1268,31 @@ body.stats-panel-open #recording-status-chip {
     box-shadow: 0 0.48rem 1rem rgba(2, 6, 23, 0.26);
 }
 
-#device-dashboard[data-dashboard-size="medium"] .device-dashboard-icon {
+.device-dashboard-card[data-dashboard-size="medium"] .device-dashboard-icon {
     width: 1.45rem;
     height: 1.45rem;
     border-radius: 0.34rem;
 }
 
-#device-dashboard[data-dashboard-size="medium"] .device-dashboard-icon svg {
+.device-dashboard-card[data-dashboard-size="medium"] .device-dashboard-icon svg {
     width: 0.88rem;
     height: 0.88rem;
 }
 
-#device-dashboard[data-dashboard-size="medium"] .device-dashboard-label {
+.device-dashboard-card[data-dashboard-size="medium"] .device-dashboard-label {
     font-size: 0.5rem;
 }
 
-#device-dashboard[data-dashboard-size="medium"] .device-dashboard-value {
+.device-dashboard-card[data-dashboard-size="medium"] .device-dashboard-value {
     margin-top: 0.08rem;
     font-size: 0.82rem;
 }
 
-#device-dashboard[data-dashboard-size="medium"] .device-dashboard-value--coords {
+.device-dashboard-card[data-dashboard-size="medium"] .device-dashboard-value--coords {
     font-size: 0.58rem;
 }
 
-#device-dashboard[data-dashboard-size="large"] .device-dashboard-zone {
-    gap: 0.42rem;
-    max-width: min(15rem, calc(50vw - 1rem));
-}
-
-#device-dashboard[data-dashboard-size="large"] .device-dashboard-card {
+.device-dashboard-card[data-dashboard-size="large"] {
     grid-template-columns: 1.75rem minmax(0, 1fr);
     gap: 0.46rem;
     min-width: 8.8rem;
@@ -1314,34 +1304,65 @@ body.stats-panel-open #recording-status-chip {
     box-shadow: 0 0.58rem 1.25rem rgba(2, 6, 23, 0.3);
 }
 
-#device-dashboard[data-dashboard-size="large"] .device-dashboard-icon {
+.device-dashboard-card[data-dashboard-size="large"] .device-dashboard-icon {
     width: 1.75rem;
     height: 1.75rem;
     border-radius: 0.42rem;
 }
 
-#device-dashboard[data-dashboard-size="large"] .device-dashboard-icon svg {
+.device-dashboard-card[data-dashboard-size="large"] .device-dashboard-icon svg {
     width: 1.05rem;
     height: 1.05rem;
 }
 
-#device-dashboard[data-dashboard-size="large"] .device-dashboard-label {
+.device-dashboard-card[data-dashboard-size="large"] .device-dashboard-label {
     font-size: 0.56rem;
 }
 
-#device-dashboard[data-dashboard-size="large"] .device-dashboard-value {
+.device-dashboard-card[data-dashboard-size="large"] .device-dashboard-value {
     margin-top: 0.1rem;
     font-size: 0.98rem;
 }
 
-#device-dashboard[data-dashboard-size="large"] .device-dashboard-value--coords {
+.device-dashboard-card[data-dashboard-size="large"] .device-dashboard-value--coords {
     font-size: 0.68rem;
+}
+
+.device-dashboard-card[data-dashboard-style="contrast"] {
+    border-color: rgba(14, 165, 233, 0.75);
+    background: rgba(2, 6, 23, 0.94);
+    color: #f8fafc;
+    box-shadow: 0 0.45rem 1rem rgba(2, 6, 23, 0.42), 0 0 0 1px rgba(14, 165, 233, 0.18);
+}
+
+.device-dashboard-card[data-dashboard-style="contrast"] .device-dashboard-icon {
+    background: rgba(14, 165, 233, 0.18);
+    border-color: rgba(125, 211, 252, 0.38);
+    color: #7dd3fc;
+}
+
+.device-dashboard-card[data-dashboard-style="contrast"] .device-dashboard-label {
+    color: #cbd5e1;
+}
+
+.device-dashboard-card[data-dashboard-style="glass"] {
+    border-color: rgba(226, 232, 240, 0.2);
+    background: rgba(15, 23, 42, 0.42);
+    box-shadow: 0 0.35rem 0.9rem rgba(2, 6, 23, 0.18);
+    backdrop-filter: blur(0.9rem) saturate(1.16);
+    -webkit-backdrop-filter: blur(0.9rem) saturate(1.16);
+}
+
+.device-dashboard-card[data-dashboard-style="glass"] .device-dashboard-icon {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: #bae6fd;
 }
 
 .device-dashboard-setting-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(6.7rem, auto);
-    gap: 0.5rem;
+    grid-template-columns: 1fr;
+    gap: 0.55rem;
     align-items: center;
     padding: 0.45rem;
     border-radius: 0.5rem;
@@ -1349,8 +1370,15 @@ body.stats-panel-open #recording-status-chip {
     border: 1px solid rgba(31, 41, 55, 0.78);
 }
 
+.device-dashboard-field-controls {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.35rem;
+}
+
 .device-dashboard-position-select {
-    min-width: 6.7rem;
+    min-width: 0;
+    width: 100%;
     background: #030712;
     border: 1px solid #1f2937;
     border-radius: 0.45rem;
@@ -2167,12 +2195,7 @@ label {
         font-size: 0.44rem;
     }
 
-    #device-dashboard[data-dashboard-size="medium"] .device-dashboard-zone {
-        gap: 0.26rem;
-        max-width: min(8.8rem, calc(50vw - 0.85rem));
-    }
-
-    #device-dashboard[data-dashboard-size="medium"] .device-dashboard-card {
+    .device-dashboard-card[data-dashboard-size="medium"] {
         grid-template-columns: 1.22rem minmax(0, 1fr);
         gap: 0.28rem;
         min-width: min(6.5rem, calc(50vw - 0.85rem));
@@ -2180,34 +2203,29 @@ label {
         padding: 0.28rem 0.34rem;
     }
 
-    #device-dashboard[data-dashboard-size="medium"] .device-dashboard-icon {
+    .device-dashboard-card[data-dashboard-size="medium"] .device-dashboard-icon {
         width: 1.22rem;
         height: 1.22rem;
     }
 
-    #device-dashboard[data-dashboard-size="medium"] .device-dashboard-icon svg {
+    .device-dashboard-card[data-dashboard-size="medium"] .device-dashboard-icon svg {
         width: 0.78rem;
         height: 0.78rem;
     }
 
-    #device-dashboard[data-dashboard-size="medium"] .device-dashboard-label {
+    .device-dashboard-card[data-dashboard-size="medium"] .device-dashboard-label {
         font-size: 0.44rem;
     }
 
-    #device-dashboard[data-dashboard-size="medium"] .device-dashboard-value {
+    .device-dashboard-card[data-dashboard-size="medium"] .device-dashboard-value {
         font-size: 0.72rem;
     }
 
-    #device-dashboard[data-dashboard-size="medium"] .device-dashboard-value--coords {
+    .device-dashboard-card[data-dashboard-size="medium"] .device-dashboard-value--coords {
         font-size: 0.52rem;
     }
 
-    #device-dashboard[data-dashboard-size="large"] .device-dashboard-zone {
-        gap: 0.32rem;
-        max-width: min(10.5rem, calc(50vw - 0.85rem));
-    }
-
-    #device-dashboard[data-dashboard-size="large"] .device-dashboard-card {
+    .device-dashboard-card[data-dashboard-size="large"] {
         grid-template-columns: 1.42rem minmax(0, 1fr);
         gap: 0.34rem;
         min-width: min(7.5rem, calc(50vw - 0.85rem));
@@ -2215,25 +2233,25 @@ label {
         padding: 0.34rem 0.42rem;
     }
 
-    #device-dashboard[data-dashboard-size="large"] .device-dashboard-icon {
+    .device-dashboard-card[data-dashboard-size="large"] .device-dashboard-icon {
         width: 1.42rem;
         height: 1.42rem;
     }
 
-    #device-dashboard[data-dashboard-size="large"] .device-dashboard-icon svg {
+    .device-dashboard-card[data-dashboard-size="large"] .device-dashboard-icon svg {
         width: 0.9rem;
         height: 0.9rem;
     }
 
-    #device-dashboard[data-dashboard-size="large"] .device-dashboard-label {
+    .device-dashboard-card[data-dashboard-size="large"] .device-dashboard-label {
         font-size: 0.5rem;
     }
 
-    #device-dashboard[data-dashboard-size="large"] .device-dashboard-value {
+    .device-dashboard-card[data-dashboard-size="large"] .device-dashboard-value {
         font-size: 0.84rem;
     }
 
-    #device-dashboard[data-dashboard-size="large"] .device-dashboard-value--coords {
+    .device-dashboard-card[data-dashboard-size="large"] .device-dashboard-value--coords {
         font-size: 0.6rem;
     }
 
@@ -2245,6 +2263,10 @@ label {
     .device-dashboard-position-select {
         width: 100%;
         min-width: 0;
+    }
+
+    .device-dashboard-field-controls {
+        grid-template-columns: 1fr;
     }
 
     #active-tracks-container {

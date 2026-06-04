@@ -95,7 +95,9 @@ const TOOL_CURSORS = {
 const DEVICE_DASHBOARD_STORAGE_KEY = 'gpxsuite-device-dashboard-v1';
 const DEVICE_DASHBOARD_POSITIONS = ['top-right', 'top-left', 'bottom-right', 'bottom-left'];
 const DEVICE_DASHBOARD_SIZES = ['compact', 'medium', 'large'];
+const DEVICE_DASHBOARD_STYLES = ['essential', 'contrast', 'glass'];
 const DEFAULT_DEVICE_DASHBOARD_SIZE = 'compact';
+const DEFAULT_DEVICE_DASHBOARD_STYLE = 'essential';
 const DEVICE_DASHBOARD_FIELDS = [{
         id: 'compass',
         label: 'Bussola',
@@ -147,12 +149,13 @@ function createDefaultDeviceDashboardSettings() {
     DEVICE_DASHBOARD_FIELDS.forEach(field => {
         fields[field.id] = {
             enabled: false,
-            position: field.defaultPosition
+            position: field.defaultPosition,
+            size: DEFAULT_DEVICE_DASHBOARD_SIZE,
+            style: DEFAULT_DEVICE_DASHBOARD_STYLE
         };
     });
     return {
         version: 1,
-        size: DEFAULT_DEVICE_DASHBOARD_SIZE,
         fields
     };
 }
@@ -160,18 +163,21 @@ function createDefaultDeviceDashboardSettings() {
 function normalizeDeviceDashboardSettings(settings) {
     const defaults = createDefaultDeviceDashboardSettings();
     const fields = {};
-    const size = DEVICE_DASHBOARD_SIZES.includes(settings?.size) ? settings.size : defaults.size;
+    const legacySize = DEVICE_DASHBOARD_SIZES.includes(settings?.size) ? settings.size : DEFAULT_DEVICE_DASHBOARD_SIZE;
     DEVICE_DASHBOARD_FIELDS.forEach(field => {
         const saved = settings?.fields?.[field.id] || {};
         const savedPosition = DEVICE_DASHBOARD_POSITIONS.includes(saved.position) ? saved.position : defaults.fields[field.id].position;
+        const savedSize = DEVICE_DASHBOARD_SIZES.includes(saved.size) ? saved.size : legacySize;
+        const savedStyle = DEVICE_DASHBOARD_STYLES.includes(saved.style) ? saved.style : DEFAULT_DEVICE_DASHBOARD_STYLE;
         fields[field.id] = {
             enabled: saved.enabled === true,
-            position: savedPosition
+            position: savedPosition,
+            size: savedSize,
+            style: savedStyle
         };
     });
     return {
         version: 1,
-        size,
         fields
     };
 }
@@ -224,18 +230,27 @@ function setDeviceDashboardSettingsExpanded(expanded) {
 }
 
 function syncDeviceDashboardSettingsForm() {
-    const sizeSelect = document.getElementById('dashboard-widget-size');
-    if (sizeSelect) sizeSelect.value = _deviceDashboardSettings.size || DEFAULT_DEVICE_DASHBOARD_SIZE;
-
     DEVICE_DASHBOARD_FIELDS.forEach(field => {
         const fieldSettings = _deviceDashboardSettings.fields[field.id];
         const toggle = document.querySelector(`[data-dashboard-field="${field.id}"]`);
         const position = document.querySelector(`[data-dashboard-position-field="${field.id}"]`);
+        const size = document.querySelector(`[data-dashboard-size-field="${field.id}"]`);
+        const style = document.querySelector(`[data-dashboard-style-field="${field.id}"]`);
         if (toggle) toggle.checked = fieldSettings?.enabled === true;
         if (position) {
             position.value = fieldSettings?.position || field.defaultPosition;
             position.disabled = fieldSettings?.enabled !== true;
             position.classList.toggle('opacity-50', fieldSettings?.enabled !== true);
+        }
+        if (size) {
+            size.value = fieldSettings?.size || DEFAULT_DEVICE_DASHBOARD_SIZE;
+            size.disabled = fieldSettings?.enabled !== true;
+            size.classList.toggle('opacity-50', fieldSettings?.enabled !== true);
+        }
+        if (style) {
+            style.value = fieldSettings?.style || DEFAULT_DEVICE_DASHBOARD_STYLE;
+            style.disabled = fieldSettings?.enabled !== true;
+            style.classList.toggle('opacity-50', fieldSettings?.enabled !== true);
         }
     });
     updateDeviceDashboardSettingsBadge();
@@ -253,22 +268,11 @@ function bindDeviceDashboardSettingsForm() {
         });
     }
 
-    const sizeInput = document.getElementById('dashboard-widget-size');
-    if (sizeInput && sizeInput.dataset.bound !== 'true') {
-        sizeInput.dataset.bound = 'true';
-        sizeInput.addEventListener('change', () => {
-            _deviceDashboardSettings.size = DEVICE_DASHBOARD_SIZES.includes(sizeInput.value) ?
-                sizeInput.value :
-                DEFAULT_DEVICE_DASHBOARD_SIZE;
-            persistDeviceDashboardSettings();
-            renderDeviceDashboard();
-            schedulePersistAppSession();
-        });
-    }
-
     DEVICE_DASHBOARD_FIELDS.forEach(field => {
         const enabledInput = document.querySelector(`[data-dashboard-field="${field.id}"]`);
         const positionInput = document.querySelector(`[data-dashboard-position-field="${field.id}"]`);
+        const sizeInput = document.querySelector(`[data-dashboard-size-field="${field.id}"]`);
+        const styleInput = document.querySelector(`[data-dashboard-style-field="${field.id}"]`);
 
         if (enabledInput && enabledInput.dataset.bound !== 'true') {
             enabledInput.dataset.bound = 'true';
@@ -289,6 +293,30 @@ function bindDeviceDashboardSettingsForm() {
                     renderDeviceDashboard();
                     schedulePersistAppSession();
                 }
+            });
+        }
+
+        if (sizeInput && sizeInput.dataset.bound !== 'true') {
+            sizeInput.dataset.bound = 'true';
+            sizeInput.addEventListener('change', () => {
+                _deviceDashboardSettings.fields[field.id].size = DEVICE_DASHBOARD_SIZES.includes(sizeInput.value) ?
+                    sizeInput.value :
+                    DEFAULT_DEVICE_DASHBOARD_SIZE;
+                persistDeviceDashboardSettings();
+                renderDeviceDashboard();
+                schedulePersistAppSession();
+            });
+        }
+
+        if (styleInput && styleInput.dataset.bound !== 'true') {
+            styleInput.dataset.bound = 'true';
+            styleInput.addEventListener('change', () => {
+                _deviceDashboardSettings.fields[field.id].style = DEVICE_DASHBOARD_STYLES.includes(styleInput.value) ?
+                    styleInput.value :
+                    DEFAULT_DEVICE_DASHBOARD_STYLE;
+                persistDeviceDashboardSettings();
+                renderDeviceDashboard();
+                schedulePersistAppSession();
             });
         }
     });
@@ -392,8 +420,11 @@ function renderDeviceDashboardCard(field, status) {
     const metricHeading = parseDeviceDashboardNumber(metric.heading);
     const headingStyle = metricHeading !== null ? ` style="--device-dashboard-heading:${metricHeading}deg"` : '';
     const valueHtml = metric.valueHtml || safeHtml(metric.value);
+    const fieldSettings = _deviceDashboardSettings.fields[field.id] || {};
+    const size = DEVICE_DASHBOARD_SIZES.includes(fieldSettings.size) ? fieldSettings.size : DEFAULT_DEVICE_DASHBOARD_SIZE;
+    const style = DEVICE_DASHBOARD_STYLES.includes(fieldSettings.style) ? fieldSettings.style : DEFAULT_DEVICE_DASHBOARD_STYLE;
     return `
-        <div class="device-dashboard-card device-dashboard-card--${safeHtml(field.id)}"${headingStyle}>
+        <div class="device-dashboard-card device-dashboard-card--${safeHtml(field.id)}" data-dashboard-size="${safeHtml(size)}" data-dashboard-style="${safeHtml(style)}"${headingStyle}>
             <div class="device-dashboard-icon">
                 <i data-lucide="${safeHtml(field.icon)}" class="w-4 h-4"></i>
             </div>
@@ -409,9 +440,6 @@ function renderDeviceDashboardCard(field, status) {
 function renderDeviceDashboard() {
     const dashboard = document.getElementById('device-dashboard');
     if (!dashboard) return;
-    dashboard.dataset.dashboardSize = DEVICE_DASHBOARD_SIZES.includes(_deviceDashboardSettings.size) ?
-        _deviceDashboardSettings.size :
-        DEFAULT_DEVICE_DASHBOARD_SIZE;
     const zoneEls = {};
     DEVICE_DASHBOARD_POSITIONS.forEach(position => {
         const zone = dashboard.querySelector(`[data-dashboard-zone="${position}"]`);

@@ -216,7 +216,7 @@
     </div>
 
     <!-- DASHBOARD DATI DISPOSITIVO -->
-    <div id="device-dashboard" class="device-dashboard hidden absolute inset-0 z-[12] pointer-events-none" data-dashboard-size="compact" aria-live="polite">
+    <div id="device-dashboard" class="device-dashboard hidden absolute inset-0 z-[12] pointer-events-none" aria-live="polite">
         <div class="device-dashboard-zone device-dashboard-zone--top-left" data-dashboard-zone="top-left"></div>
         <div class="device-dashboard-zone device-dashboard-zone--top-right" data-dashboard-zone="top-right"></div>
         <div class="device-dashboard-zone device-dashboard-zone--bottom-left" data-dashboard-zone="bottom-left"></div>
@@ -475,22 +475,6 @@
                 <div id="device-dashboard-settings-content" class="hidden space-y-2">
                     <div class="device-dashboard-setting-row">
                         <label class="flex items-center gap-2 min-w-0">
-              <span class="min-w-0">
-                <span class="flex items-center gap-1.5 text-xs text-gray-200">
-                  <i data-lucide="maximize-2" class="w-3.5 h-3.5 text-slate-300"></i>
-                  Dimensione widget
-                </span>
-                <span class="block text-[9px] text-gray-500">Scala dei dati sulla mappa</span>
-              </span>
-            </label>
-                        <select id="dashboard-widget-size" class="device-dashboard-position-select">
-              <option value="compact">Piccola</option>
-              <option value="medium">Media</option>
-              <option value="large">Grande</option>
-            </select>
-                    </div>
-                    <div class="device-dashboard-setting-row">
-                        <label class="flex items-center gap-2 min-w-0">
               <input type="checkbox" id="dashboard-field-compass" data-dashboard-field="compass" class="accent-sky-500">
               <span class="min-w-0">
                 <span class="flex items-center gap-1.5 text-xs text-gray-200">
@@ -500,12 +484,24 @@
                 <span class="block text-[9px] text-gray-500">Direzione dispositivo</span>
               </span>
             </label>
+                        <div class="device-dashboard-field-controls">
                         <select id="dashboard-position-compass" data-dashboard-position-field="compass" class="device-dashboard-position-select">
               <option value="top-right">Alto destra</option>
               <option value="top-left">Alto sinistra</option>
               <option value="bottom-right">Basso destra</option>
               <option value="bottom-left">Basso sinistra</option>
             </select>
+                        <select id="dashboard-size-compass" data-dashboard-size-field="compass" class="device-dashboard-position-select">
+              <option value="compact">Piccola</option>
+              <option value="medium">Media</option>
+              <option value="large">Grande</option>
+            </select>
+                        <select id="dashboard-style-compass" data-dashboard-style-field="compass" class="device-dashboard-position-select">
+              <option value="essential">Essenziale</option>
+              <option value="contrast">Contrasto</option>
+              <option value="glass">Vetro</option>
+            </select>
+                        </div>
                     </div>
                     <div class="device-dashboard-setting-row">
                         <label class="flex items-center gap-2 min-w-0">
@@ -518,12 +514,24 @@
                 <span class="block text-[9px] text-gray-500">Altitudine dal telefono</span>
               </span>
             </label>
+                        <div class="device-dashboard-field-controls">
                         <select id="dashboard-position-altitude" data-dashboard-position-field="altitude" class="device-dashboard-position-select">
               <option value="top-right">Alto destra</option>
               <option value="top-left">Alto sinistra</option>
               <option value="bottom-right">Basso destra</option>
               <option value="bottom-left">Basso sinistra</option>
             </select>
+                        <select id="dashboard-size-altitude" data-dashboard-size-field="altitude" class="device-dashboard-position-select">
+              <option value="compact">Piccola</option>
+              <option value="medium">Media</option>
+              <option value="large">Grande</option>
+            </select>
+                        <select id="dashboard-style-altitude" data-dashboard-style-field="altitude" class="device-dashboard-position-select">
+              <option value="essential">Essenziale</option>
+              <option value="contrast">Contrasto</option>
+              <option value="glass">Vetro</option>
+            </select>
+                        </div>
                     </div>
                     <div class="device-dashboard-setting-row">
                         <label class="flex items-center gap-2 min-w-0">
@@ -536,12 +544,24 @@
                 <span class="block text-[9px] text-gray-500">Andatura istantanea</span>
               </span>
             </label>
+                        <div class="device-dashboard-field-controls">
                         <select id="dashboard-position-speed" data-dashboard-position-field="speed" class="device-dashboard-position-select">
               <option value="top-right">Alto destra</option>
               <option value="top-left">Alto sinistra</option>
               <option value="bottom-right">Basso destra</option>
               <option value="bottom-left">Basso sinistra</option>
             </select>
+                        <select id="dashboard-size-speed" data-dashboard-size-field="speed" class="device-dashboard-position-select">
+              <option value="compact">Piccola</option>
+              <option value="medium">Media</option>
+              <option value="large">Grande</option>
+            </select>
+                        <select id="dashboard-style-speed" data-dashboard-style-field="speed" class="device-dashboard-position-select">
+              <option value="essential">Essenziale</option>
+              <option value="contrast">Contrasto</option>
+              <option value="glass">Vetro</option>
+            </select>
+                        </div>
                     </div>
                     <div class="device-dashboard-setting-row">
                         <label class="flex items-center gap-2 min-w-0">
@@ -554,12 +574,24 @@
                 <span class="block text-[9px] text-gray-500">Raggio stimato GPS</span>
               </span>
             </label>
+                        <div class="device-dashboard-field-controls">
                         <select id="dashboard-position-accuracy" data-dashboard-position-field="accuracy" class="device-dashboard-position-select">
               <option value="top-right">Alto destra</option>
               <option value="top-left">Alto sinistra</option>
               <option value="bottom-right">Basso destra</option>
               <option value="bottom-left">Basso sinistra</option>
             </select>
+                        <select id="dashboard-size-accuracy" data-dashboard-size-field="accuracy" class="device-dashboard-position-select">
+              <option value="compact">Piccola</option>
+              <option value="medium">Media</option>
+              <option value="large">Grande</option>
+            </select>
+                        <select id="dashboard-style-accuracy" data-dashboard-style-field="accuracy" class="device-dashboard-position-select">
+              <option value="essential">Essenziale</option>
+              <option value="contrast">Contrasto</option>
+              <option value="glass">Vetro</option>
+            </select>
+                        </div>
                     </div>
                     <div class="device-dashboard-setting-row">
                         <label class="flex items-center gap-2 min-w-0">
@@ -572,12 +604,24 @@
                 <span class="block text-[9px] text-gray-500">Latitudine e longitudine</span>
               </span>
             </label>
+                        <div class="device-dashboard-field-controls">
                         <select id="dashboard-position-coordinates" data-dashboard-position-field="coordinates" class="device-dashboard-position-select">
               <option value="top-right">Alto destra</option>
               <option value="top-left">Alto sinistra</option>
               <option value="bottom-right">Basso destra</option>
               <option value="bottom-left">Basso sinistra</option>
             </select>
+                        <select id="dashboard-size-coordinates" data-dashboard-size-field="coordinates" class="device-dashboard-position-select">
+              <option value="compact">Piccola</option>
+              <option value="medium">Media</option>
+              <option value="large">Grande</option>
+            </select>
+                        <select id="dashboard-style-coordinates" data-dashboard-style-field="coordinates" class="device-dashboard-position-select">
+              <option value="essential">Essenziale</option>
+              <option value="contrast">Contrasto</option>
+              <option value="glass">Vetro</option>
+            </select>
+                        </div>
                     </div>
                 </div>
             </div>
