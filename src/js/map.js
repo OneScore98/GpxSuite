@@ -153,6 +153,8 @@ const APPLICATION_LAYER_ORDER = [
     'gpx-waypoints-cluster-halo-layer',
     'gpx-waypoints-cluster-layer',
     'gpx-waypoints-cluster-count-layer',
+    'gpx-waypoints-point-halo-layer',
+    'gpx-waypoints-point-layer',
     'gpx-waypoints-hit-layer',
     'gpx-waypoints-marker-layer',
     'gpx-edit-points-layer',
@@ -1648,12 +1650,18 @@ export function setDimensionMode(enable3D, options = {}) {
         map.easeTo({ pitch: 0, bearing: 0, duration: 800 });
     }
 
-    document.getElementById('view-mode-2d').className = !enable3D ?
-        "text-xs font-medium py-1 px-2 rounded bg-blue-600 text-white" :
-        "text-xs font-medium py-1 px-2 rounded text-gray-400 hover:text-white";
-    document.getElementById('view-mode-3d').className = enable3D ?
-        "text-xs font-medium py-1 px-2 rounded bg-blue-600 text-white" :
-        "text-xs font-medium py-1 px-2 rounded text-gray-400 hover:text-white";
+    const viewMode2dButton = document.getElementById('view-mode-2d');
+    const viewMode3dButton = document.getElementById('view-mode-3d');
+    if (viewMode2dButton) {
+        viewMode2dButton.className = !enable3D ?
+            "text-xs font-medium py-1 px-2 rounded bg-blue-600 text-white" :
+            "text-xs font-medium py-1 px-2 rounded text-gray-400 hover:text-white";
+    }
+    if (viewMode3dButton) {
+        viewMode3dButton.className = enable3D ?
+            "text-xs font-medium py-1 px-2 rounded bg-blue-600 text-white" :
+            "text-xs font-medium py-1 px-2 rounded text-gray-400 hover:text-white";
+    }
 
     schedulePersistAppSession();
 }

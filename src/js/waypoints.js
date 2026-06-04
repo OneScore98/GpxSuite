@@ -23,72 +23,66 @@ let _draggingWaypoint = null;
 let _dragMoved = false;
 let _suppressNextWaypointClick = false;
 const ID_MARKER_WAYPOINT_LEAFLET = 'gpx-waypoint-leaflet-marker';
-const URL_ICONA_WAYPOINT_LEAFLET = 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png';
-const URL_OMBRA_WAYPOINT_LEAFLET = 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png';
 let _markerWaypointLeaflet = null;
-let _markerWaypointLeafletPromise = null;
-const _immaginiWaypointLeaflet = new Map();
-
-function caricaImmagineWaypointLeaflet(url) {
-    if (_immaginiWaypointLeaflet.has(url)) return _immaginiWaypointLeaflet.get(url);
-
-    const promise = new Promise((resolve, reject) => {
-        const image = new Image();
-        image.crossOrigin = 'anonymous';
-        image.onload = () => resolve(image);
-        image.onerror = () => {
-            _immaginiWaypointLeaflet.delete(url);
-            reject(new Error(`Impossibile caricare ${url}`));
-        };
-        image.src = url;
-    });
-
-    _immaginiWaypointLeaflet.set(url, promise);
-    return promise;
-}
 
 function costruisciMarkerWaypointLeaflet() {
-    if (_markerWaypointLeaflet) return Promise.resolve(_markerWaypointLeaflet);
-    if (_markerWaypointLeafletPromise) return _markerWaypointLeafletPromise;
+    if (_markerWaypointLeaflet) return _markerWaypointLeaflet;
 
-    _markerWaypointLeafletPromise = Promise.all([
-        caricaImmagineWaypointLeaflet(URL_ICONA_WAYPOINT_LEAFLET),
-        caricaImmagineWaypointLeaflet(URL_OMBRA_WAYPOINT_LEAFLET)
-    ]).then(([icona, ombra]) => {
-        const scala = 2;
-        const larghezza = 58;
-        const altezza = 41;
-        const ancoraX = 12;
-        const x = (larghezza / 2) - ancoraX;
-        const canvas = document.createElement('canvas');
-        canvas.width = larghezza * scala;
-        canvas.height = altezza * scala;
-        const ctx = canvas.getContext('2d');
-        ctx.scale(scala, scala);
-        ctx.drawImage(ombra, x, 0, 41, 41);
-        ctx.drawImage(icona, x, 0, 25, 41);
-        _markerWaypointLeaflet = {
-            imageData: ctx.getImageData(0, 0, canvas.width, canvas.height),
-            pixelRatio: scala
-        };
-        return _markerWaypointLeaflet;
-    }).catch(err => {
-        _markerWaypointLeafletPromise = null;
-        throw err;
-    });
+    const scala = 2;
+    const larghezza = 34;
+    const altezza = 46;
+    const canvas = document.createElement('canvas');
+    canvas.width = larghezza * scala;
+    canvas.height = altezza * scala;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(scala, scala);
 
-    return _markerWaypointLeafletPromise;
+    ctx.save();
+    ctx.globalAlpha = 0.28;
+    ctx.fillStyle = '#020617';
+    ctx.beginPath();
+    ctx.ellipse(18, 40, 10, 4, -0.18, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.shadowColor = 'rgba(2, 6, 23, 0.55)';
+    ctx.shadowBlur = 5;
+    ctx.shadowOffsetY = 2;
+    ctx.beginPath();
+    ctx.moveTo(17, 41);
+    ctx.bezierCurveTo(14, 34, 7, 27, 7, 17);
+    ctx.bezierCurveTo(7, 9, 11, 4, 17, 4);
+    ctx.bezierCurveTo(23, 4, 27, 9, 27, 17);
+    ctx.bezierCurveTo(27, 27, 20, 34, 17, 41);
+    ctx.closePath();
+    ctx.fillStyle = '#2563eb';
+    ctx.fill();
+    ctx.lineWidth = 2.2;
+    ctx.strokeStyle = '#f8fafc';
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.beginPath();
+    ctx.arc(17, 17, 5.6, 0, Math.PI * 2);
+    ctx.fillStyle = '#eff6ff';
+    ctx.fill();
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = '#0f172a';
+    ctx.stroke();
+
+    _markerWaypointLeaflet = {
+        imageData: ctx.getImageData(0, 0, canvas.width, canvas.height),
+        pixelRatio: scala
+    };
+    return _markerWaypointLeaflet;
 }
 
 function registraMarkerWaypointLeaflet() {
     if (!map || map.hasImage(ID_MARKER_WAYPOINT_LEAFLET)) return;
 
-    costruisciMarkerWaypointLeaflet()
-        .then(({ imageData, pixelRatio }) => {
-            if (!map || map.hasImage(ID_MARKER_WAYPOINT_LEAFLET)) return;
-            map.addImage(ID_MARKER_WAYPOINT_LEAFLET, imageData, { pixelRatio });
-        })
-        .catch(err => console.warn('Errore caricamento marker waypoint Leaflet:', err));
+    const { imageData, pixelRatio } = costruisciMarkerWaypointLeaflet();
+    map.addImage(ID_MARKER_WAYPOINT_LEAFLET, imageData, { pixelRatio });
 }
 
 function buildWaypointFeatureCollection() {
@@ -260,13 +254,56 @@ export function setupWaypointLayers() {
         });
     }
 
+    if (!map.getLayer('gpx-waypoints-point-halo-layer')) {
+        map.addLayer({
+            id: 'gpx-waypoints-point-halo-layer',
+            type: 'circle',
+            source: 'gpx-waypoints',
+            filter: ['!', ['has', 'point_count']],
+            paint: {
+                'circle-radius': [
+                    'interpolate', ['linear'],
+                    ['zoom'],
+                    4, 8,
+                    12, 10,
+                    16, 12
+                ],
+                'circle-color': '#ffffff',
+                'circle-opacity': 0.92,
+                'circle-stroke-width': 2,
+                'circle-stroke-color': 'rgba(15,23,42,0.65)'
+            }
+        });
+    }
+
+    if (!map.getLayer('gpx-waypoints-point-layer')) {
+        map.addLayer({
+            id: 'gpx-waypoints-point-layer',
+            type: 'circle',
+            source: 'gpx-waypoints',
+            filter: ['!', ['has', 'point_count']],
+            paint: {
+                'circle-radius': [
+                    'interpolate', ['linear'],
+                    ['zoom'],
+                    4, 4,
+                    12, 5.5,
+                    16, 7
+                ],
+                'circle-color': ['get', 'color'],
+                'circle-opacity': 0.96,
+                'circle-stroke-width': 1.4,
+                'circle-stroke-color': '#ffffff'
+            }
+        });
+    }
+
     if (!map.getLayer('gpx-waypoints-hit-layer')) {
         map.addLayer({
             id: 'gpx-waypoints-hit-layer',
             type: 'circle',
             source: 'gpx-waypoints',
             filter: ['!', ['has', 'point_count']],
-            minzoom: 12,
             paint: {
                 'circle-radius': 22,
                 'circle-color': '#000000',
@@ -283,7 +320,6 @@ export function setupWaypointLayers() {
             type: 'symbol',
             source: 'gpx-waypoints',
             filter: ['!', ['has', 'point_count']],
-            minzoom: 12,
             layout: {
                 'icon-image': ID_MARKER_WAYPOINT_LEAFLET,
                 'icon-anchor': 'bottom',

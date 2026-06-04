@@ -93,40 +93,32 @@ const TOOL_CURSORS = {
     waypoint: createSvgCursor('<path d="M12 22s7-6.2 7-12a7 7 0 10-14 0c0 5.8 7 12 7 12z" fill="#2563eb" stroke="#f8fafc" stroke-width="2"/><circle cx="12" cy="10" r="2.5" fill="#f8fafc"/>', 12, 22)
 };
 const DEVICE_DASHBOARD_STORAGE_KEY = 'gpxsuite-device-dashboard-v1';
+const DEVICE_DASHBOARD_SETTINGS_VERSION = 2;
 const DEVICE_DASHBOARD_POSITIONS = ['top-right', 'top-left', 'bottom-right', 'bottom-left'];
 const DEVICE_DASHBOARD_SIZES = ['compact', 'medium', 'large'];
-const DEVICE_DASHBOARD_STYLES = ['essential', 'contrast', 'glass'];
+const DEVICE_DASHBOARD_STYLES = ['map', 'outdoor', 'night'];
 const DEFAULT_DEVICE_DASHBOARD_SIZE = 'compact';
-const DEFAULT_DEVICE_DASHBOARD_STYLE = 'essential';
+const DEFAULT_DEVICE_DASHBOARD_STYLE = 'map';
 const DEVICE_DASHBOARD_FIELDS = [{
         id: 'compass',
         label: 'Bussola',
         icon: 'navigation',
-        defaultPosition: 'top-right'
+        defaultPosition: 'top-right',
+        defaultEnabled: true
     },
     {
         id: 'altitude',
-        label: 'Quota GPS',
+        label: 'Altitudine',
         icon: 'mountain',
-        defaultPosition: 'top-right'
+        defaultPosition: 'top-right',
+        defaultEnabled: true
     },
     {
         id: 'speed',
         label: 'Velocità',
         icon: 'gauge',
-        defaultPosition: 'bottom-right'
-    },
-    {
-        id: 'accuracy',
-        label: 'Precisione',
-        icon: 'crosshair',
-        defaultPosition: 'bottom-right'
-    },
-    {
-        id: 'coordinates',
-        label: 'Coordinate',
-        icon: 'map-pin',
-        defaultPosition: 'bottom-left'
+        defaultPosition: 'top-right',
+        defaultEnabled: true
     }
 ];
 let _deviceDashboardSettings = readDeviceDashboardSettings();
@@ -148,36 +140,46 @@ function createDefaultDeviceDashboardSettings() {
     const fields = {};
     DEVICE_DASHBOARD_FIELDS.forEach(field => {
         fields[field.id] = {
-            enabled: false,
+            enabled: field.defaultEnabled === true,
             position: field.defaultPosition,
             size: DEFAULT_DEVICE_DASHBOARD_SIZE,
             style: DEFAULT_DEVICE_DASHBOARD_STYLE
         };
     });
     return {
-        version: 1,
+        version: DEVICE_DASHBOARD_SETTINGS_VERSION,
         fields
     };
+}
+
+function normalizeDeviceDashboardStyle(value) {
+    if (DEVICE_DASHBOARD_STYLES.includes(value)) return value;
+    if (value === 'essential') return 'map';
+    if (value === 'contrast') return 'outdoor';
+    if (value === 'glass') return 'night';
+    return DEFAULT_DEVICE_DASHBOARD_STYLE;
 }
 
 function normalizeDeviceDashboardSettings(settings) {
     const defaults = createDefaultDeviceDashboardSettings();
     const fields = {};
     const legacySize = DEVICE_DASHBOARD_SIZES.includes(settings?.size) ? settings.size : DEFAULT_DEVICE_DASHBOARD_SIZE;
+    const isLegacySettings = settings?.version !== DEVICE_DASHBOARD_SETTINGS_VERSION;
     DEVICE_DASHBOARD_FIELDS.forEach(field => {
         const saved = settings?.fields?.[field.id] || {};
+        const useDefaultConfig = isLegacySettings && saved.enabled !== true;
         const savedPosition = DEVICE_DASHBOARD_POSITIONS.includes(saved.position) ? saved.position : defaults.fields[field.id].position;
         const savedSize = DEVICE_DASHBOARD_SIZES.includes(saved.size) ? saved.size : legacySize;
-        const savedStyle = DEVICE_DASHBOARD_STYLES.includes(saved.style) ? saved.style : DEFAULT_DEVICE_DASHBOARD_STYLE;
+        const savedStyle = normalizeDeviceDashboardStyle(saved.style);
         fields[field.id] = {
-            enabled: saved.enabled === true,
-            position: savedPosition,
+            enabled: isLegacySettings ? field.defaultEnabled === true : saved.enabled === true,
+            position: useDefaultConfig ? defaults.fields[field.id].position : savedPosition,
             size: savedSize,
             style: savedStyle
         };
     });
     return {
-        version: 1,
+        version: DEVICE_DASHBOARD_SETTINGS_VERSION,
         fields
     };
 }
@@ -311,9 +313,7 @@ function bindDeviceDashboardSettingsForm() {
         if (styleInput && styleInput.dataset.bound !== 'true') {
             styleInput.dataset.bound = 'true';
             styleInput.addEventListener('change', () => {
-                _deviceDashboardSettings.fields[field.id].style = DEVICE_DASHBOARD_STYLES.includes(styleInput.value) ?
-                    styleInput.value :
-                    DEFAULT_DEVICE_DASHBOARD_STYLE;
+                _deviceDashboardSettings.fields[field.id].style = normalizeDeviceDashboardStyle(styleInput.value);
                 persistDeviceDashboardSettings();
                 renderDeviceDashboard();
                 schedulePersistAppSession();
@@ -386,29 +386,6 @@ function buildDeviceDashboardMetric(field, status) {
         };
     }
 
-    if (field.id === 'accuracy') {
-        const accuracy = active ? formatDeviceDashboardNumber(fix.accuracy, 0) : null;
-        const accuracyNumber = parseDeviceDashboardNumber(fix.accuracy);
-        const quality = accuracyNumber !== null ?
-            (accuracyNumber <= 10 ? 'Alta' : (accuracyNumber <= 25 ? 'Buona' : 'Debole')) :
-            getLocationUnavailableMeta(status);
-        return {
-            value: accuracy !== null ? `±${accuracy} m` : '-- m',
-            meta: accuracy !== null ? quality : getLocationUnavailableMeta(status)
-        };
-    }
-
-    if (field.id === 'coordinates') {
-        const lat = active ? formatDeviceDashboardNumber(fix.lat, 5) : null;
-        const lon = active ? formatDeviceDashboardNumber(fix.lon, 5) : null;
-        return {
-            value: lat !== null && lon !== null ? `${lat}<br>${lon}` : '--.-----<br>--.-----',
-            valueHtml: lat !== null && lon !== null ? `${safeHtml(lat)}<br>${safeHtml(lon)}` : '--.-----<br>--.-----',
-            meta: lat !== null && lon !== null ? 'Lat / Lon' : getLocationUnavailableMeta(status),
-            valueClass: 'device-dashboard-value--coords'
-        };
-    }
-
     return {
         value: '--',
         meta: ''
@@ -422,7 +399,7 @@ function renderDeviceDashboardCard(field, status) {
     const valueHtml = metric.valueHtml || safeHtml(metric.value);
     const fieldSettings = _deviceDashboardSettings.fields[field.id] || {};
     const size = DEVICE_DASHBOARD_SIZES.includes(fieldSettings.size) ? fieldSettings.size : DEFAULT_DEVICE_DASHBOARD_SIZE;
-    const style = DEVICE_DASHBOARD_STYLES.includes(fieldSettings.style) ? fieldSettings.style : DEFAULT_DEVICE_DASHBOARD_STYLE;
+    const style = normalizeDeviceDashboardStyle(fieldSettings.style);
     return `
         <div class="device-dashboard-card device-dashboard-card--${safeHtml(field.id)}" data-dashboard-size="${safeHtml(size)}" data-dashboard-style="${safeHtml(style)}"${headingStyle}>
             <div class="device-dashboard-icon">
@@ -3210,8 +3187,10 @@ export function setupEvents() {
         if (_closeMapillaryViewer) _closeMapillaryViewer();
     };
 
-    document.getElementById('view-mode-2d').onclick = () => _setDimensionMode(false);
-    document.getElementById('view-mode-3d').onclick = () => _setDimensionMode(true);
+    const viewMode2dButton = document.getElementById('view-mode-2d');
+    const viewMode3dButton = document.getElementById('view-mode-3d');
+    if (viewMode2dButton) viewMode2dButton.onclick = () => _setDimensionMode(false);
+    if (viewMode3dButton) viewMode3dButton.onclick = () => _setDimensionMode(true);
 
     document.getElementById('btn-draw-track').onclick = () => {
         setIsDrawing(!isDrawing);
@@ -3398,24 +3377,23 @@ export function setupEvents() {
         handleTreeKeyboardShortcuts(e);
     });
 
-    document.getElementById('file-import-gpx').onchange = (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            trackAnalyticsEvent('import_gpx', {
-                fileName: file.name,
-                size: file.size
-            }).catch(err => console.warn(err));
-            const reader = new FileReader();
-            reader.onload = function(evt) {
-                _importGPX(evt.target.result, file.name);
-            };
-            reader.readAsText(file);
-        }
-    };
-
-    document.getElementById('btn-export-gpx').onclick = () => {
-        downloadTrackGPX(activeTrackId, 'toolbar');
-    };
+    const fileImportInput = document.getElementById('file-import-gpx');
+    if (fileImportInput) {
+        fileImportInput.onchange = (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                trackAnalyticsEvent('import_gpx', {
+                    fileName: file.name,
+                    size: file.size
+                }).catch(err => console.warn(err));
+                const reader = new FileReader();
+                reader.onload = function(evt) {
+                    _importGPX(evt.target.result, file.name);
+                };
+                reader.readAsText(file);
+            }
+        };
+    }
 
     document.getElementById('btn-tree-new-track').onclick = () => {
         createNewTrack();

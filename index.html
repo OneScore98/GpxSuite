@@ -300,17 +300,6 @@
         <i data-lucide="bar-chart-2" class="w-4 h-4"></i>
       </button>
 
-            <!-- Importa GPX -->
-            <label class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300 cursor-pointer" title="Importa file GPX">
-        <input type="file" id="file-import-gpx" accept=".gpx" class="hidden">
-        <i data-lucide="upload" class="w-4 h-4"></i>
-      </label>
-
-            <!-- Esporta GPX -->
-            <button id="btn-export-gpx" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-gray-300" title="Esporta file GPX">
-        <i data-lucide="download" class="w-4 h-4"></i>
-      </button>
-
             <!-- Configurazione Stampa (Progettazione Interattiva) -->
             <button id="btn-open-print" class="w-8 h-8 rounded-lg hover:bg-gray-800 transition-all flex items-center justify-center text-green-400" title="Progetta e Stampa Mappa (Punto 10)">
         <i data-lucide="printer" class="w-4 h-4"></i>
@@ -332,101 +321,110 @@
         </div>
 
         <!-- Contenuto scrollabile -->
-        <div class="flex-1 overflow-y-auto p-4 space-y-5">
-            <!-- Ricerca Nominatim -->
-            <div class="space-y-2">
-                <label class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Cerca Località</label>
-                <div class="flex gap-1.5">
-                    <input type="text" id="input-search" placeholder="Es. Cortina d'Ampezzo..." class="flex-1 bg-gray-900 border border-gray-800 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-blue-500">
-                    <button id="btn-search" class="bg-blue-600 hover:bg-blue-500 text-white rounded-lg px-2.5 flex items-center justify-center">
+        <div class="main-menu-body flex-1 overflow-y-auto">
+            <!-- Ricerca e guida -->
+            <section class="main-menu-group">
+                <div class="main-menu-group-title">
+                    <span>Ricerca e guida</span>
+                </div>
+                <div class="main-menu-card">
+                    <div class="main-menu-search">
+                        <input type="text" id="input-search" placeholder="Cerca località..." class="min-w-0 flex-1 bg-gray-950/70 border border-gray-800 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-blue-500">
+                        <button id="btn-search" class="bg-blue-600 hover:bg-blue-500 text-white rounded-lg px-2.5 flex items-center justify-center" title="Cerca località">
             <i data-lucide="search" class="w-3.5 h-3.5"></i>
           </button>
-                </div>
-            </div>
-
-            <!-- Collegamento alla Wiki -->
-            <div class="space-y-2">
-                <label class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Guida Utente</label>
-                <a href="wiki.html#guida-rapida" target="_blank" rel="noopener" class="w-full bg-sky-950/40 hover:bg-sky-900/70 text-sky-200 border border-sky-900/80 rounded-lg py-2 px-3 text-xs font-semibold flex items-center justify-between gap-2 transition-all">
+                    </div>
+                    <a href="wiki.html#guida-rapida" target="_blank" rel="noopener" class="main-menu-link">
           <span class="flex items-center gap-2 min-w-0">
             <i data-lucide="book-open" class="w-3.5 h-3.5 shrink-0"></i>
-            <span class="truncate">Apri Wiki GpxSuite</span>
+            <span class="truncate">Guida utente</span>
           </span>
           <i data-lucide="external-link" class="w-3.5 h-3.5 shrink-0 text-sky-300"></i>
         </a>
-            </div>
+                </div>
+            </section>
 
-            <!-- Selezione Mappe e Sentieri -->
-            <div class="space-y-2">
-                <label class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Mappe di Base</label>
-                <div class="grid grid-cols-3 gap-1 bg-gray-900 p-1 rounded-lg border border-gray-800">
+            <!-- Mappa -->
+            <section class="main-menu-group">
+                <div class="main-menu-group-title">
+                    <span>Mappa</span>
+                </div>
+                <div class="main-menu-card">
+                    <div class="main-menu-subtitle">Base cartografica</div>
+                    <div class="grid grid-cols-3 gap-1 bg-gray-950/70 p-1 rounded-lg border border-gray-800">
                     <button id="map-style-osm" class="text-[10px] font-medium py-1.5 px-1 rounded-md text-center bg-blue-600 text-white transition-all">MAPPA</button>
                     <button id="map-style-sat" class="text-[10px] font-medium py-1.5 px-1 rounded-md text-center text-gray-400 hover:text-white transition-all">SAT</button>
                     <button id="map-style-topo" class="text-[10px] font-medium py-1.5 px-1 rounded-md text-center text-gray-400 hover:text-white transition-all">TOPO</button>
-                </div>
+                    </div>
 
-                <!-- Opzioni Satellite (Ibrido) -->
-                <div id="sat-options-container" class="hidden pt-1.5 flex items-center justify-between">
-                    <span class="text-xs text-gray-300">Vista Ibrida (Strade/Nomi)</span>
-                    <label class="relative inline-flex items-center cursor-pointer">
+                    <!-- Opzioni Satellite (Ibrido) -->
+                    <div id="sat-options-container" class="hidden main-menu-row mt-2">
+                        <span class="text-xs text-gray-300">Vista ibrida</span>
+                        <label class="relative inline-flex items-center cursor-pointer">
             <input type="checkbox" id="toggle-hybrid" class="sr-only peer" checked>
             <div class="w-8 h-4 bg-gray-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-300 after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600"></div>
           </label>
-                </div>
-
-                <!-- Opzione Sentieri Ufficiali OSM -->
-                <div class="pt-2 flex items-center justify-between border-t border-gray-800 mt-2">
-                    <div class="flex flex-col">
-                        <span class="text-xs text-green-400 font-semibold flex items-center gap-1">
-              <i data-lucide="footprints" class="w-3.5 h-3.5"></i> Sentieri OSM (Punto 7)
-            </span>
-                        <span class="text-[9px] text-gray-500">Rete escursionistica mondiale</span>
                     </div>
-                    <label class="relative inline-flex items-center cursor-pointer">
+
+                </div>
+            </section>
+
+            <!-- Livelli -->
+            <section class="main-menu-group">
+                <div class="main-menu-group-title">
+                    <span>Livelli</span>
+                </div>
+                <div class="main-menu-card">
+                <!-- Opzione Sentieri Ufficiali OSM -->
+                    <div class="main-menu-row">
+                        <div class="flex flex-col min-w-0">
+                        <span class="text-xs text-green-400 font-semibold flex items-center gap-1">
+              <i data-lucide="footprints" class="w-3.5 h-3.5"></i> Sentieri OSM
+            </span>
+                            <span class="text-[9px] text-gray-500">Rete escursionistica</span>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
             <input type="checkbox" id="toggle-hiking-trails" class="sr-only peer">
             <div class="w-8 h-4 bg-gray-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-300 after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-green-600"></div>
           </label>
-                </div>
+                    </div>
 
-                <!-- Opzione Mapillary -->
-                <div class="pt-2 space-y-2 border-t border-gray-800 mt-2">
-                    <div class="flex items-center justify-between gap-3">
+                    <!-- Opzione Mapillary -->
+                    <div class="main-menu-row border-t border-gray-800/70 pt-2 mt-2">
                         <div class="flex flex-col min-w-0">
                             <span class="text-xs text-emerald-400 font-semibold flex items-center gap-1">
               <i data-lucide="camera" class="w-3.5 h-3.5"></i> Mapillary
             </span>
-                            <span class="text-[9px] text-gray-500">Foto stradali e copertura GPX</span>
+                            <span class="text-[9px] text-gray-500">Foto e copertura</span>
                         </div>
                         <label class="relative inline-flex items-center cursor-pointer">
             <input type="checkbox" id="toggle-mapillary" class="sr-only peer">
             <div class="w-8 h-4 bg-gray-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-300 after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-600"></div>
           </label>
                     </div>
-                    <div class="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-1.5">
-                        <input type="password" id="input-mapillary-token" placeholder="Client token Mapillary" class="min-w-0 bg-gray-900 border border-gray-800 rounded-lg px-2 py-1.5 text-[11px] text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500">
+                    <details class="main-menu-details">
+                        <summary>Token Mapillary</summary>
+                        <div class="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-1.5 pt-2">
+                            <input type="password" id="input-mapillary-token" placeholder="Client token Mapillary" class="min-w-0 bg-gray-950/70 border border-gray-800 rounded-lg px-2 py-1.5 text-[11px] text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500">
                         <button id="btn-save-mapillary-token" class="bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg px-2 flex items-center justify-center" title="Salva token Mapillary">
             <i data-lucide="save" class="w-3.5 h-3.5"></i>
           </button>
                         <button id="btn-clear-mapillary-token" class="bg-gray-900 hover:bg-gray-800 text-gray-400 rounded-lg px-2 flex items-center justify-center border border-gray-800" title="Rimuovi token Mapillary">
             <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
           </button>
+                        </div>
+                    </details>
                     </div>
-                </div>
-            </div>
-
-            <!-- Vista 2D / 3D Terreno -->
-            <div class="space-y-2">
-                <label class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Prospettiva Dimensionale</label>
-                <div class="grid grid-cols-2 gap-1 bg-gray-900 p-1 rounded-lg border border-gray-800">
-                    <button id="view-mode-2d" class="text-xs font-medium py-1 px-2 rounded bg-blue-600 text-white">2D PLANO</button>
-                    <button id="view-mode-3d" class="text-xs font-medium py-1 px-2 rounded text-gray-400 hover:text-white">3D TERRENO</button>
-                </div>
-            </div>
+            </section>
 
             <!-- Configurazione Snap e Profilo Strade -->
-            <div class="space-y-2 bg-gray-900/50 p-2.5 rounded-xl border border-gray-800">
+            <section class="main-menu-group">
+                <div class="main-menu-group-title">
+                    <span>Routing</span>
+                </div>
+                <div class="main-menu-card">
                 <div class="flex items-center justify-between">
-                    <label class="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">Profilo Snapping</label>
+                        <label class="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">Profilo snapping</label>
                     <span id="routing-badge" class="text-[9px] bg-red-950 text-red-400 px-1.5 py-0.5 rounded border border-red-900 font-bold uppercase">Disattivato</span>
                 </div>
 
@@ -438,12 +436,17 @@
                     <button id="snap-profile-car" class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Auto (OSRM)">🚗</button>
                     <button id="snap-profile-water" class="text-xs py-1 rounded bg-gray-800 text-gray-400 hover:text-white" title="Acqua (BRouter River)">🌊</button>
                 </div>
-            </div>
+                </div>
+            </section>
 
             <!-- Permessi dispositivo -->
-            <div class="space-y-2 bg-gray-900/50 p-2.5 rounded-xl border border-gray-800">
+            <section class="main-menu-group">
+                <div class="main-menu-group-title">
+                    <span>Dispositivo</span>
+                </div>
+                <div class="main-menu-card">
                 <div class="flex items-center justify-between">
-                    <label class="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">Permessi dispositivo</label>
+                        <label class="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">Permessi</label>
                     <span id="device-permissions-badge" class="text-[9px] bg-gray-950 text-gray-400 px-1.5 py-0.5 rounded border border-gray-800 font-bold uppercase">Verifica</span>
                 </div>
                 <div class="grid grid-cols-2 gap-2">
@@ -462,10 +465,10 @@
             <span id="orientation-permission-state" class="mt-1 inline-flex text-[9px] bg-gray-900 text-gray-400 px-1.5 py-0.5 rounded border border-gray-800 font-bold uppercase">Verifica</span>
                     </button>
                 </div>
-            </div>
+                </div>
 
             <!-- Dashboard dati dispositivo -->
-            <div id="device-dashboard-settings-panel" class="space-y-3 bg-gray-900/50 p-2.5 rounded-xl border border-gray-800" data-expanded="false">
+                <div id="device-dashboard-settings-panel" class="main-menu-card space-y-3" data-expanded="false">
                 <button id="device-dashboard-settings-toggle" class="w-full flex items-center justify-between gap-2 text-left" type="button" aria-expanded="false" aria-controls="device-dashboard-settings-content">
                     <span class="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">Dashboard dispositivo</span>
                     <span class="flex items-center gap-1.5">
@@ -498,9 +501,9 @@
               <option value="large">Grande</option>
             </select>
                         <select id="dashboard-style-compass" data-dashboard-style-field="compass" class="device-dashboard-position-select">
-              <option value="essential">Essenziale</option>
-              <option value="contrast">Contrasto</option>
-              <option value="glass">Vetro</option>
+              <option value="map">Mappa</option>
+              <option value="outdoor">Outdoor</option>
+              <option value="night">Notte</option>
             </select>
                         </div>
                     </div>
@@ -510,7 +513,7 @@
               <span class="min-w-0">
                 <span class="flex items-center gap-1.5 text-xs text-gray-200">
                   <i data-lucide="mountain" class="w-3.5 h-3.5 text-emerald-300"></i>
-                  Quota GPS
+                  Altitudine
                 </span>
                 <span class="block text-[9px] text-gray-500">Altitudine dal telefono</span>
               </span>
@@ -528,9 +531,9 @@
               <option value="large">Grande</option>
             </select>
                         <select id="dashboard-style-altitude" data-dashboard-style-field="altitude" class="device-dashboard-position-select">
-              <option value="essential">Essenziale</option>
-              <option value="contrast">Contrasto</option>
-              <option value="glass">Vetro</option>
+              <option value="map">Mappa</option>
+              <option value="outdoor">Outdoor</option>
+              <option value="night">Notte</option>
             </select>
                         </div>
                     </div>
@@ -558,77 +561,22 @@
               <option value="large">Grande</option>
             </select>
                         <select id="dashboard-style-speed" data-dashboard-style-field="speed" class="device-dashboard-position-select">
-              <option value="essential">Essenziale</option>
-              <option value="contrast">Contrasto</option>
-              <option value="glass">Vetro</option>
-            </select>
-                        </div>
-                    </div>
-                    <div class="device-dashboard-setting-row">
-                        <label class="flex items-center gap-2 min-w-0">
-              <input type="checkbox" id="dashboard-field-accuracy" data-dashboard-field="accuracy" class="accent-cyan-500">
-              <span class="min-w-0">
-                <span class="flex items-center gap-1.5 text-xs text-gray-200">
-                  <i data-lucide="crosshair" class="w-3.5 h-3.5 text-cyan-300"></i>
-                  Precisione
-                </span>
-                <span class="block text-[9px] text-gray-500">Raggio stimato GPS</span>
-              </span>
-            </label>
-                        <div class="device-dashboard-field-controls">
-                        <select id="dashboard-position-accuracy" data-dashboard-position-field="accuracy" class="device-dashboard-position-select">
-              <option value="top-right">Alto destra</option>
-              <option value="top-left">Alto sinistra</option>
-              <option value="bottom-right">Basso destra</option>
-              <option value="bottom-left">Basso sinistra</option>
-            </select>
-                        <select id="dashboard-size-accuracy" data-dashboard-size-field="accuracy" class="device-dashboard-position-select">
-              <option value="compact">Piccola</option>
-              <option value="medium">Media</option>
-              <option value="large">Grande</option>
-            </select>
-                        <select id="dashboard-style-accuracy" data-dashboard-style-field="accuracy" class="device-dashboard-position-select">
-              <option value="essential">Essenziale</option>
-              <option value="contrast">Contrasto</option>
-              <option value="glass">Vetro</option>
-            </select>
-                        </div>
-                    </div>
-                    <div class="device-dashboard-setting-row">
-                        <label class="flex items-center gap-2 min-w-0">
-              <input type="checkbox" id="dashboard-field-coordinates" data-dashboard-field="coordinates" class="accent-indigo-500">
-              <span class="min-w-0">
-                <span class="flex items-center gap-1.5 text-xs text-gray-200">
-                  <i data-lucide="map-pin" class="w-3.5 h-3.5 text-indigo-300"></i>
-                  Coordinate
-                </span>
-                <span class="block text-[9px] text-gray-500">Latitudine e longitudine</span>
-              </span>
-            </label>
-                        <div class="device-dashboard-field-controls">
-                        <select id="dashboard-position-coordinates" data-dashboard-position-field="coordinates" class="device-dashboard-position-select">
-              <option value="top-right">Alto destra</option>
-              <option value="top-left">Alto sinistra</option>
-              <option value="bottom-right">Basso destra</option>
-              <option value="bottom-left">Basso sinistra</option>
-            </select>
-                        <select id="dashboard-size-coordinates" data-dashboard-size-field="coordinates" class="device-dashboard-position-select">
-              <option value="compact">Piccola</option>
-              <option value="medium">Media</option>
-              <option value="large">Grande</option>
-            </select>
-                        <select id="dashboard-style-coordinates" data-dashboard-style-field="coordinates" class="device-dashboard-position-select">
-              <option value="essential">Essenziale</option>
-              <option value="contrast">Contrasto</option>
-              <option value="glass">Vetro</option>
+              <option value="map">Mappa</option>
+              <option value="outdoor">Outdoor</option>
+              <option value="night">Notte</option>
             </select>
                         </div>
                     </div>
                 </div>
             </div>
+            </section>
 
             <!-- Impostazioni registrazione -->
-            <div id="recording-settings-panel" class="space-y-3 bg-gray-900/50 p-2.5 rounded-xl border border-gray-800" data-expanded="false">
+            <section class="main-menu-group">
+                <div class="main-menu-group-title">
+                    <span>Registrazione</span>
+                </div>
+                <div id="recording-settings-panel" class="main-menu-card space-y-3" data-expanded="false">
                 <button id="recording-settings-toggle" class="w-full flex items-center justify-between gap-2 text-left" type="button" aria-expanded="false" aria-controls="recording-settings-content">
                     <span class="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">Impostazioni registrazione</span>
                     <span class="flex items-center gap-1.5">
@@ -677,9 +625,14 @@
         </label>
                 </div>
             </div>
+            </section>
 
             <!-- Account e amministrazione -->
-            <div class="space-y-2 bg-gray-900/50 p-2.5 rounded-xl border border-gray-800">
+            <section class="main-menu-group">
+                <div class="main-menu-group-title">
+                    <span>Account</span>
+                </div>
+                <div class="main-menu-card space-y-2">
                 <label class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Account</label>
                 <div id="auth-current-user" class="min-h-9 flex items-center">
                     <span class="text-xs text-gray-500">Sessione non attiva</span>
@@ -692,9 +645,10 @@
                     <button id="btn-logout" class="bg-gray-900 hover:bg-gray-800 text-gray-300 border border-gray-800 rounded-lg py-2 text-xs font-semibold flex items-center justify-center gap-1.5">
             <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
             <span>Esci</span>
-          </button>
+                    </button>
                 </div>
-            </div>
+                </div>
+            </section>
 
         </div>
     </div>
@@ -794,6 +748,10 @@
                 <button id="btn-tree-new-track" class="flex-1 bg-blue-600/25 hover:bg-blue-600/40 text-blue-300 border border-blue-800/80 rounded-lg py-1.5 text-xs font-semibold flex items-center justify-center gap-1">
           <i data-lucide="plus" class="w-3.5 h-3.5"></i> Nuova Traccia
         </button>
+                <label class="w-9 h-8 bg-slate-800/70 hover:bg-slate-700/80 text-slate-200 border border-slate-700/80 rounded-lg transition-all flex items-center justify-center cursor-pointer" title="Importa file GPX">
+          <input type="file" id="file-import-gpx" accept=".gpx" class="hidden">
+          <i data-lucide="upload" class="w-3.5 h-3.5"></i>
+        </label>
             </div>
 
             <div id="gis-file-tree" class="space-y-3">
