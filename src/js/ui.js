@@ -2322,6 +2322,20 @@ export async function restoreStoredTracksOnStartup() {
             map.setLayoutProperty('hiking-trails-layer', 'visibility', session.hikingTrailsVisible ? 'visible' : 'none');
         }
     }
+    if (typeof session?.cyclingTrailsVisible === 'boolean') {
+        const cyclingToggle = document.getElementById('toggle-cycling-trails');
+        if (cyclingToggle) cyclingToggle.checked = session.cyclingTrailsVisible;
+        if (mapLoaded && map.getLayer('cycling-trails-layer')) {
+            map.setLayoutProperty('cycling-trails-layer', 'visibility', session.cyclingTrailsVisible ? 'visible' : 'none');
+        }
+    }
+    if (typeof session?.waterwaysVisible === 'boolean') {
+        const waterwaysToggle = document.getElementById('toggle-waterways');
+        if (waterwaysToggle) waterwaysToggle.checked = session.waterwaysVisible;
+        if (mapLoaded && map.getLayer('waterways-layer')) {
+            map.setLayoutProperty('waterways-layer', 'visibility', session.waterwaysVisible ? 'visible' : 'none');
+        }
+    }
     if (document.getElementById('toggle-mapillary')) {
         document.getElementById('toggle-mapillary').checked = session?.mapillaryVisible === true;
     }
@@ -3149,6 +3163,8 @@ export function setupEvents() {
     document.getElementById('map-style-osm').onclick = () => _setBaseMap('osm');
     document.getElementById('map-style-sat').onclick = () => _setBaseMap('sat');
     document.getElementById('map-style-topo').onclick = () => _setBaseMap('topo');
+    document.getElementById('map-style-outdoor').onclick = () => _setBaseMap('outdoor');
+    document.getElementById('map-style-nautico').onclick = () => _setBaseMap('nautico');
 
     document.getElementById('toggle-hybrid').onchange = () => {
         if (currentStyle === 'sat') _setBaseMap('sat');
@@ -3160,6 +3176,22 @@ export function setupEvents() {
         map.setLayoutProperty('hiking-trails-layer', 'visibility', visible);
         schedulePersistAppSession();
         showToast(e.target.checked ? "Sentieri OSM Visibili" : "Sentieri OSM Nascosti", "success");
+    };
+
+    document.getElementById('toggle-cycling-trails').onchange = (e) => {
+        if (!mapLoaded) return;
+        const visible = e.target.checked ? 'visible' : 'none';
+        map.setLayoutProperty('cycling-trails-layer', 'visibility', visible);
+        schedulePersistAppSession();
+        showToast(e.target.checked ? "Ciclismo OSM visibile" : "Ciclismo OSM nascosto", "success");
+    };
+
+    document.getElementById('toggle-waterways').onchange = (e) => {
+        if (!mapLoaded) return;
+        const visible = e.target.checked ? 'visible' : 'none';
+        map.setLayoutProperty('waterways-layer', 'visibility', visible);
+        schedulePersistAppSession();
+        showToast(e.target.checked ? "Vie d'acqua visibili" : "Vie d'acqua nascoste", "success");
     };
 
     document.getElementById('toggle-mapillary').onchange = (e) => {

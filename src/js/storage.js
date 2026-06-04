@@ -99,6 +99,12 @@ async function putTrackRecord(track) {
 function readHikingTrailsVisibility() {
     return document.getElementById('toggle-hiking-trails')?.checked === true;
 }
+function readCyclingTrailsVisibility() {
+    return document.getElementById('toggle-cycling-trails')?.checked === true;
+}
+function readWaterwaysVisibility() {
+    return document.getElementById('toggle-waterways')?.checked === true;
+}
 
 function buildSessionSnapshot() {
     const persistedTracks = appTracks.filter(track => track.localSource !== 'recording-live');
@@ -112,6 +118,8 @@ function buildSessionSnapshot() {
         currentSnapProfile,
         is3D,
         hikingTrailsVisible: readHikingTrailsVisibility(),
+        cyclingTrailsVisible: readCyclingTrailsVisibility(),
+        waterwaysVisible: readWaterwaysVisibility(),
         mapillaryVisible: isMapillaryVisible,
         trackOrder: persistedTracks.map(track => track.localFileId || track.id)
     };
