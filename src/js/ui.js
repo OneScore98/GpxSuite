@@ -92,6 +92,40 @@ const TOOL_CURSORS = {
     box: createSvgCursor('<rect x="4" y="5" width="16" height="14" rx="1.5" fill="rgba(239,68,68,.18)" stroke="#ef4444" stroke-width="2.4" stroke-dasharray="4 2"/><path d="M7 8l10 8M17 8L7 16" stroke="#f8fafc" stroke-width="1.8" stroke-linecap="round"/>', 12, 12),
     waypoint: createSvgCursor('<path d="M12 22s7-6.2 7-12a7 7 0 10-14 0c0 5.8 7 12 7 12z" fill="#2563eb" stroke="#f8fafc" stroke-width="2"/><circle cx="12" cy="10" r="2.5" fill="#f8fafc"/>', 12, 22)
 };
+const DEVICE_DASHBOARD_STORAGE_KEY = 'gpxsuite-device-dashboard-v1';
+const DEVICE_DASHBOARD_POSITIONS = ['top-right', 'top-left', 'bottom-right', 'bottom-left'];
+const DEVICE_DASHBOARD_FIELDS = [{
+        id: 'compass',
+        label: 'Bussola',
+        icon: 'navigation',
+        defaultPosition: 'top-right'
+    },
+    {
+        id: 'altitude',
+        label: 'Quota GPS',
+        icon: 'mountain',
+        defaultPosition: 'top-right'
+    },
+    {
+        id: 'speed',
+        label: 'Velocità',
+        icon: 'gauge',
+        defaultPosition: 'bottom-right'
+    },
+    {
+        id: 'accuracy',
+        label: 'Precisione',
+        icon: 'crosshair',
+        defaultPosition: 'bottom-right'
+    },
+    {
+        id: 'coordinates',
+        label: 'Coordinate',
+        icon: 'map-pin',
+        defaultPosition: 'bottom-left'
+    }
+];
+let _deviceDashboardSettings = readDeviceDashboardSettings();
 
 function easeInOutCubic(t) {
     return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -100,6 +134,279 @@ function easeInOutCubic(t) {
 function createSvgCursor(svgBody, hotX, hotY) {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">${svgBody}</svg>`;
     return `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${hotX} ${hotY}, crosshair`;
+}
+
+function safeHtml(value) {
+    return escapeXml(String(value ?? ''));
+}
+
+function createDefaultDeviceDashboardSettings() {
+    const fields = {};
+    DEVICE_DASHBOARD_FIELDS.forEach(field => {
+        fields[field.id] = {
+            enabled: false,
+            position: field.defaultPosition
+        };
+    });
+    return {
+        version: 1,
+        fields
+    };
+}
+
+function normalizeDeviceDashboardSettings(settings) {
+    const defaults = createDefaultDeviceDashboardSettings();
+    const fields = {};
+    DEVICE_DASHBOARD_FIELDS.forEach(field => {
+        const saved = settings?.fields?.[field.id] || {};
+        const savedPosition = DEVICE_DASHBOARD_POSITIONS.includes(saved.position) ? saved.position : defaults.fields[field.id].position;
+        fields[field.id] = {
+            enabled: saved.enabled === true,
+            position: savedPosition
+        };
+    });
+    return {
+        version: 1,
+        fields
+    };
+}
+
+function readDeviceDashboardSettings() {
+    if (typeof localStorage === 'undefined') {
+        return createDefaultDeviceDashboardSettings();
+    }
+    try {
+        const raw = localStorage.getItem(DEVICE_DASHBOARD_STORAGE_KEY);
+        if (!raw) return createDefaultDeviceDashboardSettings();
+        return normalizeDeviceDashboardSettings(JSON.parse(raw));
+    } catch (err) {
+        console.warn('Impostazioni dashboard dispositivo non leggibili:', err);
+        return createDefaultDeviceDashboardSettings();
+    }
+}
+
+function persistDeviceDashboardSettings() {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        localStorage.setItem(DEVICE_DASHBOARD_STORAGE_KEY, JSON.stringify(_deviceDashboardSettings));
+    } catch (err) {
+        console.warn('Impostazioni dashboard dispositivo non salvate:', err);
+    }
+}
+
+function getEnabledDeviceDashboardFields() {
+    return DEVICE_DASHBOARD_FIELDS.filter(field => _deviceDashboardSettings.fields[field.id]?.enabled === true);
+}
+
+function updateDeviceDashboardSettingsBadge() {
+    const badge = document.getElementById('device-dashboard-settings-badge');
+    if (!badge) return;
+    const enabledCount = getEnabledDeviceDashboardFields().length;
+    badge.textContent = enabledCount === 1 ? '1 campo' : `${enabledCount} campi`;
+    badge.className = enabledCount > 0 ?
+        'text-[9px] bg-sky-950 text-sky-300 px-1.5 py-0.5 rounded border border-sky-900 font-bold uppercase' :
+        'text-[9px] bg-gray-950 text-gray-400 px-1.5 py-0.5 rounded border border-gray-800 font-bold uppercase';
+}
+
+function setDeviceDashboardSettingsExpanded(expanded) {
+    const panel = document.getElementById('device-dashboard-settings-panel');
+    const toggle = document.getElementById('device-dashboard-settings-toggle');
+    const content = document.getElementById('device-dashboard-settings-content');
+    if (!panel || !toggle || !content) return;
+    panel.dataset.expanded = expanded ? 'true' : 'false';
+    toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    content.classList.toggle('hidden', !expanded);
+}
+
+function syncDeviceDashboardSettingsForm() {
+    DEVICE_DASHBOARD_FIELDS.forEach(field => {
+        const fieldSettings = _deviceDashboardSettings.fields[field.id];
+        const toggle = document.querySelector(`[data-dashboard-field="${field.id}"]`);
+        const position = document.querySelector(`[data-dashboard-position-field="${field.id}"]`);
+        if (toggle) toggle.checked = fieldSettings?.enabled === true;
+        if (position) {
+            position.value = fieldSettings?.position || field.defaultPosition;
+            position.disabled = fieldSettings?.enabled !== true;
+            position.classList.toggle('opacity-50', fieldSettings?.enabled !== true);
+        }
+    });
+    updateDeviceDashboardSettingsBadge();
+    renderDeviceDashboard();
+}
+
+function bindDeviceDashboardSettingsForm() {
+    const toggle = document.getElementById('device-dashboard-settings-toggle');
+    if (toggle && toggle.dataset.bound !== 'true') {
+        toggle.dataset.bound = 'true';
+        setDeviceDashboardSettingsExpanded(false);
+        toggle.addEventListener('click', () => {
+            const panel = document.getElementById('device-dashboard-settings-panel');
+            setDeviceDashboardSettingsExpanded(panel?.dataset.expanded !== 'true');
+        });
+    }
+
+    DEVICE_DASHBOARD_FIELDS.forEach(field => {
+        const enabledInput = document.querySelector(`[data-dashboard-field="${field.id}"]`);
+        const positionInput = document.querySelector(`[data-dashboard-position-field="${field.id}"]`);
+
+        if (enabledInput && enabledInput.dataset.bound !== 'true') {
+            enabledInput.dataset.bound = 'true';
+            enabledInput.addEventListener('change', () => {
+                _deviceDashboardSettings.fields[field.id].enabled = enabledInput.checked;
+                persistDeviceDashboardSettings();
+                syncDeviceDashboardSettingsForm();
+                schedulePersistAppSession();
+            });
+        }
+
+        if (positionInput && positionInput.dataset.bound !== 'true') {
+            positionInput.dataset.bound = 'true';
+            positionInput.addEventListener('change', () => {
+                if (DEVICE_DASHBOARD_POSITIONS.includes(positionInput.value)) {
+                    _deviceDashboardSettings.fields[field.id].position = positionInput.value;
+                    persistDeviceDashboardSettings();
+                    renderDeviceDashboard();
+                    schedulePersistAppSession();
+                }
+            });
+        }
+    });
+
+    syncDeviceDashboardSettingsForm();
+}
+
+function parseDeviceDashboardNumber(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+}
+
+function formatDeviceDashboardNumber(value, decimals = 0) {
+    const number = parseDeviceDashboardNumber(value);
+    if (number === null) return null;
+    return number.toFixed(decimals);
+}
+
+function cardinalDirectionFromHeading(heading) {
+    const directions = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
+    const normalized = ((Number(heading) % 360) + 360) % 360;
+    return directions[Math.round(normalized / 45) % directions.length];
+}
+
+function getLocationUnavailableMeta(status) {
+    if (status.waiting) return 'In attesa GPS';
+    if (!status.active) return 'GPS non attivo';
+    return 'Dato non disponibile';
+}
+
+function buildDeviceDashboardMetric(field, status) {
+    const fix = status.fix || {};
+    const heading = parseDeviceDashboardNumber(status.heading);
+    const active = Boolean(status.active);
+
+    if (field.id === 'compass') {
+        if (active && heading !== null) {
+            const degrees = Math.round(heading);
+            return {
+                value: `${degrees}°`,
+                meta: cardinalDirectionFromHeading(degrees),
+                heading: degrees
+            };
+        }
+        return {
+            value: '--°',
+            meta: getLocationUnavailableMeta(status),
+            heading: 0
+        };
+    }
+
+    if (field.id === 'altitude') {
+        const altitude = active ? formatDeviceDashboardNumber(fix.ele, 0) : null;
+        return {
+            value: altitude !== null ? `${altitude} m` : '-- m',
+            meta: altitude !== null ? 'Quota dispositivo' : getLocationUnavailableMeta(status)
+        };
+    }
+
+    if (field.id === 'speed') {
+        const speedMps = parseDeviceDashboardNumber(fix.speed);
+        const speedKmh = active && speedMps !== null ? formatDeviceDashboardNumber(speedMps * 3.6, 1) : null;
+        return {
+            value: speedKmh !== null ? `${speedKmh} km/h` : '-- km/h',
+            meta: speedKmh !== null ? (status.moving ? 'In movimento' : 'Fermo') : getLocationUnavailableMeta(status)
+        };
+    }
+
+    if (field.id === 'accuracy') {
+        const accuracy = active ? formatDeviceDashboardNumber(fix.accuracy, 0) : null;
+        const accuracyNumber = parseDeviceDashboardNumber(fix.accuracy);
+        const quality = accuracyNumber !== null ?
+            (accuracyNumber <= 10 ? 'Alta' : (accuracyNumber <= 25 ? 'Buona' : 'Debole')) :
+            getLocationUnavailableMeta(status);
+        return {
+            value: accuracy !== null ? `±${accuracy} m` : '-- m',
+            meta: accuracy !== null ? quality : getLocationUnavailableMeta(status)
+        };
+    }
+
+    if (field.id === 'coordinates') {
+        const lat = active ? formatDeviceDashboardNumber(fix.lat, 5) : null;
+        const lon = active ? formatDeviceDashboardNumber(fix.lon, 5) : null;
+        return {
+            value: lat !== null && lon !== null ? `${lat}<br>${lon}` : '--.-----<br>--.-----',
+            valueHtml: lat !== null && lon !== null ? `${safeHtml(lat)}<br>${safeHtml(lon)}` : '--.-----<br>--.-----',
+            meta: lat !== null && lon !== null ? 'Lat / Lon' : getLocationUnavailableMeta(status),
+            valueClass: 'device-dashboard-value--coords'
+        };
+    }
+
+    return {
+        value: '--',
+        meta: ''
+    };
+}
+
+function renderDeviceDashboardCard(field, status) {
+    const metric = buildDeviceDashboardMetric(field, status);
+    const metricHeading = parseDeviceDashboardNumber(metric.heading);
+    const headingStyle = metricHeading !== null ? ` style="--device-dashboard-heading:${metricHeading}deg"` : '';
+    const valueHtml = metric.valueHtml || safeHtml(metric.value);
+    return `
+        <div class="device-dashboard-card device-dashboard-card--${safeHtml(field.id)}"${headingStyle}>
+            <div class="device-dashboard-icon">
+                <i data-lucide="${safeHtml(field.icon)}" class="w-4 h-4"></i>
+            </div>
+            <div class="min-w-0">
+                <div class="device-dashboard-label">${safeHtml(field.label)}</div>
+                <div class="device-dashboard-value ${safeHtml(metric.valueClass || '')}">${valueHtml}</div>
+                <div class="device-dashboard-meta">${safeHtml(metric.meta)}</div>
+            </div>
+        </div>
+    `;
+}
+
+function renderDeviceDashboard() {
+    const dashboard = document.getElementById('device-dashboard');
+    if (!dashboard) return;
+    const zoneEls = {};
+    DEVICE_DASHBOARD_POSITIONS.forEach(position => {
+        const zone = dashboard.querySelector(`[data-dashboard-zone="${position}"]`);
+        if (zone) {
+            zone.innerHTML = '';
+            zoneEls[position] = zone;
+        }
+    });
+
+    const enabledFields = getEnabledDeviceDashboardFields();
+    dashboard.classList.toggle('hidden', enabledFields.length === 0);
+    if (enabledFields.length === 0) return;
+
+    enabledFields.forEach(field => {
+        const position = _deviceDashboardSettings.fields[field.id]?.position || field.defaultPosition;
+        const zone = zoneEls[position] || zoneEls[field.defaultPosition];
+        if (zone) zone.insertAdjacentHTML('beforeend', renderDeviceDashboardCard(field, _lastDeviceLocationStatus));
+    });
+    refreshLucideIcons();
 }
 
 function updateMapToolCursor() {
@@ -161,6 +468,7 @@ function updateMapillaryToolbarButton() {
 
 function updateDeviceLocationToolbarButton(status = {}) {
     _lastDeviceLocationStatus = { ...status };
+    renderDeviceDashboard();
     const buttons = ['btn-device-location-main', 'btn-device-location']
         .map(id => document.getElementById(id))
         .filter(Boolean);
@@ -2959,6 +3267,7 @@ export function setupEvents() {
     if (_setDeviceRecordingStatusHandler) {
         _setDeviceRecordingStatusHandler(updateDeviceRecordingUi);
     }
+    bindDeviceDashboardSettingsForm();
     bindRecordingSettingsForm();
     updateDeviceRecordingUi(_getDeviceRecordingStatus ? _getDeviceRecordingStatus() : { state: 'idle' });
 

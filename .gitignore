@@ -1,2 +1,10 @@
 .DS_Store
 supabase/.temp/
+
+# Documentazione e istruzioni locali
+*.md
+
+# Variabili d'ambiente locali
+.env
+.env.*
+!.env.example

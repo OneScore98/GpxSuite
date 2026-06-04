@@ -34,6 +34,8 @@ const RECORDING_PERSIST_KEY = 'gpxsuite-recording-snapshot-v1';
 const RECORDING_PERSIST_DEBOUNCE_MS = 5000;
 const RECORDING_SNAPSHOT_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const ORIENTATION_PERMISSION_KEY = 'gpxsuite-orientation-permission-v1';
+const ORIENTATION_STATUS_MIN_INTERVAL_MS = 180;
+const ORIENTATION_STATUS_MIN_DELTA_DEG = 0.5;
 
 const DEFAULT_RECORDING_SETTINGS = {
     minDistanceM: 5,
@@ -57,9 +59,12 @@ let _watchId = null;
 let _lastFix = null;
 let _lastHeading = null;
 let _orientationHeading = null;
+let _currentHeading = null;
 let _orientationListening = false;
 let _orientationPermissionGranted = readPersistedOrientationGrant();
 let _orientationRequestToken = 0;
+let _lastOrientationStatusAt = 0;
+let _lastOrientationStatusHeading = null;
 let _waitingForFirstFix = false;
 let _isMoving = false;
 let _lastFollowAt = 0;
@@ -306,6 +311,9 @@ export function startDeviceLocation() {
     _isMoving = false;
     _lastFix = null;
     _lastHeading = null;
+    _currentHeading = null;
+    _lastOrientationStatusAt = 0;
+    _lastOrientationStatusHeading = null;
     _lastFollowAt = 0;
     _recentCenteredUntil = 0;
     _focusAnimationUntil = 0;
@@ -347,6 +355,9 @@ export function stopDeviceLocation(reason = 'programmatic') {
     _isMoving = false;
     _lastFix = null;
     _lastHeading = null;
+    _currentHeading = null;
+    _lastOrientationStatusAt = 0;
+    _lastOrientationStatusHeading = null;
     _lastFollowAt = 0;
     _recentCenteredUntil = 0;
     _focusAnimationUntil = 0;
@@ -432,6 +443,7 @@ function handlePosition(position) {
     _lastFix = fix;
     _isMoving = moving;
     _waitingForFirstFix = false;
+    _currentHeading = heading;
 
     updateLiveLocationFrame(fix, moving, heading);
 
@@ -473,6 +485,9 @@ function startSimulatedDeviceLocation() {
     _isMoving = false;
     _lastFix = null;
     _lastHeading = null;
+    _currentHeading = null;
+    _lastOrientationStatusAt = 0;
+    _lastOrientationStatusHeading = null;
     _lastFollowAt = 0;
     _recentCenteredUntil = 0;
     _focusAnimationUntil = 0;
@@ -889,7 +904,7 @@ function ensureLocationMarkerLayers() {
             id: LOCATION_HEADING_LAYER_ID,
             type: 'symbol',
             source: LOCATION_SOURCE_ID,
-            filter: ['==', ['get', 'hasHeading'], true],
+            filter: ['==', ['get', 'showHeading'], true],
             layout: {
                 'icon-image': LOCATION_HEADING_ICON_ID,
                 'icon-size': 1.0,
@@ -900,12 +915,13 @@ function ensureLocationMarkerLayers() {
                 'icon-ignore-placement': true
             },
             paint: {
-                'icon-opacity': ['case', ['get', 'moving'], 0.96, 0.58]
+                'icon-opacity': ['case', ['get', 'recording'], 1, ['get', 'moving'], 0.96, 0.58]
             }
         });
     } else {
+        map.setFilter(LOCATION_HEADING_LAYER_ID, ['==', ['get', 'showHeading'], true]);
         map.setPaintProperty(LOCATION_HEADING_LAYER_ID, 'icon-opacity',
-            ['case', ['get', 'moving'], 0.96, 0.58]);
+            ['case', ['get', 'recording'], 1, ['get', 'moving'], 0.96, 0.58]);
     }
 
     if (!map.getLayer(LOCATION_DOT_LAYER_ID)) {
@@ -913,6 +929,7 @@ function ensureLocationMarkerLayers() {
             id: LOCATION_DOT_LAYER_ID,
             type: 'circle',
             source: LOCATION_SOURCE_ID,
+            filter: ['==', ['get', 'showDot'], true],
             paint: {
                 'circle-radius': ['case', ['get', 'moving'], 7.5, 6.5],
                 'circle-color': '#2563eb',
@@ -921,6 +938,8 @@ function ensureLocationMarkerLayers() {
                 'circle-opacity': 1
             }
         });
+    } else {
+        map.setFilter(LOCATION_DOT_LAYER_ID, ['==', ['get', 'showDot'], true]);
     }
 }
 
@@ -967,15 +986,21 @@ function ensureHeadingIcon() {
 }
 
 function buildLocationFeatureCollection(fix, moving, heading) {
+    const recording = _recording.state === 'recording';
     const hasHeading = Number.isFinite(heading);
+    const headingValue = hasHeading ? heading : (Number.isFinite(_lastHeading) ? _lastHeading : 0);
+    const showHeading = recording || (Boolean(moving) && hasHeading);
     return {
         type: 'FeatureCollection',
         features: [{
             type: 'Feature',
             properties: {
                 moving: Boolean(moving),
+                recording,
                 hasHeading,
-                heading: hasHeading ? heading : 0
+                showHeading,
+                showDot: !recording,
+                heading: headingValue
             },
             geometry: {
                 type: 'Point',
@@ -1061,6 +1086,7 @@ function stopOrientationTracking() {
     window.removeEventListener('deviceorientation', handleDeviceOrientation, true);
     _orientationListening = false;
     _orientationHeading = null;
+    _currentHeading = _lastHeading;
 }
 
 function handleDeviceOrientation(event) {
@@ -1071,19 +1097,63 @@ function handleDeviceOrientation(event) {
     if (!Number.isFinite(heading)) return;
 
     _orientationHeading = heading;
-    if (_isMoving && _lastFix) {
+    _currentHeading = heading;
+    if ((_isMoving || _recording.state === 'recording') && _lastFix) {
         _lastHeading = heading;
-        updateLocationMarker(_lastFix, true, heading);
+        updateLocationMarker(_lastFix, _isMoving, heading);
     }
+    const now = Date.now();
+    if (
+        _lastOrientationStatusAt === 0 ||
+        (
+            now - _lastOrientationStatusAt >= ORIENTATION_STATUS_MIN_INTERVAL_MS &&
+            headingDeltaDegrees(heading, _lastOrientationStatusHeading) >= ORIENTATION_STATUS_MIN_DELTA_DEG
+        )
+    ) {
+        _lastOrientationStatusAt = now;
+        _lastOrientationStatusHeading = heading;
+        emitStatus({ orientationHeading: heading });
+    }
+}
+
+function buildStatusFix() {
+    if (!_lastFix) return null;
+    return {
+        lat: _lastFix.lat,
+        lon: _lastFix.lon,
+        ele: _lastFix.ele,
+        accuracy: _lastFix.accuracy,
+        speed: _lastFix.speed,
+        heading: _lastFix.heading,
+        timestamp: _lastFix.timestamp
+    };
+}
+
+function resolveStatusHeading() {
+    const candidates = [_currentHeading, _lastHeading, _orientationHeading, _lastFix?.heading];
+    for (let i = 0; i < candidates.length; i++) {
+        const heading = normalizeHeading(candidates[i]);
+        if (Number.isFinite(heading)) return heading;
+    }
+    return null;
 }
 
 function emitStatus(extra = {}) {
     if (!_onStatusChange) return;
+    const fix = buildStatusFix();
+    const heading = resolveStatusHeading();
     _onStatusChange({
         active: _watchId !== null,
         waiting: _waitingForFirstFix,
         moving: _isMoving,
         centered: isMapCenteredOnLastFix(),
+        fix,
+        heading,
+        altitude: fix?.ele ?? null,
+        accuracy: fix?.accuracy ?? null,
+        speed: fix?.speed ?? null,
+        orientationHeading: Number.isFinite(_orientationHeading) ? _orientationHeading : null,
+        updatedAt: fix?.timestamp ?? null,
         ...extra
     });
 }
@@ -1133,6 +1203,12 @@ function normalizeHeading(value) {
     const heading = Number(value);
     if (!Number.isFinite(heading)) return null;
     return ((heading % 360) + 360) % 360;
+}
+
+function headingDeltaDegrees(a, b) {
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return Infinity;
+    const delta = Math.abs(a - b) % 360;
+    return delta > 180 ? 360 - delta : delta;
 }
 
 function finiteNumberOrNull(value) {
@@ -1323,7 +1399,7 @@ export function resumePendingRecordingSnapshot() {
 export function restoreDeviceOverlays() {
     if (!mapLoaded || !map) return;
     if (_lastFix) {
-        updateLocationMarker(_lastFix, _isMoving, _lastHeading);
+        updateLocationMarker(_lastFix, _isMoving, resolveStatusHeading());
     }
     if (_recording.state !== 'idle') {
         refreshRecordingTrackData(true);

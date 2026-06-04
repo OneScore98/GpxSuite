@@ -49,6 +49,7 @@ body.auth-locked #sidebar-tracks-right,
 body.auth-locked #panel-bottom-stats,
 body.auth-locked #panel-print-setup,
 body.auth-locked #panel-mapillary-viewer,
+body.auth-locked #device-dashboard,
 body.auth-locked #cursor-coordinates,
 body.auth-locked #recording-status-chip,
 body.auth-locked #print-drag-grid {
@@ -1148,6 +1149,155 @@ body.stats-panel-open #recording-status-chip {
     background: #0ea5e9;
 }
 
+.device-dashboard {
+    transition: opacity 180ms ease;
+}
+
+.device-dashboard-zone {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    gap: 0.42rem;
+    width: max-content;
+    max-width: min(17rem, calc(50vw - 1rem));
+}
+
+.device-dashboard-zone--top-left {
+    top: calc(var(--safe-top) + 4.4rem);
+    left: calc(var(--safe-left) + 4.45rem);
+    align-items: flex-start;
+}
+
+.device-dashboard-zone--top-right {
+    top: calc(var(--safe-top) + 4.4rem);
+    right: calc(var(--safe-right) + 0.8rem);
+    align-items: flex-end;
+}
+
+.device-dashboard-zone--bottom-left {
+    bottom: calc(var(--safe-bottom) + 3.25rem);
+    left: calc(var(--safe-left) + 0.8rem);
+    align-items: flex-start;
+}
+
+.device-dashboard-zone--bottom-right {
+    right: calc(var(--safe-right) + 0.8rem);
+    bottom: calc(var(--safe-bottom) + 3.25rem);
+    align-items: flex-end;
+}
+
+.device-dashboard-card {
+    --device-dashboard-heading: 0deg;
+    display: grid;
+    grid-template-columns: 1.85rem minmax(0, 1fr);
+    gap: 0.5rem;
+    min-width: 9.4rem;
+    max-width: 15rem;
+    padding: 0.48rem 0.55rem;
+    border: 1px solid rgba(31, 41, 55, 0.92);
+    border-radius: 0.5rem;
+    background: rgba(3, 7, 18, 0.88);
+    color: #e5e7eb;
+    box-shadow: 0 0.65rem 1.4rem rgba(2, 6, 23, 0.32);
+    backdrop-filter: blur(0.65rem) saturate(1.08);
+    -webkit-backdrop-filter: blur(0.65rem) saturate(1.08);
+}
+
+.device-dashboard-icon {
+    width: 1.85rem;
+    height: 1.85rem;
+    border-radius: 0.45rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(15, 23, 42, 0.92);
+    border: 1px solid rgba(55, 65, 81, 0.72);
+    color: #93c5fd;
+}
+
+.device-dashboard-card--compass .device-dashboard-icon {
+    transform: rotate(var(--device-dashboard-heading));
+    transform-origin: 50% 50%;
+    transition: transform 180ms ease;
+}
+
+.device-dashboard-label {
+    font-size: 0.56rem;
+    line-height: 1;
+    font-weight: 800;
+    color: #9ca3af;
+    text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.device-dashboard-value {
+    margin-top: 0.12rem;
+    font-size: 0.95rem;
+    line-height: 1.1;
+    font-weight: 800;
+    color: #ffffff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.device-dashboard-value--coords {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 0.68rem;
+    line-height: 1.15;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.device-dashboard-meta {
+    margin-top: 0.06rem;
+    font-size: 0.6rem;
+    line-height: 1.12;
+    color: #6b7280;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.device-dashboard-setting-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(6.7rem, auto);
+    gap: 0.5rem;
+    align-items: center;
+    padding: 0.45rem;
+    border-radius: 0.5rem;
+    background: rgba(3, 7, 18, 0.42);
+    border: 1px solid rgba(31, 41, 55, 0.78);
+}
+
+.device-dashboard-position-select {
+    min-width: 6.7rem;
+    background: #030712;
+    border: 1px solid #1f2937;
+    border-radius: 0.45rem;
+    padding: 0.32rem 0.45rem;
+    font-size: 0.66rem;
+    color: #e5e7eb;
+    outline: none;
+}
+
+.device-dashboard-position-select:focus {
+    border-color: #0ea5e9;
+}
+
+#device-dashboard-settings-panel[data-expanded="true"] #device-dashboard-settings-chevron {
+    transform: rotate(180deg);
+}
+
+body.stats-panel-open .device-dashboard-zone--bottom-left,
+body.stats-panel-open .device-dashboard-zone--bottom-right,
+body.mapillary-viewer-open .device-dashboard-zone--bottom-left,
+body.mapillary-viewer-open .device-dashboard-zone--bottom-right {
+    display: none;
+}
+
 @keyframes device-location-button-pulse {
     0%, 100% {
         opacity: 0.55;
@@ -1887,6 +2037,71 @@ label {
         left: calc(var(--safe-left) + 3.85rem);
         right: calc(var(--safe-right) + 3.85rem);
         height: 2.2rem;
+    }
+
+    .device-dashboard-zone {
+        max-width: calc(50vw - 0.85rem);
+        gap: 0.32rem;
+    }
+
+    .device-dashboard-zone--top-left {
+        top: calc(var(--safe-top) + 3.95rem);
+        left: calc(var(--safe-left) + 0.6rem);
+    }
+
+    .device-dashboard-zone--top-right {
+        top: calc(var(--safe-top) + 3.95rem);
+        right: calc(var(--safe-right) + 0.6rem);
+    }
+
+    .device-dashboard-zone--bottom-left {
+        bottom: calc(var(--safe-bottom) + 4.1rem);
+        left: calc(var(--safe-left) + 0.6rem);
+    }
+
+    .device-dashboard-zone--bottom-right {
+        right: calc(var(--safe-right) + 0.6rem);
+        bottom: calc(var(--safe-bottom) + 4.1rem);
+    }
+
+    .device-dashboard-card {
+        grid-template-columns: 1.55rem minmax(0, 1fr);
+        gap: 0.38rem;
+        min-width: min(8.2rem, calc(50vw - 0.85rem));
+        max-width: calc(50vw - 0.85rem);
+        padding: 0.42rem 0.46rem;
+    }
+
+    .device-dashboard-icon {
+        width: 1.55rem;
+        height: 1.55rem;
+        border-radius: 0.4rem;
+    }
+
+    .device-dashboard-label {
+        font-size: 0.5rem;
+    }
+
+    .device-dashboard-value {
+        font-size: 0.78rem;
+    }
+
+    .device-dashboard-value--coords {
+        font-size: 0.56rem;
+    }
+
+    .device-dashboard-meta {
+        font-size: 0.54rem;
+    }
+
+    .device-dashboard-setting-row {
+        grid-template-columns: 1fr;
+        gap: 0.45rem;
+    }
+
+    .device-dashboard-position-select {
+        width: 100%;
+        min-width: 0;
     }
 
     #active-tracks-container {

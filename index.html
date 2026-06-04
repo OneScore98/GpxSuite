@@ -215,6 +215,14 @@
         </div>
     </div>
 
+    <!-- DASHBOARD DATI DISPOSITIVO -->
+    <div id="device-dashboard" class="device-dashboard hidden absolute inset-0 z-[12] pointer-events-none" aria-live="polite">
+        <div class="device-dashboard-zone device-dashboard-zone--top-left" data-dashboard-zone="top-left"></div>
+        <div class="device-dashboard-zone device-dashboard-zone--top-right" data-dashboard-zone="top-right"></div>
+        <div class="device-dashboard-zone device-dashboard-zone--bottom-left" data-dashboard-zone="bottom-left"></div>
+        <div class="device-dashboard-zone device-dashboard-zone--bottom-right" data-dashboard-zone="bottom-right"></div>
+    </div>
+
     <!-- BARRA STRUMENTI SINISTRA (Compatta) -->
     <div id="toolbar-left" class="absolute top-3 left-3 z-10 flex flex-col gap-2 pointer-events-auto">
         <!-- Pulsante Menu Principale -->
@@ -451,7 +459,110 @@
               Orientamento
             </span>
             <span id="orientation-permission-state" class="mt-1 inline-flex text-[9px] bg-gray-900 text-gray-400 px-1.5 py-0.5 rounded border border-gray-800 font-bold uppercase">Verifica</span>
-          </button>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Dashboard dati dispositivo -->
+            <div id="device-dashboard-settings-panel" class="space-y-3 bg-gray-900/50 p-2.5 rounded-xl border border-gray-800" data-expanded="false">
+                <button id="device-dashboard-settings-toggle" class="w-full flex items-center justify-between gap-2 text-left" type="button" aria-expanded="false" aria-controls="device-dashboard-settings-content">
+                    <span class="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">Dashboard dispositivo</span>
+                    <span class="flex items-center gap-1.5">
+            <span id="device-dashboard-settings-badge" class="text-[9px] bg-gray-950 text-gray-400 px-1.5 py-0.5 rounded border border-gray-800 font-bold uppercase">0 campi</span>
+            <i id="device-dashboard-settings-chevron" data-lucide="chevron-down" class="w-3.5 h-3.5 text-gray-500 transition-transform"></i>
+          </span>
+                </button>
+                <div id="device-dashboard-settings-content" class="hidden space-y-2">
+                    <div class="device-dashboard-setting-row">
+                        <label class="flex items-center gap-2 min-w-0">
+              <input type="checkbox" id="dashboard-field-compass" data-dashboard-field="compass" class="accent-sky-500">
+              <span class="min-w-0">
+                <span class="flex items-center gap-1.5 text-xs text-gray-200">
+                  <i data-lucide="compass" class="w-3.5 h-3.5 text-sky-300"></i>
+                  Bussola
+                </span>
+                <span class="block text-[9px] text-gray-500">Direzione dispositivo</span>
+              </span>
+            </label>
+                        <select id="dashboard-position-compass" data-dashboard-position-field="compass" class="device-dashboard-position-select">
+              <option value="top-right">Alto destra</option>
+              <option value="top-left">Alto sinistra</option>
+              <option value="bottom-right">Basso destra</option>
+              <option value="bottom-left">Basso sinistra</option>
+            </select>
+                    </div>
+                    <div class="device-dashboard-setting-row">
+                        <label class="flex items-center gap-2 min-w-0">
+              <input type="checkbox" id="dashboard-field-altitude" data-dashboard-field="altitude" class="accent-emerald-500">
+              <span class="min-w-0">
+                <span class="flex items-center gap-1.5 text-xs text-gray-200">
+                  <i data-lucide="mountain" class="w-3.5 h-3.5 text-emerald-300"></i>
+                  Quota GPS
+                </span>
+                <span class="block text-[9px] text-gray-500">Altitudine dal telefono</span>
+              </span>
+            </label>
+                        <select id="dashboard-position-altitude" data-dashboard-position-field="altitude" class="device-dashboard-position-select">
+              <option value="top-right">Alto destra</option>
+              <option value="top-left">Alto sinistra</option>
+              <option value="bottom-right">Basso destra</option>
+              <option value="bottom-left">Basso sinistra</option>
+            </select>
+                    </div>
+                    <div class="device-dashboard-setting-row">
+                        <label class="flex items-center gap-2 min-w-0">
+              <input type="checkbox" id="dashboard-field-speed" data-dashboard-field="speed" class="accent-amber-500">
+              <span class="min-w-0">
+                <span class="flex items-center gap-1.5 text-xs text-gray-200">
+                  <i data-lucide="gauge" class="w-3.5 h-3.5 text-amber-300"></i>
+                  Velocità
+                </span>
+                <span class="block text-[9px] text-gray-500">Andatura istantanea</span>
+              </span>
+            </label>
+                        <select id="dashboard-position-speed" data-dashboard-position-field="speed" class="device-dashboard-position-select">
+              <option value="top-right">Alto destra</option>
+              <option value="top-left">Alto sinistra</option>
+              <option value="bottom-right">Basso destra</option>
+              <option value="bottom-left">Basso sinistra</option>
+            </select>
+                    </div>
+                    <div class="device-dashboard-setting-row">
+                        <label class="flex items-center gap-2 min-w-0">
+              <input type="checkbox" id="dashboard-field-accuracy" data-dashboard-field="accuracy" class="accent-cyan-500">
+              <span class="min-w-0">
+                <span class="flex items-center gap-1.5 text-xs text-gray-200">
+                  <i data-lucide="crosshair" class="w-3.5 h-3.5 text-cyan-300"></i>
+                  Precisione
+                </span>
+                <span class="block text-[9px] text-gray-500">Raggio stimato GPS</span>
+              </span>
+            </label>
+                        <select id="dashboard-position-accuracy" data-dashboard-position-field="accuracy" class="device-dashboard-position-select">
+              <option value="top-right">Alto destra</option>
+              <option value="top-left">Alto sinistra</option>
+              <option value="bottom-right">Basso destra</option>
+              <option value="bottom-left">Basso sinistra</option>
+            </select>
+                    </div>
+                    <div class="device-dashboard-setting-row">
+                        <label class="flex items-center gap-2 min-w-0">
+              <input type="checkbox" id="dashboard-field-coordinates" data-dashboard-field="coordinates" class="accent-indigo-500">
+              <span class="min-w-0">
+                <span class="flex items-center gap-1.5 text-xs text-gray-200">
+                  <i data-lucide="map-pin" class="w-3.5 h-3.5 text-indigo-300"></i>
+                  Coordinate
+                </span>
+                <span class="block text-[9px] text-gray-500">Latitudine e longitudine</span>
+              </span>
+            </label>
+                        <select id="dashboard-position-coordinates" data-dashboard-position-field="coordinates" class="device-dashboard-position-select">
+              <option value="top-right">Alto destra</option>
+              <option value="top-left">Alto sinistra</option>
+              <option value="bottom-right">Basso destra</option>
+              <option value="bottom-left">Basso sinistra</option>
+            </select>
+                    </div>
                 </div>
             </div>
 
