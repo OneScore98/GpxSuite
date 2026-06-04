@@ -355,8 +355,6 @@
                     <button id="map-style-osm" class="text-[10px] font-medium py-1.5 px-1 rounded-md text-center bg-blue-600 text-white transition-all">MAPPA</button>
                     <button id="map-style-sat" class="text-[10px] font-medium py-1.5 px-1 rounded-md text-center text-gray-400 hover:text-white transition-all">SAT</button>
                     <button id="map-style-topo" class="text-[10px] font-medium py-1.5 px-1 rounded-md text-center text-gray-400 hover:text-white transition-all">TOPO</button>
-                    <button id="map-style-outdoor" class="text-[10px] font-medium py-1.5 px-1 rounded-md text-center text-gray-400 hover:text-white transition-all">CICLO</button>
-                    <button id="map-style-nautico" class="text-[10px] font-medium py-1.5 px-1 rounded-md text-center text-gray-400 hover:text-white transition-all">MARE</button>
                     </div>
 
                     <!-- Opzioni Satellite (Ibrido) -->
@@ -389,34 +387,6 @@
             <input type="checkbox" id="toggle-hiking-trails" class="sr-only peer">
             <div class="w-8 h-4 bg-gray-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-300 after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-green-600"></div>
           </label>
-                    </div>
-
-                    <!-- Overlay Ciclismo/MTB -->
-                    <div class="main-menu-row border-t border-gray-800/70 pt-2 mt-2">
-                        <div class="flex flex-col min-w-0">
-                            <span class="text-xs text-orange-400 font-semibold flex items-center gap-1">
-                                <i data-lucide="bike" class="w-3.5 h-3.5"></i> Ciclismo OSM
-                            </span>
-                            <span class="text-[9px] text-gray-500">Rete ciclabile e MTB</span>
-                        </div>
-                        <label class="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" id="toggle-cycling-trails" class="sr-only peer">
-                            <div class="w-8 h-4 bg-gray-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-300 after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-orange-600"></div>
-                        </label>
-                    </div>
-
-                    <!-- Overlay Vie d'acqua (OpenSeaMap) -->
-                    <div class="main-menu-row border-t border-gray-800/70 pt-2 mt-2">
-                        <div class="flex flex-col min-w-0">
-                            <span class="text-xs text-blue-400 font-semibold flex items-center gap-1">
-                                <i data-lucide="waves" class="w-3.5 h-3.5"></i> Vie d'acqua
-                            </span>
-                            <span class="text-[9px] text-gray-500">Fiumi e nautica (OpenSeaMap)</span>
-                        </div>
-                        <label class="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" id="toggle-waterways" class="sr-only peer">
-                            <div class="w-8 h-4 bg-gray-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-300 after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600"></div>
-                        </label>
                     </div>
 
                     <!-- Opzione Mapillary -->

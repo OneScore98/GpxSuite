@@ -1541,41 +1541,6 @@ export function createBaseMapStyle(style, isHybrid) {
         return baseStyle;
     }
 
-    if (style === 'outdoor') {
-        // CyclOSM — mappa outdoor/ciclismo gratuita senza API key
-        baseStyle.sources['cyclosm-raster'] = {
-            type: 'raster',
-            tiles: [
-                'https://a.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png',
-                'https://b.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png',
-                'https://c.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png'
-            ],
-            tileSize: 256,
-            attribution: '&copy; <a href="https://www.cyclosm.org">CyclOSM</a> &copy; OpenStreetMap contributors'
-        };
-        baseStyle.layers.push({ id: 'outdoor-layer', type: 'raster', source: 'cyclosm-raster' });
-        return baseStyle;
-    }
-
-    if (style === 'nautico') {
-        // OpenStreetMap + overlay OpenSeaMap come unica basemap nautica
-        baseStyle.sources['osm-nautico'] = {
-            type: 'raster',
-            tiles: ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png'],
-            tileSize: 256,
-            attribution: '&copy; OpenStreetMap contributors'
-        };
-        baseStyle.sources['seamark-raster'] = {
-            type: 'raster',
-            tiles: ['https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png'],
-            tileSize: 256,
-            attribution: 'Map data &copy; OpenSeaMap contributors'
-        };
-        baseStyle.layers.push({ id: 'nautico-osm-layer', type: 'raster', source: 'osm-nautico' });
-        baseStyle.layers.push({ id: 'nautico-seamark-layer', type: 'raster', source: 'seamark-raster', paint: { 'raster-opacity': 0.9 } });
-        return baseStyle;
-    }
-
     baseStyle.sources['osm-raster'] = {
         type: 'raster',
         tiles: ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png'],
@@ -1616,45 +1581,6 @@ function setupStyleDependentLayers() {
         });
     }
 
-    // Overlay ciclismo/MTB (Waymarked Trails)
-    if (!map.getSource('waymarked-cycling')) {
-        map.addSource('waymarked-cycling', {
-            type: 'raster',
-            tiles: ['https://tile.waymarkedtrails.org/cycling/{z}/{x}/{y}.png'],
-            tileSize: 256,
-            attribution: 'Overlay &copy; Waymarked Trails'
-        });
-    }
-    if (!map.getLayer('cycling-trails-layer')) {
-        const cyclingToggle = document.getElementById('toggle-cycling-trails');
-        map.addLayer({
-            id: 'cycling-trails-layer',
-            type: 'raster',
-            source: 'waymarked-cycling',
-            paint: { 'raster-opacity': 0.8 },
-            layout: { visibility: cyclingToggle?.checked ? 'visible' : 'none' }
-        });
-    }
-
-    // Overlay vie d'acqua (OpenSeaMap)
-    if (!map.getSource('openseamap')) {
-        map.addSource('openseamap', {
-            type: 'raster',
-            tiles: ['https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png'],
-            tileSize: 256,
-            attribution: 'Map data &copy; OpenSeaMap contributors'
-        });
-    }
-    if (!map.getLayer('waterways-layer')) {
-        const waterwaysToggle = document.getElementById('toggle-waterways');
-        map.addLayer({
-            id: 'waterways-layer',
-            type: 'raster',
-            source: 'openseamap',
-            paint: { 'raster-opacity': 0.85 },
-            layout: { visibility: waterwaysToggle?.checked ? 'visible' : 'none' }
-        });
-    }
 }
 
 function restoreApplicationLayersAfterStyleLoad(reloadSerial) {
@@ -1689,9 +1615,8 @@ export function setBaseMap(style) {
     map.once('style.load', () => restoreApplicationLayersAfterStyleLoad(reloadSerial));
     map.setStyle(createBaseMapStyle(style, isHybrid), { diff: false });
 
-    ['osm', 'sat', 'topo', 'outdoor', 'nautico'].forEach(s => {
+    ['osm', 'sat', 'topo'].forEach(s => {
         const el = document.getElementById(`map-style-${s}`);
-        if (!el) return;
         el.className = s === style ?
             "text-[10px] font-bold py-1.5 px-1 rounded-md text-center bg-blue-600 text-white transition-all" :
             "text-[10px] font-medium py-1.5 px-1 rounded-md text-center text-gray-400 hover:text-white transition-all";

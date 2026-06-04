@@ -1268,12 +1268,11 @@ body.stats-panel-open #recording-status-chip {
 }
 
 .device-dashboard-zone {
-    --device-widget-zone-width: clamp(3.2rem, 4.8vw, 3.8rem);
     position: absolute;
     display: flex;
     flex-direction: column;
-    gap: clamp(0.22rem, 0.5vw, 0.3rem);
-    width: var(--device-widget-zone-width);
+    gap: 0.25rem;
+    width: fit-content;
     max-width: calc(50vw - 0.9rem);
 }
 
@@ -1304,29 +1303,32 @@ body.stats-panel-open #recording-status-chip {
 /* === TILE QUADRATA — nuovo design compatto === */
 .device-dashboard-card {
     --device-dashboard-heading: 0deg;
-    --ddc-tile: clamp(3.2rem, 4.8vw, 3.8rem);
-    --ddc-icon-size: clamp(1.1rem, 1.7vw, 1.35rem);
+    --ddc-tile: 2rem;
+    --ddc-icon-size: 0.88rem;
     --ddc-icon-svg: calc(var(--ddc-icon-size) * 0.54);
-    --ddc-label-size: clamp(0.28rem, 0.52vw, 0.36rem);
-    --ddc-value-size: clamp(0.56rem, 1.05vw, 0.72rem);
+    --ddc-label-size: 0.26rem;
+    --ddc-value-size: 0.52rem;
 
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: clamp(0.06rem, 0.15vw, 0.1rem);
+    gap: 0.04rem;
 
     width: var(--ddc-tile);
     min-height: var(--ddc-tile);
-    padding: clamp(0.2rem, 0.45vw, 0.28rem) clamp(0.1rem, 0.25vw, 0.16rem);
+    padding: 0.18rem 0.08rem;
 
-    border: 1px solid rgba(148, 163, 184, 0.18);
-    border-radius: clamp(0.42rem, 0.8vw, 0.56rem);
-    background: rgba(6, 12, 24, 0.76);
-    color: #e5e7eb;
-    box-shadow: 0 0.18rem 0.5rem rgba(2, 6, 23, 0.24), inset 0 1px 0 rgba(255,255,255,0.04);
-    backdrop-filter: blur(0.55rem) saturate(1.1);
-    -webkit-backdrop-filter: blur(0.55rem) saturate(1.1);
+    border: 1px solid rgba(99, 179, 237, 0.22);
+    border-radius: 0.4rem;
+    background: rgba(8, 16, 40, 0.86);
+    color: #e2e8f0;
+    box-shadow:
+        0 0 0 1px rgba(59, 130, 246, 0.08),
+        0 0.18rem 0.55rem rgba(2, 6, 23, 0.35),
+        inset 0 1px 0 rgba(147, 197, 253, 0.06);
+    backdrop-filter: blur(0.55rem) saturate(1.15);
+    -webkit-backdrop-filter: blur(0.55rem) saturate(1.15);
 }
 
 .device-dashboard-icon {
@@ -1356,39 +1358,44 @@ body.stats-panel-open #recording-status-chip {
     border-color: rgba(96, 165, 250, 0.3);
 }
 
-.device-dashboard-card--altitude .device-dashboard-icon {
+.device-dashboard-card--altitude .device-dashboard-icon,
+.device-dashboard-card--speed .device-dashboard-icon {
     display: none;
 }
 
-.device-dashboard-card--altitude {
-    --ddc-value-size: clamp(0.78rem, 1.45vw, 1rem);
+.device-dashboard-card--altitude,
+.device-dashboard-card--speed {
+    --ddc-value-size: 0.68rem;
 }
 
 .device-dashboard-card--altitude .device-dashboard-value {
     color: #6ee7b7;
 }
 
-.device-dashboard-card--speed .device-dashboard-icon {
-    display: none;
-}
-
-.device-dashboard-card--speed {
-    --ddc-value-size: clamp(0.78rem, 1.45vw, 1rem);
-}
-
 .device-dashboard-card--speed .device-dashboard-value {
     color: #fcd34d;
 }
 
+/* testo più grande su medium/large senza icona */
+.device-dashboard-card[data-dashboard-size="medium"].device-dashboard-card--altitude,
+.device-dashboard-card[data-dashboard-size="medium"].device-dashboard-card--speed {
+    --ddc-value-size: 1rem;
+}
+
+.device-dashboard-card[data-dashboard-size="large"].device-dashboard-card--altitude,
+.device-dashboard-card[data-dashboard-size="large"].device-dashboard-card--speed {
+    --ddc-value-size: 1.5rem;
+}
+
 .device-dashboard-value {
     font-size: var(--ddc-value-size);
-    line-height: 1.1;
+    line-height: 1.15;
     font-weight: 800;
     color: #ffffff;
     text-align: center;
-    white-space: nowrap;
+    white-space: normal;
+    word-break: break-word;
     overflow: hidden;
-    text-overflow: ellipsis;
     max-width: 100%;
 }
 
@@ -1421,57 +1428,69 @@ body.stats-panel-open #recording-status-chip {
 
 /* — Dimensioni — */
 .device-dashboard-card[data-dashboard-size="medium"] {
-    --ddc-tile: clamp(3.8rem, 5.6vw, 4.6rem);
-    --ddc-icon-size: clamp(1.25rem, 1.95vw, 1.55rem);
-    --ddc-label-size: clamp(0.31rem, 0.6vw, 0.4rem);
-    --ddc-value-size: clamp(0.64rem, 1.22vw, 0.84rem);
+    --ddc-tile: 3.2rem;
+    --ddc-icon-size: 1.3rem;
+    --ddc-label-size: 0.36rem;
+    --ddc-value-size: 0.78rem;
+    border-radius: 0.52rem;
     background: rgba(6, 12, 24, 0.8);
 }
 
 .device-dashboard-card[data-dashboard-size="large"] {
-    --ddc-tile: clamp(4.6rem, 6.8vw, 5.6rem);
-    --ddc-icon-size: clamp(1.5rem, 2.3vw, 1.85rem);
-    --ddc-label-size: clamp(0.36rem, 0.7vw, 0.46rem);
-    --ddc-value-size: clamp(0.78rem, 1.48vw, 1.02rem);
+    --ddc-tile: 5rem;
+    --ddc-icon-size: 1.9rem;
+    --ddc-label-size: 0.48rem;
+    --ddc-value-size: 1.1rem;
+    border-radius: 0.7rem;
     background: rgba(6, 12, 24, 0.84);
     box-shadow: 0 0.26rem 0.7rem rgba(2, 6, 23, 0.3), inset 0 1px 0 rgba(255,255,255,0.06);
 }
 
-/* — Stile: Outdoor (cielo/azzurro) — */
+/* — Stile: Outdoor — cerchio badge solido, niente blur — */
 .device-dashboard-card[data-dashboard-style="outdoor"] {
-    border-color: rgba(56, 189, 248, 0.52);
-    background: rgba(2, 20, 38, 0.84);
-    color: #e0f2fe;
-    box-shadow: 0 0.2rem 0.6rem rgba(2, 6, 23, 0.3), 0 0 0 1px rgba(14, 165, 233, 0.14), inset 0 1px 0 rgba(125,211,252,0.08);
+    border-radius: 50%;
+    border: 2px solid rgba(74, 222, 128, 0.75);
+    background: rgba(5, 46, 22, 0.97);
+    color: #bbf7d0;
+    box-shadow:
+        0 0 0.55rem rgba(74, 222, 128, 0.22),
+        0 0.22rem 0.6rem rgba(0, 0, 0, 0.55);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    overflow: hidden;
 }
 
 .device-dashboard-card[data-dashboard-style="outdoor"] .device-dashboard-icon {
-    background: rgba(14, 165, 233, 0.24);
-    border-color: rgba(56, 189, 248, 0.45);
-    color: #38bdf8;
+    background: rgba(22, 101, 52, 0.8);
+    border-color: rgba(74, 222, 128, 0.5);
+    color: #4ade80;
 }
 
 .device-dashboard-card[data-dashboard-style="outdoor"] .device-dashboard-value {
-    color: #f0f9ff;
+    color: #dcfce7;
 }
 
 .device-dashboard-card[data-dashboard-style="outdoor"] .device-dashboard-label {
-    color: rgba(125, 211, 252, 0.72);
+    color: rgba(74, 222, 128, 0.65);
 }
 
-/* — Stile: Notte (ambra/caldo) — */
+/* — Stile: Notte — rettangolo spigoloso, bordo sinistro accento, piatto — */
 .device-dashboard-card[data-dashboard-style="night"] {
-    border-color: rgba(251, 191, 36, 0.38);
-    background: rgba(20, 12, 3, 0.86);
+    border-radius: 0.15rem;
+    border: none;
+    border-left: 3px solid #f59e0b;
+    background: rgba(8, 5, 0, 0.97);
     color: #fef3c7;
-    box-shadow: 0 0.18rem 0.56rem rgba(2, 6, 23, 0.28), 0 0 0 1px rgba(251,191,36,0.1), inset 0 1px 0 rgba(251,191,36,0.06);
-    backdrop-filter: blur(0.55rem) saturate(0.88);
-    -webkit-backdrop-filter: blur(0.55rem) saturate(0.88);
+    box-shadow: 0.12rem 0.18rem 0.5rem rgba(0, 0, 0, 0.65);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    padding-left: 0.14rem;
+    padding-right: 0.14rem;
 }
 
 .device-dashboard-card[data-dashboard-style="night"] .device-dashboard-icon {
-    background: rgba(120, 53, 15, 0.3);
-    border-color: rgba(251, 191, 36, 0.3);
+    background: rgba(120, 53, 15, 0.55);
+    border-color: rgba(245, 158, 11, 0.4);
     color: #fbbf24;
 }
 
@@ -1480,7 +1499,7 @@ body.stats-panel-open #recording-status-chip {
 }
 
 .device-dashboard-card[data-dashboard-style="night"] .device-dashboard-label {
-    color: rgba(214, 198, 160, 0.68);
+    color: rgba(253, 186, 116, 0.58);
 }
 
 .device-dashboard-setting-row {
@@ -2269,9 +2288,9 @@ label {
     }
 
     .device-dashboard-zone {
-        --device-widget-zone-width: clamp(4.6rem, 24vw, 5.4rem);
+        width: fit-content;
         max-width: calc(50vw - 0.75rem);
-        gap: 0.1rem;
+        gap: 0.2rem;
     }
 
     .device-dashboard-zone--top-left {
@@ -2295,30 +2314,40 @@ label {
     }
 
     .device-dashboard-card {
-        --ddc-tile: clamp(2.9rem, 8vw, 3.4rem);
-        --ddc-icon-size: clamp(1rem, 3.2vw, 1.2rem);
-        --ddc-label-size: clamp(0.26rem, 0.9vw, 0.32rem);
-        --ddc-value-size: clamp(0.5rem, 1.7vw, 0.64rem);
-        gap: 0.06rem;
+        --ddc-tile: 2rem;
+        --ddc-icon-size: 0.82rem;
+        --ddc-label-size: 0.24rem;
+        --ddc-value-size: 0.48rem;
+        gap: 0.03rem;
     }
 
     .device-dashboard-card--altitude,
     .device-dashboard-card--speed {
-        --ddc-value-size: clamp(0.68rem, 2.4vw, 0.88rem);
+        --ddc-value-size: 0.62rem;
     }
 
     .device-dashboard-card[data-dashboard-size="medium"] {
-        --ddc-tile: clamp(3.4rem, 9.5vw, 4rem);
-        --ddc-icon-size: clamp(1.15rem, 3.7vw, 1.4rem);
-        --ddc-label-size: clamp(0.28rem, 1vw, 0.36rem);
-        --ddc-value-size: clamp(0.58rem, 2vw, 0.74rem);
+        --ddc-tile: 3rem;
+        --ddc-icon-size: 1.2rem;
+        --ddc-label-size: 0.32rem;
+        --ddc-value-size: 0.72rem;
+    }
+
+    .device-dashboard-card[data-dashboard-size="medium"].device-dashboard-card--altitude,
+    .device-dashboard-card[data-dashboard-size="medium"].device-dashboard-card--speed {
+        --ddc-value-size: 0.92rem;
     }
 
     .device-dashboard-card[data-dashboard-size="large"] {
-        --ddc-tile: clamp(4rem, 11.5vw, 4.8rem);
-        --ddc-icon-size: clamp(1.35rem, 4.4vw, 1.65rem);
-        --ddc-label-size: clamp(0.32rem, 1.15vw, 0.42rem);
-        --ddc-value-size: clamp(0.68rem, 2.4vw, 0.88rem);
+        --ddc-tile: 4.4rem;
+        --ddc-icon-size: 1.7rem;
+        --ddc-label-size: 0.42rem;
+        --ddc-value-size: 0.96rem;
+    }
+
+    .device-dashboard-card[data-dashboard-size="large"].device-dashboard-card--altitude,
+    .device-dashboard-card[data-dashboard-size="large"].device-dashboard-card--speed {
+        --ddc-value-size: 1.3rem;
     }
 
     .device-dashboard-setting-row {
