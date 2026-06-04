@@ -405,11 +405,9 @@ function renderDeviceDashboardCard(field, status) {
             <div class="device-dashboard-icon">
                 <i data-lucide="${safeHtml(field.icon)}" class="w-4 h-4"></i>
             </div>
-            <div class="min-w-0">
-                <div class="device-dashboard-label">${safeHtml(field.label)}</div>
-                <div class="device-dashboard-value ${safeHtml(metric.valueClass || '')}">${valueHtml}</div>
-                <div class="device-dashboard-meta">${safeHtml(metric.meta)}</div>
-            </div>
+            <div class="device-dashboard-value ${safeHtml(metric.valueClass || '')}">${valueHtml}</div>
+            <div class="device-dashboard-label">${safeHtml(field.label)}</div>
+            <div class="device-dashboard-meta">${safeHtml(metric.meta)}</div>
         </div>
     `;
 }
