@@ -315,12 +315,36 @@ function initApp() {
             id: 'hiking-trails-layer',
             type: 'raster',
             source: 'waymarked-hiking',
-            paint: {
-                'raster-opacity': 0.8
-            },
-            layout: {
-                visibility: 'none'
-            }
+            paint: { 'raster-opacity': 0.8 },
+            layout: { visibility: 'none' }
+        });
+
+        mapInstance.addSource('waymarked-cycling', {
+            type: 'raster',
+            tiles: ['https://tile.waymarkedtrails.org/cycling/{z}/{x}/{y}.png'],
+            tileSize: 256,
+            attribution: '&copy; Waymarked Trails'
+        });
+        mapInstance.addLayer({
+            id: 'cycling-trails-layer',
+            type: 'raster',
+            source: 'waymarked-cycling',
+            paint: { 'raster-opacity': 0.8 },
+            layout: { visibility: 'none' }
+        });
+
+        mapInstance.addSource('openseamap', {
+            type: 'raster',
+            tiles: ['https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png'],
+            tileSize: 256,
+            attribution: '&copy; OpenSeaMap contributors'
+        });
+        mapInstance.addLayer({
+            id: 'waterways-layer',
+            type: 'raster',
+            source: 'openseamap',
+            paint: { 'raster-opacity': 0.85 },
+            layout: { visibility: 'none' }
         });
 
         setupLayers();
