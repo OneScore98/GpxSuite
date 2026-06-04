@@ -711,6 +711,7 @@ function syncRecordingSettingsForm() {
     setValue('recording-track-color', settings.trackColor);
     setChecked('recording-show-live-track', settings.showLiveTrack);
     setChecked('recording-save-elevation', settings.saveElevation);
+    setChecked('recording-keep-screen-on', settings.keepScreenOn);
 }
 
 function bindRecordingSettingsForm() {
@@ -740,6 +741,10 @@ function bindRecordingSettingsForm() {
     const eleToggle = document.getElementById('recording-save-elevation');
     if (eleToggle) {
         eleToggle.onchange = () => _updateRecordingSettings?.({ saveElevation: eleToggle.checked });
+    }
+    const wakeToggle = document.getElementById('recording-keep-screen-on');
+    if (wakeToggle) {
+        wakeToggle.onchange = () => _updateRecordingSettings?.({ keepScreenOn: wakeToggle.checked });
     }
     const colorInput = document.getElementById('recording-track-color');
     if (colorInput) {

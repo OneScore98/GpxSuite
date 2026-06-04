@@ -20,6 +20,9 @@ const MANUAL_RECENTER_DURATION_MS = 850;
 const USER_EXPLORING_RECENTER_DELAY_MS = 6000;
 const LOCATION_CENTERED_DISTANCE_M = 25;
 const RECENTERED_CONTROL_GRACE_MS = 2200;
+const RECORDING_LIVE_REFRESH_VISIBLE_MS = 3500;
+const RECORDING_HIDDEN_PERSIST_MIN_MS = 10000;
+const RECORDING_STATUS_TICK_MS = 1000;
 const LOCATION_SOURCE_ID = 'device-location';
 const LOCATION_DOT_LAYER_ID = 'device-location-dot-layer';
 const LOCATION_HALO_LAYER_ID = 'device-location-halo-layer';
@@ -49,13 +52,20 @@ const DEFAULT_RECORDING_SETTINGS = {
     trackWidth: 4
 };
 
-const GEOLOCATION_OPTIONS = {
+const LOCATION_GEOLOCATION_OPTIONS = {
+    enableHighAccuracy: false,
+    maximumAge: 8000,
+    timeout: 30000
+};
+
+const RECORDING_GEOLOCATION_OPTIONS = {
     enableHighAccuracy: true,
-    maximumAge: 0,                  // niente cache: sempre fix nuovi
+    maximumAge: 1000,
     timeout: 20000
 };
 
 let _watchId = null;
+let _watchMode = 'idle';
 let _lastFix = null;
 let _lastHeading = null;
 let _orientationHeading = null;
@@ -83,10 +93,15 @@ let _saveHistoryState = null;
 let _recordingSettings = { ...DEFAULT_RECORDING_SETTINGS };
 let _recording = createEmptyRecording();
 let _recordingTickIntervalId = null;
+let _recordingRefreshTimer = null;
+let _lastRecordingRefreshAt = 0;
+let _recordingRefreshPending = false;
 let _wakeLock = null;
 let _wakeLockVisibilityBound = false;
 let _persistSnapshotTimer = null;
+let _lastPersistSnapshotAt = 0;
 let _simulationIntervalId = null;
+let _pageVisibilityBound = false;
 
 export function initDeviceLocation(options = {}) {
     _showToast = typeof options.showToast === 'function' ? options.showToast : null;
@@ -95,6 +110,7 @@ export function initDeviceLocation(options = {}) {
     _updateActiveTracksHeader = typeof options.updateActiveTracksHeader === 'function' ? options.updateActiveTracksHeader : null;
     _schedulePersistTracks = typeof options.schedulePersistTracks === 'function' ? options.schedulePersistTracks : null;
     _saveHistoryState = typeof options.saveHistoryState === 'function' ? options.saveHistoryState : null;
+    bindPageVisibilityHandling();
 }
 
 export function setDeviceLocationStatusHandler(handler) {
@@ -139,6 +155,9 @@ export function updateRecordingSettings(settings = {}) {
     if (typeof settings.saveElevation === 'boolean') {
         next.saveElevation = settings.saveElevation;
     }
+    if (typeof settings.keepScreenOn === 'boolean') {
+        next.keepScreenOn = settings.keepScreenOn;
+    }
     if (typeof settings.trackColor === 'string' && /^#[0-9a-f]{6}$/i.test(settings.trackColor)) {
         next.trackColor = settings.trackColor;
     }
@@ -152,6 +171,10 @@ export function updateRecordingSettings(settings = {}) {
         refreshRecordingTrackData(true);
         if (_renderGisTree) _renderGisTree();
         if (_updateActiveTracksHeader) _updateActiveTracksHeader();
+    }
+    if (_recording.state === 'recording') {
+        if (_recordingSettings.keepScreenOn) acquireWakeLock().catch(() => {});
+        else releaseWakeLock();
     }
     emitRecordingStatus();
 }
@@ -167,13 +190,18 @@ export function getDefaultRecordingName(date = new Date()) {
 
 export function startDeviceRecording() {
     if (_recording.state !== 'idle') return false;
-    if (!isDeviceLocationActive() && !startDeviceLocation()) return false;
 
     _recording = createEmptyRecording();
     _recording.state = 'recording';
     _recording.startedAt = Date.now();
+    if (!isDeviceLocationActive() && !startDeviceLocation()) {
+        _recording = createEmptyRecording();
+        emitRecordingStatus();
+        return false;
+    }
     ensureRecordingTrack();
     clearPersistedRecordingSnapshot();
+    syncGeolocationWatchMode();
     refreshRecordingTrackData(true);
     if (_renderGisTree) _renderGisTree();
     if (_updateActiveTracksHeader) _updateActiveTracksHeader();
@@ -190,6 +218,7 @@ export function pauseDeviceRecording() {
     _recording.pausedAt = Date.now();
     stopRecordingTick();
     releaseWakeLock();
+    syncGeolocationWatchMode();
     persistRecordingSnapshot();
     notify("Registrazione in pausa", "info");
     emitRecordingStatus();
@@ -204,6 +233,7 @@ export function resumeDeviceRecording() {
     }
     _recording.state = 'recording';
     _recording.pausedAt = null;
+    syncGeolocationWatchMode();
     startRecordingTick();
     acquireWakeLock().catch(() => {});
     notify("Registrazione ripresa", "success");
@@ -225,6 +255,8 @@ export async function finishDeviceRecording(name = getDefaultRecordingName()) {
     _recording = createEmptyRecording();
     stopRecordingTick();
     releaseWakeLock();
+    clearRecordingTrackRefreshTimer();
+    syncGeolocationWatchMode();
     emitRecordingStatus();
     clearPersistedRecordingSnapshot();
 
@@ -248,6 +280,15 @@ export function toggleDeviceLocation() {
     if (_watchId !== null) {
         if (_waitingForFirstFix) {
             notify("Localizzazione in attesa del primo fix", "info");
+            return true;
+        }
+        if (_recording.state === 'recording') {
+            if (centerOnCurrentDeviceLocation()) {
+                notify("Registrazione attiva: GPS mantenuto", "info");
+            } else {
+                notify("Registrazione attiva: localizzazione non disattivata", "info");
+            }
+            emitStatus();
             return true;
         }
         if (isMapCenteredOnLastFix()) {
@@ -320,15 +361,17 @@ export function startDeviceLocation() {
     purgeLegacyDomLocationMarkers();
     emitStatus();
     bindMapExplorationDetection();
-    startOrientationTracking();
+    if (!isPageHidden()) startOrientationTracking();
 
     try {
+        _watchMode = desiredWatchMode();
         _watchId = navigator.geolocation.watchPosition(
             handlePosition,
             handleLocationError,
-            GEOLOCATION_OPTIONS
+            geolocationOptionsForMode(_watchMode)
         );
     } catch (err) {
+        _watchMode = 'idle';
         _waitingForFirstFix = false;
         stopOrientationTracking();
         notify("Localizzazione non avviabile in questo contesto", "error");
@@ -343,6 +386,11 @@ export function startDeviceLocation() {
 }
 
 export function stopDeviceLocation(reason = 'programmatic') {
+    if (reason === 'manual' && _recording.state === 'recording') {
+        notify("Registrazione attiva: localizzazione mantenuta", "info");
+        emitStatus();
+        return;
+    }
     clearLocationSimulationTimer();
     if (_watchId !== null) {
         if (_watchId !== SIMULATED_WATCH_ID) {
@@ -351,6 +399,7 @@ export function stopDeviceLocation(reason = 'programmatic') {
     }
 
     _watchId = null;
+    _watchMode = 'idle';
     _waitingForFirstFix = false;
     _isMoving = false;
     _lastFix = null;
@@ -367,6 +416,89 @@ export function stopDeviceLocation(reason = 'programmatic') {
 
     if (reason === 'manual') {
         notify("Localizzazione disattivata", "info");
+    }
+}
+
+function desiredWatchMode() {
+    return _recording.state === 'recording' ? 'recording' : 'location';
+}
+
+function geolocationOptionsForMode(mode) {
+    return mode === 'recording' ? RECORDING_GEOLOCATION_OPTIONS : LOCATION_GEOLOCATION_OPTIONS;
+}
+
+function syncGeolocationWatchMode() {
+    if (_watchId === null || _watchId === SIMULATED_WATCH_ID || !navigator.geolocation) return true;
+    const nextMode = desiredWatchMode();
+    if (_watchMode === nextMode) return true;
+
+    let nextWatchId = null;
+    try {
+        nextWatchId = navigator.geolocation.watchPosition(
+            handlePosition,
+            handleLocationError,
+            geolocationOptionsForMode(nextMode)
+        );
+    } catch (err) {
+        console.warn('Cambio profilo GPS non riuscito', err);
+        return false;
+    }
+
+    const previousWatchId = _watchId;
+    _watchId = nextWatchId;
+    _watchMode = nextMode;
+    if (previousWatchId !== null && previousWatchId !== SIMULATED_WATCH_ID) {
+        navigator.geolocation.clearWatch(previousWatchId);
+    }
+    emitStatus();
+    return true;
+}
+
+function isPageHidden() {
+    return typeof document !== 'undefined' && document.visibilityState === 'hidden';
+}
+
+function bindPageVisibilityHandling() {
+    if (_pageVisibilityBound || typeof document === 'undefined') return;
+    _pageVisibilityBound = true;
+    document.addEventListener('visibilitychange', handlePageVisibilityChange);
+    if (typeof window !== 'undefined') {
+        window.addEventListener('pagehide', flushPersistedRecordingSnapshot);
+    }
+}
+
+function handlePageVisibilityChange() {
+    if (isPageHidden()) {
+        stopOrientationTracking();
+        if (_recording.state !== 'idle') {
+            flushPersistedRecordingSnapshot();
+            clearRecordingTrackRefreshTimer();
+            _recordingRefreshPending = true;
+            stopRecordingTick();
+        }
+        return;
+    }
+
+    if (_watchId !== null) startOrientationTracking();
+    if (_recording.state === 'recording') {
+        syncGeolocationWatchMode();
+        startRecordingTick();
+        acquireWakeLock().catch(() => {});
+    }
+    if (_recording.state !== 'idle' && (_recordingRefreshPending || _recordingSettings.showLiveTrack !== false)) {
+        refreshRecordingTrackData(true);
+    }
+    if (_recording.state !== 'idle') {
+        emitRecordingStatus();
+    }
+    if (_lastFix) {
+        updateLiveLocationFrame(_lastFix, _isMoving, resolveStatusHeading());
+        emitStatus({
+            accuracy: Number.isFinite(_lastFix.accuracy) ? _lastFix.accuracy : null,
+            error: null
+        });
+    } else {
+        emitStatus();
     }
 }
 
@@ -445,21 +577,26 @@ function handlePosition(position) {
     _waitingForFirstFix = false;
     _currentHeading = heading;
 
-    updateLiveLocationFrame(fix, moving, heading);
+    const pageHidden = isPageHidden();
+    if (!pageHidden) {
+        updateLiveLocationFrame(fix, moving, heading);
+    }
 
-    if (isFirstFix) {
+    if (!pageHidden && isFirstFix) {
         focusInitialPosition(fix);
         notify("Localizzazione attiva", "success");
-    } else if (moving) {
+    } else if (!pageHidden && moving) {
         followPosition(fix);
     }
 
     captureRecordingPoint(fix);
 
-    emitStatus({
-        accuracy: Number.isFinite(fix.accuracy) ? fix.accuracy : null,
-        error: null
-    });
+    if (!pageHidden) {
+        emitStatus({
+            accuracy: Number.isFinite(fix.accuracy) ? fix.accuracy : null,
+            error: null
+        });
+    }
 }
 
 function handleLocationError(error) {
@@ -481,6 +618,7 @@ function startSimulatedDeviceLocation() {
     }
 
     _watchId = SIMULATED_WATCH_ID;
+    _watchMode = 'simulation';
     _waitingForFirstFix = true;
     _isMoving = false;
     _lastFix = null;
@@ -674,23 +812,44 @@ function updateLiveLocationFrame(fix, moving, heading) {
     }
 }
 
-function createRecordingPoint(fix, lat = fix.lat, lon = fix.lon, heading = fix.heading) {
+function createRecordingPoint(fix, lat = fix.lat, lon = fix.lon) {
     return {
         lat,
         lon,
         ele: _recordingSettings.saveElevation && Number.isFinite(fix.ele) ? Math.round(fix.ele) : 0,
-        time: fix.timestamp,
-        accuracy: Number.isFinite(fix.accuracy) ? fix.accuracy : null,
-        speed: Number.isFinite(fix.speed) ? fix.speed : null,
-        heading: Number.isFinite(heading) ? heading : null
+        time: fix.timestamp
     };
+}
+
+function normalizeRecordingPoint(point) {
+    const lat = Number(point?.lat);
+    const lon = Number(point?.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    const ele = Number(point?.ele);
+    const time = Number(point?.time);
+    return {
+        lat,
+        lon,
+        ele: Number.isFinite(ele) ? ele : 0,
+        time: Number.isFinite(time) ? time : Date.now()
+    };
+}
+
+function normalizeRecordingPoints(points) {
+    if (!Array.isArray(points)) return [];
+    const normalized = [];
+    for (let i = 0; i < points.length; i++) {
+        const point = normalizeRecordingPoint(points[i]);
+        if (point) normalized.push(point);
+    }
+    return normalized;
 }
 
 function captureRecordingPoint(fix) {
     if (_recording.state !== 'recording') return;
     if (!shouldAcceptRecordingFix(fix)) {
         _recording.skipped++;
-        emitRecordingStatus();
+        if (!isPageHidden()) emitRecordingStatus();
         return;
     }
 
@@ -698,7 +857,7 @@ function captureRecordingPoint(fix) {
     _recording.points.push(point);
     schedulePersistRecordingSnapshot();
     refreshRecordingTrackData(false);
-    emitRecordingStatus();
+    if (!isPageHidden()) emitRecordingStatus();
 }
 
 function shouldAcceptRecordingFix(fix) {
@@ -809,7 +968,43 @@ function refreshRecordingTrackData(immediate = false) {
     const segment = ensureRecordingSegment(track);
     segment.points = _recording.points;
     syncRecordingTrackAppearance(track);
-    if (_updateMapData) _updateMapData(immediate);
+    if (!_updateMapData) return;
+    if (immediate) {
+        clearRecordingTrackRefreshTimer();
+        _recordingRefreshPending = false;
+        _lastRecordingRefreshAt = Date.now();
+        _updateMapData(true);
+        return;
+    }
+    scheduleRecordingTrackRefresh();
+}
+
+function scheduleRecordingTrackRefresh() {
+    if (_recordingSettings.showLiveTrack === false || isPageHidden()) {
+        _recordingRefreshPending = true;
+        return;
+    }
+    if (_recordingRefreshTimer !== null) return;
+
+    const now = Date.now();
+    const delay = Math.max(0, RECORDING_LIVE_REFRESH_VISIBLE_MS - (now - _lastRecordingRefreshAt));
+    _recordingRefreshTimer = setTimeout(() => {
+        _recordingRefreshTimer = null;
+        if (_recording.state === 'idle') return;
+        if (_recordingSettings.showLiveTrack === false || isPageHidden()) {
+            _recordingRefreshPending = true;
+            return;
+        }
+        _recordingRefreshPending = false;
+        _lastRecordingRefreshAt = Date.now();
+        _updateMapData(false);
+    }, delay);
+}
+
+function clearRecordingTrackRefreshTimer() {
+    if (_recordingRefreshTimer === null) return;
+    clearTimeout(_recordingRefreshTimer);
+    _recordingRefreshTimer = null;
 }
 
 function finalizeRecordingTrack(recording, recordedPoints, trackName) {
@@ -1048,6 +1243,7 @@ function resolveHeading(fix, previousFix, distance, moving) {
 }
 
 async function startOrientationTracking() {
+    if (isPageHidden()) return;
     if (_orientationListening || typeof window.DeviceOrientationEvent === 'undefined') return;
     const requestToken = ++_orientationRequestToken;
 
@@ -1069,9 +1265,11 @@ async function requestOrientationAccess() {
         if (typeof OrientationEvent.requestPermission === 'function') {
             const permission = await OrientationEvent.requestPermission();
             _orientationPermissionGranted = permission === 'granted';
+            persistOrientationGrant(_orientationPermissionGranted);
             return _orientationPermissionGranted;
         }
         _orientationPermissionGranted = true;
+        persistOrientationGrant(true);
         return true;
     } catch (err) {
         console.warn('Orientamento dispositivo non disponibile', err);
@@ -1098,6 +1296,7 @@ function handleDeviceOrientation(event) {
 
     _orientationHeading = heading;
     _currentHeading = heading;
+    if (isPageHidden()) return;
     if ((_isMoving || _recording.state === 'recording') && _lastFix) {
         _lastHeading = heading;
         updateLocationMarker(_lastFix, _isMoving, heading);
@@ -1219,13 +1418,14 @@ function finiteNumberOrNull(value) {
 
 function startRecordingTick() {
     stopRecordingTick();
+    if (isPageHidden()) return;
     _recordingTickIntervalId = setInterval(() => {
         if (_recording.state !== 'recording') {
             stopRecordingTick();
             return;
         }
         emitRecordingStatus();
-    }, 1000);
+    }, RECORDING_STATUS_TICK_MS);
 }
 
 function stopRecordingTick() {
@@ -1278,11 +1478,27 @@ function releaseWakeLock() {
 // la tab o l'OS la termina, alla riapertura troviamo i punti già registrati
 // e possiamo decidere se riprendere/salvare.
 function schedulePersistRecordingSnapshot() {
+    if (_recording.state === 'idle') return;
+    if (isPageHidden()) {
+        const now = Date.now();
+        if (now - _lastPersistSnapshotAt >= RECORDING_HIDDEN_PERSIST_MIN_MS) {
+            persistRecordingSnapshot();
+        }
+        return;
+    }
     if (_persistSnapshotTimer) return;
     _persistSnapshotTimer = setTimeout(() => {
         _persistSnapshotTimer = null;
         persistRecordingSnapshot();
     }, RECORDING_PERSIST_DEBOUNCE_MS);
+}
+
+function flushPersistedRecordingSnapshot() {
+    if (_persistSnapshotTimer) {
+        clearTimeout(_persistSnapshotTimer);
+        _persistSnapshotTimer = null;
+    }
+    persistRecordingSnapshot();
 }
 
 function persistRecordingSnapshot() {
@@ -1302,6 +1518,7 @@ function persistRecordingSnapshot() {
             points: _recording.points
         };
         localStorage.setItem(RECORDING_PERSIST_KEY, JSON.stringify(snapshot));
+        _lastPersistSnapshotAt = snapshot.savedAt;
     } catch (err) {
         // Probabilmente quota piena: ignoriamo, non vogliamo bloccare il tracking.
         console.warn('Snapshot registrazione fallito', err);
@@ -1314,6 +1531,7 @@ function clearPersistedRecordingSnapshot() {
         _persistSnapshotTimer = null;
     }
     try { localStorage.removeItem(RECORDING_PERSIST_KEY); } catch (e) {}
+    _lastPersistSnapshotAt = 0;
 }
 
 function readPersistedRecordingSnapshot() {
@@ -1323,12 +1541,13 @@ function readPersistedRecordingSnapshot() {
         if (!raw) return null;
         const snap = JSON.parse(raw);
         if (!snap || snap.v !== 1) return null;
-        if (!Array.isArray(snap.points) || snap.points.length === 0) return null;
+        const points = normalizeRecordingPoints(snap.points);
+        if (points.length === 0) return null;
         if (Date.now() - (snap.savedAt || 0) > RECORDING_SNAPSHOT_MAX_AGE_MS) {
             try { localStorage.removeItem(RECORDING_PERSIST_KEY); } catch (e) {}
             return null;
         }
-        return snap;
+        return { ...snap, points };
     } catch (err) {
         return null;
     }
@@ -1458,10 +1677,11 @@ async function saveRecordingGpx(track, suggestedFileName) {
     const a = document.createElement('a');
     a.href = url;
     a.download = safeFileName;
+    a.style.display = 'none';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
     return { savedFile: true, fileName: safeFileName };
 }
 
