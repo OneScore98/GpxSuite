@@ -667,9 +667,15 @@ function buildDeviceDashboardTiltMetric() {
                     <div class="device-tilt-ball"></div>
                 </div>
                 <div class="device-tilt-readouts">
-                    <span>T ${safeHtml(formatDeviceDashboardSignedDegree(tilt))}</span>
-                    <span>P ${safeHtml(formatDeviceDashboardSignedDegree(pitch))}</span>
-                    <span>${safeHtml(statusLabel)}</span>
+                    <div class="device-tilt-readout">
+                        <span class="device-tilt-readout-label">Tilt</span>
+                        <span class="device-tilt-readout-value">${safeHtml(formatDeviceDashboardSignedDegree(tilt))}</span>
+                    </div>
+                    <div class="device-tilt-readout">
+                        <span class="device-tilt-readout-label">Pitch</span>
+                        <span class="device-tilt-readout-value">${safeHtml(formatDeviceDashboardSignedDegree(pitch))}</span>
+                    </div>
+                    <div class="device-tilt-status">${safeHtml(statusLabel)}</div>
                 </div>
             </div>
         `
@@ -3700,6 +3706,7 @@ export function setupEvents() {
     document.getElementById('map-style-osm').onclick = () => _setBaseMap('osm');
     document.getElementById('map-style-sat').onclick = () => _setBaseMap('sat');
     document.getElementById('map-style-topo').onclick = () => _setBaseMap('topo');
+    document.getElementById('map-style-acqua').onclick = () => _setBaseMap('acqua');
     document.getElementById('toggle-hybrid').onchange = () => {
         if (currentStyle === 'sat') _setBaseMap('sat');
     };

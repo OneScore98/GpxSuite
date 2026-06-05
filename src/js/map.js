@@ -179,6 +179,456 @@ export function setStyleRestoredHook(handler) {
 }
 const MAPILLARY_JS_URL = 'https://unpkg.com/mapillary-js@4.1.2/dist/mapillary.js';
 const MAPILLARY_CSS_URL = 'https://unpkg.com/mapillary-js@4.1.2/dist/mapillary.css';
+const BASE_MAP_STYLES = ['osm', 'sat', 'topo', 'acqua'];
+
+function normalizeBaseMapStyle(style) {
+    return BASE_MAP_STYLES.includes(style) ? style : 'osm';
+}
+
+function createHydroBaseMapStyle() {
+    return {
+        version: 8,
+        glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
+        sources: {
+            'idro-shaded': {
+                type: 'raster',
+                tiles: ['https://tiles.openfreemap.org/natural_earth/ne2sr/{z}/{x}/{y}.png'],
+                tileSize: 256,
+                maxzoom: 6
+            },
+            'openmaptiles': {
+                type: 'vector',
+                url: 'https://tiles.openfreemap.org/planet'
+            }
+        },
+        layers: [
+            {
+                id: 'idro-background',
+                type: 'background',
+                paint: { 'background-color': '#eef2ef' }
+            },
+            {
+                id: 'idro-shaded',
+                type: 'raster',
+                source: 'idro-shaded',
+                maxzoom: 7,
+                paint: {
+                    'raster-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.18, 6, 0.04],
+                    'raster-saturation': -0.45
+                }
+            },
+            {
+                id: 'idro-landuse-residential',
+                type: 'fill',
+                source: 'openmaptiles',
+                'source-layer': 'landuse',
+                filter: ['match', ['get', 'class'], ['residential', 'neighbourhood', 'suburb'], true, false],
+                paint: { 'fill-color': '#e7e6e0', 'fill-opacity': 0.36 }
+            },
+            {
+                id: 'idro-landuse-muted',
+                type: 'fill',
+                source: 'openmaptiles',
+                'source-layer': 'landuse',
+                filter: ['match', ['get', 'class'], ['commercial', 'industrial', 'railway', 'school', 'hospital'], true, false],
+                paint: { 'fill-color': '#e5e1da', 'fill-opacity': 0.28 }
+            },
+            {
+                id: 'idro-park',
+                type: 'fill',
+                source: 'openmaptiles',
+                'source-layer': 'park',
+                filter: ['match', ['geometry-type'], ['Polygon', 'MultiPolygon'], true, false],
+                paint: { 'fill-color': '#dfe8dd', 'fill-opacity': 0.34 }
+            },
+            {
+                id: 'idro-landcover-wood',
+                type: 'fill',
+                source: 'openmaptiles',
+                'source-layer': 'landcover',
+                filter: ['==', ['get', 'class'], 'wood'],
+                paint: { 'fill-color': '#d7e0d2', 'fill-opacity': 0.28 }
+            },
+            {
+                id: 'idro-landcover-grass',
+                type: 'fill',
+                source: 'openmaptiles',
+                'source-layer': 'landcover',
+                filter: ['==', ['get', 'class'], 'grass'],
+                paint: { 'fill-color': '#e3eadf', 'fill-opacity': 0.26 }
+            },
+            {
+                id: 'idro-landcover-sand',
+                type: 'fill',
+                source: 'openmaptiles',
+                'source-layer': 'landcover',
+                filter: ['==', ['get', 'class'], 'sand'],
+                paint: { 'fill-color': '#ece8d6', 'fill-opacity': 0.42 }
+            },
+            {
+                id: 'idro-building',
+                type: 'fill',
+                source: 'openmaptiles',
+                'source-layer': 'building',
+                minzoom: 14,
+                paint: {
+                    'fill-color': '#d9d7d0',
+                    'fill-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0.14, 17, 0.32],
+                    'fill-outline-color': 'rgba(168, 165, 156, 0.24)'
+                }
+            },
+            {
+                id: 'idro-road-major-casing',
+                type: 'line',
+                source: 'openmaptiles',
+                'source-layer': 'transportation',
+                filter: ['all',
+                    ['match', ['geometry-type'], ['LineString', 'MultiLineString'], true, false],
+                    ['match', ['get', 'class'], ['motorway', 'trunk', 'primary', 'secondary', 'tertiary'], true, false],
+                    ['!=', ['get', 'brunnel'], 'tunnel']
+                ],
+                layout: { 'line-cap': 'round', 'line-join': 'round' },
+                paint: {
+                    'line-color': '#d1d2ca',
+                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 6, 0.22, 13, 0.46],
+                    'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 6, 0.5, 12, 2.5, 18, 11]
+                }
+            },
+            {
+                id: 'idro-road-major',
+                type: 'line',
+                source: 'openmaptiles',
+                'source-layer': 'transportation',
+                filter: ['all',
+                    ['match', ['geometry-type'], ['LineString', 'MultiLineString'], true, false],
+                    ['match', ['get', 'class'], ['motorway', 'trunk', 'primary', 'secondary', 'tertiary'], true, false],
+                    ['!=', ['get', 'brunnel'], 'tunnel']
+                ],
+                layout: { 'line-cap': 'round', 'line-join': 'round' },
+                paint: {
+                    'line-color': '#f5f4ee',
+                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 6, 0.18, 13, 0.54],
+                    'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 7, 0.25, 12, 1.4, 18, 7]
+                }
+            },
+            {
+                id: 'idro-road-minor',
+                type: 'line',
+                source: 'openmaptiles',
+                'source-layer': 'transportation',
+                minzoom: 12,
+                filter: ['all',
+                    ['match', ['geometry-type'], ['LineString', 'MultiLineString'], true, false],
+                    ['match', ['get', 'class'], ['minor', 'service', 'track', 'path'], true, false],
+                    ['!=', ['get', 'brunnel'], 'tunnel']
+                ],
+                layout: { 'line-cap': 'round', 'line-join': 'round' },
+                paint: {
+                    'line-color': '#f7f7f2',
+                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 12, 0.16, 16, 0.42],
+                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 12, 0.25, 16, 2.5, 20, 8]
+                }
+            },
+            {
+                id: 'idro-boundary',
+                type: 'line',
+                source: 'openmaptiles',
+                'source-layer': 'boundary',
+                filter: ['all', ['!=', ['get', 'maritime'], 1], ['<=', ['get', 'admin_level'], 4]],
+                paint: {
+                    'line-color': '#b9bab3',
+                    'line-opacity': 0.34,
+                    'line-dasharray': [1.5, 2],
+                    'line-width': ['interpolate', ['linear'], ['zoom'], 3, 0.6, 10, 1.4]
+                }
+            },
+            {
+                id: 'idro-water-glow',
+                type: 'fill',
+                source: 'openmaptiles',
+                'source-layer': 'water',
+                filter: ['!=', ['get', 'brunnel'], 'tunnel'],
+                paint: {
+                    'fill-color': '#d9f6ff',
+                    'fill-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.72, 12, 0.42]
+                }
+            },
+            {
+                id: 'idro-water',
+                type: 'fill',
+                source: 'openmaptiles',
+                'source-layer': 'water',
+                filter: ['all', ['!=', ['get', 'brunnel'], 'tunnel'], ['!=', ['get', 'intermittent'], 1]],
+                paint: {
+                    'fill-color': ['match', ['get', 'class'],
+                        ['river'], '#65c7f4',
+                        ['lake', 'reservoir'], '#91dcff',
+                        ['ocean', 'sea'], '#b8ecff',
+                        '#a3e1ff'
+                    ],
+                    'fill-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.86, 13, 0.94]
+                }
+            },
+            {
+                id: 'idro-water-intermittent',
+                type: 'fill',
+                source: 'openmaptiles',
+                'source-layer': 'water',
+                filter: ['==', ['get', 'intermittent'], 1],
+                paint: { 'fill-color': '#bfeaff', 'fill-opacity': 0.48 }
+            },
+            {
+                id: 'idro-water-outline',
+                type: 'line',
+                source: 'openmaptiles',
+                'source-layer': 'water',
+                filter: ['!=', ['get', 'brunnel'], 'tunnel'],
+                paint: {
+                    'line-color': '#45b6ea',
+                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0.38, 14, 0.8],
+                    'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 7, 0.25, 14, 1.2, 18, 2.4]
+                }
+            },
+            {
+                id: 'idro-waterway-river-glow',
+                type: 'line',
+                source: 'openmaptiles',
+                'source-layer': 'waterway',
+                filter: ['all', ['==', ['get', 'class'], 'river'], ['!=', ['get', 'brunnel'], 'tunnel']],
+                layout: { 'line-cap': 'round', 'line-join': 'round' },
+                paint: {
+                    'line-color': '#d5f8ff',
+                    'line-opacity': 0.9,
+                    'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 6, 1, 10, 4, 14, 12, 19, 22]
+                }
+            },
+            {
+                id: 'idro-waterway-river-halo',
+                type: 'line',
+                source: 'openmaptiles',
+                'source-layer': 'waterway',
+                filter: ['all', ['==', ['get', 'class'], 'river'], ['!=', ['get', 'brunnel'], 'tunnel']],
+                layout: { 'line-cap': 'round', 'line-join': 'round' },
+                paint: {
+                    'line-color': '#53bdeb',
+                    'line-opacity': 0.82,
+                    'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 6, 0.55, 10, 2.4, 14, 7, 19, 13]
+                }
+            },
+            {
+                id: 'idro-waterway-river-core',
+                type: 'line',
+                source: 'openmaptiles',
+                'source-layer': 'waterway',
+                filter: ['all', ['==', ['get', 'class'], 'river'], ['!=', ['get', 'brunnel'], 'tunnel'], ['!=', ['get', 'intermittent'], 1]],
+                layout: { 'line-cap': 'round', 'line-join': 'round' },
+                paint: {
+                    'line-color': '#087fc4',
+                    'line-opacity': 0.95,
+                    'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 6, 0.25, 10, 1.1, 14, 3.8, 19, 7]
+                }
+            },
+            {
+                id: 'idro-waterway-river-intermittent',
+                type: 'line',
+                source: 'openmaptiles',
+                'source-layer': 'waterway',
+                filter: ['all', ['==', ['get', 'class'], 'river'], ['!=', ['get', 'brunnel'], 'tunnel'], ['==', ['get', 'intermittent'], 1]],
+                layout: { 'line-cap': 'round', 'line-join': 'round' },
+                paint: {
+                    'line-color': '#087fc4',
+                    'line-dasharray': [3, 2.2],
+                    'line-opacity': 0.7,
+                    'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 7, 0.25, 13, 2.8, 19, 5.5]
+                }
+            },
+            {
+                id: 'idro-waterway-canal-glow',
+                type: 'line',
+                source: 'openmaptiles',
+                'source-layer': 'waterway',
+                minzoom: 9,
+                filter: ['all', ['==', ['get', 'class'], 'canal'], ['!=', ['get', 'brunnel'], 'tunnel']],
+                layout: { 'line-cap': 'round', 'line-join': 'round' },
+                paint: {
+                    'line-color': '#d9f8ff',
+                    'line-opacity': 0.86,
+                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 9, 1.2, 14, 7, 19, 14]
+                }
+            },
+            {
+                id: 'idro-waterway-canal-core',
+                type: 'line',
+                source: 'openmaptiles',
+                'source-layer': 'waterway',
+                minzoom: 9,
+                filter: ['all', ['==', ['get', 'class'], 'canal'], ['!=', ['get', 'brunnel'], 'tunnel']],
+                layout: { 'line-cap': 'round', 'line-join': 'round' },
+                paint: {
+                    'line-color': '#1596d2',
+                    'line-opacity': 0.88,
+                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 9, 0.45, 14, 2.8, 19, 5.8]
+                }
+            },
+            {
+                id: 'idro-waterway-stream-glow',
+                type: 'line',
+                source: 'openmaptiles',
+                'source-layer': 'waterway',
+                minzoom: 11,
+                filter: ['all', ['match', ['get', 'class'], ['stream', 'ditch', 'drain'], true, false], ['!=', ['get', 'brunnel'], 'tunnel']],
+                layout: { 'line-cap': 'round', 'line-join': 'round' },
+                paint: {
+                    'line-color': '#d8f8ff',
+                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 11, 0.54, 15, 0.9],
+                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 11, 0.7, 15, 4.5, 19, 9]
+                }
+            },
+            {
+                id: 'idro-waterway-stream-core',
+                type: 'line',
+                source: 'openmaptiles',
+                'source-layer': 'waterway',
+                minzoom: 11,
+                filter: ['all', ['match', ['get', 'class'], ['stream', 'ditch', 'drain'], true, false], ['!=', ['get', 'brunnel'], 'tunnel'], ['!=', ['get', 'intermittent'], 1]],
+                layout: { 'line-cap': 'round', 'line-join': 'round' },
+                paint: {
+                    'line-color': '#1aa0dc',
+                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 11, 0.66, 15, 0.94],
+                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 11, 0.25, 15, 1.8, 19, 3.8]
+                }
+            },
+            {
+                id: 'idro-waterway-stream-intermittent',
+                type: 'line',
+                source: 'openmaptiles',
+                'source-layer': 'waterway',
+                minzoom: 12,
+                filter: ['all', ['match', ['get', 'class'], ['stream', 'ditch', 'drain'], true, false], ['!=', ['get', 'brunnel'], 'tunnel'], ['==', ['get', 'intermittent'], 1]],
+                layout: { 'line-cap': 'round', 'line-join': 'round' },
+                paint: {
+                    'line-color': '#1aa0dc',
+                    'line-dasharray': [2, 2],
+                    'line-opacity': 0.64,
+                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 12, 0.25, 15, 1.6, 19, 3.3]
+                }
+            },
+            {
+                id: 'idro-waterway-tunnel',
+                type: 'line',
+                source: 'openmaptiles',
+                'source-layer': 'waterway',
+                minzoom: 12,
+                filter: ['==', ['get', 'brunnel'], 'tunnel'],
+                paint: {
+                    'line-color': '#4db9e8',
+                    'line-dasharray': [1.5, 2.5],
+                    'line-opacity': 0.52,
+                    'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 12, 0.5, 18, 4]
+                }
+            },
+            {
+                id: 'idro-road-label',
+                type: 'symbol',
+                source: 'openmaptiles',
+                'source-layer': 'transportation_name',
+                minzoom: 13,
+                filter: ['match', ['geometry-type'], ['LineString', 'MultiLineString'], true, false],
+                layout: {
+                    'symbol-placement': 'line',
+                    'text-field': ['coalesce', ['get', 'name'], ['get', 'ref']],
+                    'text-font': ['Noto Sans Regular'],
+                    'text-size': ['interpolate', ['linear'], ['zoom'], 13, 10, 17, 12],
+                    'text-rotation-alignment': 'map'
+                },
+                paint: {
+                    'text-color': '#8b8d86',
+                    'text-opacity': 0.48,
+                    'text-halo-color': '#eef2ef',
+                    'text-halo-width': 1
+                }
+            },
+            {
+                id: 'idro-place-label',
+                type: 'symbol',
+                source: 'openmaptiles',
+                'source-layer': 'place',
+                filter: ['match', ['get', 'class'], ['city', 'town', 'village', 'state', 'country'], true, false],
+                layout: {
+                    'text-field': ['coalesce', ['get', 'name:it'], ['get', 'name'], ['get', 'name_en']],
+                    'text-font': ['Noto Sans Regular'],
+                    'text-size': ['interpolate', ['linear'], ['zoom'], 3, 10, 8, 13, 13, 16],
+                    'text-max-width': 8
+                },
+                paint: {
+                    'text-color': '#61655f',
+                    'text-opacity': ['interpolate', ['linear'], ['zoom'], 3, 0.48, 12, 0.68],
+                    'text-halo-color': '#eef2ef',
+                    'text-halo-width': 1.2
+                }
+            },
+            {
+                id: 'idro-waterway-label',
+                type: 'symbol',
+                source: 'openmaptiles',
+                'source-layer': 'waterway',
+                minzoom: 10,
+                filter: ['match', ['geometry-type'], ['LineString', 'MultiLineString'], true, false],
+                layout: {
+                    'symbol-placement': 'line',
+                    'symbol-spacing': 320,
+                    'text-field': ['coalesce', ['get', 'name:it'], ['get', 'name'], ['get', 'name_en']],
+                    'text-font': ['Noto Sans Italic'],
+                    'text-size': ['interpolate', ['linear'], ['zoom'], 10, 10, 15, 14],
+                    'text-max-width': 6
+                },
+                paint: {
+                    'text-color': '#056aa6',
+                    'text-halo-color': 'rgba(236, 251, 255, 0.9)',
+                    'text-halo-width': 1.6
+                }
+            },
+            {
+                id: 'idro-water-name-point-label',
+                type: 'symbol',
+                source: 'openmaptiles',
+                'source-layer': 'water_name',
+                filter: ['match', ['geometry-type'], ['Point', 'MultiPoint'], true, false],
+                layout: {
+                    'text-field': ['coalesce', ['get', 'name:it'], ['get', 'name'], ['get', 'name_en']],
+                    'text-font': ['Noto Sans Italic'],
+                    'text-size': ['interpolate', ['linear'], ['zoom'], 5, 10, 12, 15],
+                    'text-max-width': 7
+                },
+                paint: {
+                    'text-color': '#075f99',
+                    'text-halo-color': 'rgba(236, 251, 255, 0.92)',
+                    'text-halo-width': 1.7
+                }
+            },
+            {
+                id: 'idro-water-name-line-label',
+                type: 'symbol',
+                source: 'openmaptiles',
+                'source-layer': 'water_name',
+                filter: ['match', ['geometry-type'], ['LineString', 'MultiLineString'], true, false],
+                layout: {
+                    'symbol-placement': 'line',
+                    'symbol-spacing': 360,
+                    'text-field': ['coalesce', ['get', 'name:it'], ['get', 'name'], ['get', 'name_en']],
+                    'text-font': ['Noto Sans Italic'],
+                    'text-size': ['interpolate', ['linear'], ['zoom'], 5, 10, 12, 15],
+                    'text-max-width': 7
+                },
+                paint: {
+                    'text-color': '#075f99',
+                    'text-halo-color': 'rgba(236, 251, 255, 0.92)',
+                    'text-halo-width': 1.7
+                }
+            }
+        ]
+    };
+}
 
 function ensureApplicationLayersAboveMap() {
     if (!mapLoaded) return;
@@ -1503,6 +1953,11 @@ export function closeMapillaryViewer() {
 }
 
 export function createBaseMapStyle(style, isHybrid) {
+    const normalizedStyle = normalizeBaseMapStyle(style);
+    if (normalizedStyle === 'acqua') {
+        return createHydroBaseMapStyle();
+    }
+
     const baseStyle = {
         version: 8,
         glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
@@ -1510,7 +1965,7 @@ export function createBaseMapStyle(style, isHybrid) {
         layers: []
     };
 
-    if (style === 'sat') {
+    if (normalizedStyle === 'sat') {
         baseStyle.sources['sat-raster'] = {
             type: 'raster',
             tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
@@ -1530,7 +1985,7 @@ export function createBaseMapStyle(style, isHybrid) {
         return baseStyle;
     }
 
-    if (style === 'topo') {
+    if (normalizedStyle === 'topo') {
         baseStyle.sources['topo-raster'] = {
             type: 'raster',
             tiles: ['https://a.tile.opentopomap.org/{z}/{x}/{y}.png'],
@@ -1606,24 +2061,29 @@ function restoreApplicationLayersAfterStyleLoad(reloadSerial) {
 }
 
 export function setBaseMap(style) {
-    setCurrentStyle(style);
+    const normalizedStyle = normalizeBaseMapStyle(style);
+    setCurrentStyle(normalizedStyle);
     if (!mapLoaded) return;
 
-    const isHybrid = document.getElementById('toggle-hybrid').checked;
+    const isHybrid = document.getElementById('toggle-hybrid')?.checked;
     const reloadSerial = ++_styleReloadSerial;
 
     map.once('style.load', () => restoreApplicationLayersAfterStyleLoad(reloadSerial));
-    map.setStyle(createBaseMapStyle(style, isHybrid), { diff: false });
+    map.setStyle(createBaseMapStyle(normalizedStyle, isHybrid), { diff: false });
 
-    ['osm', 'sat', 'topo'].forEach(s => {
+    BASE_MAP_STYLES.forEach(s => {
         const el = document.getElementById(`map-style-${s}`);
-        el.className = s === style ?
+        if (!el) return;
+        el.className = s === normalizedStyle ?
             "text-[10px] font-bold py-1.5 px-1 rounded-md text-center bg-blue-600 text-white transition-all" :
             "text-[10px] font-medium py-1.5 px-1 rounded-md text-center text-gray-400 hover:text-white transition-all";
     });
 
-    document.getElementById('sat-options-container').className =
-        style === 'sat' ? "pt-1.5 flex items-center justify-between" : "hidden";
+    const satOptionsContainer = document.getElementById('sat-options-container');
+    if (satOptionsContainer) {
+        satOptionsContainer.className =
+            normalizedStyle === 'sat' ? "pt-1.5 flex items-center justify-between" : "hidden";
+    }
 
     schedulePersistAppSession();
 }

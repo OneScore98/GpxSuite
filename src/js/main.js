@@ -259,25 +259,7 @@ function initApp() {
 
     const mapInstance = new maplibregl.Map({
         container: 'map',
-        style: {
-            version: 8,
-            glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-            sources: {
-                'osm-raster': {
-                    type: 'raster',
-                    tiles: ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png'],
-                    tileSize: 256,
-                    attribution: '&copy; OpenStreetMap contributors'
-                }
-            },
-            layers: [{
-                id: 'osm-layer',
-                type: 'raster',
-                source: 'osm-raster',
-                minzoom: 0,
-                maxzoom: 19
-            }]
-        },
+        style: createBaseMapStyle('osm', false),
         center: [12.5, 41.9],
         zoom: 6,
         pitch: 0,

@@ -1517,10 +1517,11 @@ body.stats-panel-open #recording-status-chip {
 
 .device-dashboard-card--tilt {
     --ddc-tile: auto;
-    width: 7.6rem;
-    min-height: 4.15rem;
-    padding: 0.42rem;
-    gap: 0.22rem;
+    width: 11.4rem;
+    min-height: 6.6rem;
+    padding: 0.58rem;
+    gap: 0.32rem;
+    border-color: rgba(34, 211, 238, 0.42);
 }
 
 .device-dashboard-card--vibration {
@@ -1538,22 +1539,24 @@ body.stats-panel-open #recording-status-chip {
 .device-tilt-widget {
     width: 100%;
     display: grid;
-    grid-template-columns: minmax(2.15rem, 0.9fr) minmax(0, 1fr);
+    grid-template-columns: minmax(4.2rem, 1fr) minmax(4.7rem, 0.94fr);
     align-items: center;
-    gap: 0.38rem;
+    gap: 0.62rem;
 }
 
 .device-tilt-gauge {
     position: relative;
     width: 100%;
     aspect-ratio: 1;
-    min-width: 2.1rem;
+    min-width: 4.2rem;
     border-radius: 50%;
-    border: 1px solid rgba(125, 211, 252, 0.5);
+    border: 2px solid rgba(125, 211, 252, 0.68);
     background:
-        radial-gradient(circle at 50% 50%, rgba(14, 165, 233, 0.2), transparent 46%),
+        radial-gradient(circle at 50% 50%, rgba(14, 165, 233, 0.28), transparent 48%),
         linear-gradient(180deg, rgba(8, 47, 73, 0.96), rgba(2, 6, 23, 0.96));
-    box-shadow: inset 0 0 0.7rem rgba(8, 145, 178, 0.25);
+    box-shadow:
+        inset 0 0 0.95rem rgba(8, 145, 178, 0.32),
+        0 0 0.55rem rgba(14, 165, 233, 0.18);
     overflow: hidden;
 }
 
@@ -1572,64 +1575,105 @@ body.stats-panel-open #recording-status-chip {
 
 .device-tilt-crosshair::before {
     left: 50%;
-    top: 12%;
-    bottom: 12%;
-    width: 1px;
+    top: 9%;
+    bottom: 9%;
+    width: 2px;
 }
 
 .device-tilt-crosshair::after {
-    left: 12%;
-    right: 12%;
+    left: 9%;
+    right: 9%;
     top: 50%;
-    height: 1px;
+    height: 2px;
 }
 
 .device-tilt-horizon {
     top: 50%;
-    height: 2px;
+    height: 3px;
     background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.95), transparent);
     transform: translateY(-50%) rotate(var(--tilt-rotation));
     transform-origin: 50% 50%;
-    box-shadow: 0 0 0.35rem rgba(34, 211, 238, 0.55);
+    box-shadow: 0 0 0.55rem rgba(34, 211, 238, 0.7);
 }
 
 .device-tilt-ball {
     position: absolute;
     left: calc(50% + var(--tilt-x));
     top: calc(50% + var(--tilt-y));
-    width: 0.54rem;
-    height: 0.54rem;
+    width: 0.82rem;
+    height: 0.82rem;
     border-radius: 50%;
     background: #f8fafc;
-    border: 2px solid #22d3ee;
-    box-shadow: 0 0 0.55rem rgba(34, 211, 238, 0.7);
+    border: 3px solid #22d3ee;
+    box-shadow:
+        0 0 0.75rem rgba(34, 211, 238, 0.86),
+        0 0 0 1px rgba(15, 23, 42, 0.7);
     transform: translate(-50%, -50%);
     transition: left 90ms linear, top 90ms linear;
 }
 
 .device-tilt-readouts {
     display: grid;
-    gap: 0.12rem;
+    grid-template-columns: 1fr;
+    gap: 0.32rem;
     min-width: 0;
-    font-size: 0.48rem;
-    line-height: 1.05;
-    font-weight: 800;
     color: #cffafe;
 }
 
-.device-tilt-readouts span {
+.device-tilt-readout {
+    min-width: 0;
+    display: grid;
+    gap: 0.06rem;
+    padding: 0.22rem 0.28rem;
+    border-radius: 0.38rem;
+    background: rgba(8, 47, 73, 0.72);
+    border: 1px solid rgba(34, 211, 238, 0.2);
+}
+
+.device-tilt-readout-label,
+.device-tilt-status {
+    font-size: 0.48rem;
+    line-height: 1;
+    font-weight: 900;
+    text-transform: uppercase;
+    color: rgba(165, 243, 252, 0.68);
+}
+
+.device-tilt-readout-value {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 1.04rem;
+    line-height: 1;
+    font-weight: 950;
+    color: #f8fafc;
+    font-variant-numeric: tabular-nums;
+}
+
+.device-tilt-status {
+    justify-self: start;
+    padding: 0.16rem 0.34rem;
+    border-radius: 999px;
+    color: #082f49;
+    background: #67e8f9;
+    box-shadow: 0 0 0.45rem rgba(103, 232, 249, 0.36);
 }
 
 .device-dashboard-card[data-dashboard-size="medium"] .device-tilt-readouts {
-    font-size: 0.62rem;
+    gap: 0.4rem;
+}
+
+.device-dashboard-card[data-dashboard-size="medium"] .device-tilt-readout-value {
+    font-size: 1.32rem;
 }
 
 .device-dashboard-card[data-dashboard-size="large"] .device-tilt-readouts {
-    font-size: 0.78rem;
+    gap: 0.5rem;
+}
+
+.device-dashboard-card[data-dashboard-size="large"] .device-tilt-readout-value {
+    font-size: 1.72rem;
 }
 
 .device-dashboard-card--zero-arming {
@@ -1778,15 +1822,33 @@ body.stats-panel-open #recording-status-chip {
 }
 
 .device-dashboard-card--tilt[data-dashboard-size="medium"] {
-    width: 10rem;
-    min-height: 5.3rem;
-    padding: 0.55rem;
+    width: 14.2rem;
+    min-height: 7.8rem;
+    padding: 0.72rem;
 }
 
 .device-dashboard-card--tilt[data-dashboard-size="large"] {
-    width: 12.4rem;
-    min-height: 6.7rem;
-    padding: 0.68rem;
+    width: 17.4rem;
+    min-height: 9.4rem;
+    padding: 0.88rem;
+}
+
+.device-dashboard-card--tilt[data-dashboard-size="medium"] .device-tilt-widget {
+    grid-template-columns: minmax(5.2rem, 1fr) minmax(5.8rem, 0.94fr);
+    gap: 0.76rem;
+}
+
+.device-dashboard-card--tilt[data-dashboard-size="medium"] .device-tilt-gauge {
+    min-width: 5.2rem;
+}
+
+.device-dashboard-card--tilt[data-dashboard-size="large"] .device-tilt-widget {
+    grid-template-columns: minmax(6.6rem, 1fr) minmax(7rem, 0.92fr);
+    gap: 0.92rem;
+}
+
+.device-dashboard-card--tilt[data-dashboard-size="large"] .device-tilt-gauge {
+    min-width: 6.6rem;
 }
 
 .device-dashboard-card--vibration[data-dashboard-size="medium"] {
@@ -1803,8 +1865,8 @@ body.stats-panel-open #recording-status-chip {
 
 .device-dashboard-card--tilt .device-dashboard-label,
 .device-dashboard-card--vibration .device-dashboard-label {
-    font-size: 0.42rem;
-    margin-top: 0.02rem;
+    font-size: 0.5rem;
+    margin-top: 0.08rem;
 }
 
 .device-dashboard-value--tilt,
@@ -1888,18 +1950,28 @@ body.stats-panel-open #recording-status-chip {
     color: rgba(253, 186, 116, 0.58);
 }
 
-.device-dashboard-card--tilt[data-dashboard-style="outdoor"],
+.device-dashboard-card--tilt[data-dashboard-style="outdoor"] {
+    border-radius: 0.78rem;
+    padding: 0.62rem;
+}
+
 .device-dashboard-card--vibration[data-dashboard-style="outdoor"] {
     border-radius: 0.78rem;
     padding: 0.48rem;
 }
 
-.device-dashboard-card--tilt[data-dashboard-size="medium"][data-dashboard-style="outdoor"],
+.device-dashboard-card--tilt[data-dashboard-size="medium"][data-dashboard-style="outdoor"] {
+    padding: 0.78rem;
+}
+
 .device-dashboard-card--vibration[data-dashboard-size="medium"][data-dashboard-style="outdoor"] {
     padding: 0.55rem;
 }
 
-.device-dashboard-card--tilt[data-dashboard-size="large"][data-dashboard-style="outdoor"],
+.device-dashboard-card--tilt[data-dashboard-size="large"][data-dashboard-style="outdoor"] {
+    padding: 0.95rem;
+}
+
 .device-dashboard-card--vibration[data-dashboard-size="large"][data-dashboard-style="outdoor"] {
     padding: 0.68rem;
 }
@@ -1907,6 +1979,18 @@ body.stats-panel-open #recording-status-chip {
 .device-dashboard-card--tilt[data-dashboard-style="night"],
 .device-dashboard-card--vibration[data-dashboard-style="night"] {
     border-left-color: #22d3ee;
+}
+
+.device-dashboard-card--tilt[data-dashboard-style="night"] {
+    padding: 0.58rem 0.62rem;
+}
+
+.device-dashboard-card--tilt[data-dashboard-size="medium"][data-dashboard-style="night"] {
+    padding: 0.72rem 0.76rem;
+}
+
+.device-dashboard-card--tilt[data-dashboard-size="large"][data-dashboard-style="night"] {
+    padding: 0.88rem 0.92rem;
 }
 
 .device-dashboard-setting-row {
