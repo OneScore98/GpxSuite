@@ -27,7 +27,7 @@
     <script defer src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
 
     <!-- CSS Custom & Print Rules -->
-    <link rel="stylesheet" href="src/css/style.css">
+    <link rel="stylesheet" href="src/css/style.css?v=dashboard-settings-collapse-20260605">
 
     <!-- Sandbox security patch per window.parent su Blob URL -->
     <script>
@@ -347,11 +347,12 @@
                 </div>
                 <div class="main-menu-card">
                     <div class="main-menu-subtitle">Base cartografica</div>
-                    <div class="grid grid-cols-4 gap-1 bg-gray-950/70 p-1 rounded-lg border border-gray-800">
+                    <div class="grid grid-cols-5 gap-1 bg-gray-950/70 p-1 rounded-lg border border-gray-800">
                     <button id="map-style-osm" class="text-[10px] font-medium py-1.5 px-1 rounded-md text-center bg-blue-600 text-white transition-all">MAPPA</button>
                     <button id="map-style-sat" class="text-[10px] font-medium py-1.5 px-1 rounded-md text-center text-gray-400 hover:text-white transition-all">SAT</button>
                     <button id="map-style-topo" class="text-[10px] font-medium py-1.5 px-1 rounded-md text-center text-gray-400 hover:text-white transition-all">TOPO</button>
                     <button id="map-style-acqua" class="text-[10px] font-medium py-1.5 px-1 rounded-md text-center text-gray-400 hover:text-white transition-all">ACQUA</button>
+                    <button id="map-style-outdoor" class="text-[10px] font-medium py-1.5 px-1 rounded-md text-center text-gray-400 hover:text-white transition-all">OUT</button>
                     </div>
 
                     <!-- Opzioni Satellite (Ibrido) -->
@@ -441,25 +442,32 @@
                 <div class="main-menu-group-title">
                     <span>Dispositivo</span>
                 </div>
-                <div class="main-menu-card">
-                <div class="flex items-center justify-between">
+                <div id="device-permissions-card" class="main-menu-card device-permissions-card">
+                <div class="device-permissions-header">
                         <label class="text-[10px] font-semibold text-gray-300 uppercase tracking-wider">Permessi</label>
                     <span id="device-permissions-badge" class="text-[9px] bg-gray-950 text-gray-400 px-1.5 py-0.5 rounded border border-gray-800 font-bold uppercase">Verifica</span>
                 </div>
-                <div class="grid grid-cols-2 gap-2">
-                    <button id="btn-location-permission" class="bg-gray-950 hover:bg-gray-800 border border-gray-800 rounded-lg p-2 text-left transition-colors" type="button">
-            <span class="flex items-center gap-1.5 text-xs text-gray-200">
+                <div class="device-permissions-grid">
+                    <button id="btn-location-permission" class="device-permission-button" type="button">
+            <span class="device-permission-label">
               <i data-lucide="locate-fixed" class="w-3.5 h-3.5 text-sky-300"></i>
               Posizione
             </span>
-            <span id="location-permission-state" class="mt-1 inline-flex text-[9px] bg-gray-900 text-gray-400 px-1.5 py-0.5 rounded border border-gray-800 font-bold uppercase">Verifica</span>
+            <span id="location-permission-state" class="inline-flex text-[9px] bg-gray-900 text-gray-400 px-1.5 py-0.5 rounded border border-gray-800 font-bold uppercase">Verifica</span>
           </button>
-                    <button id="btn-orientation-permission" class="bg-gray-950 hover:bg-gray-800 border border-gray-800 rounded-lg p-2 text-left transition-colors" type="button">
-            <span class="flex items-center gap-1.5 text-xs text-gray-200">
+                    <button id="btn-orientation-permission" class="device-permission-button" type="button">
+            <span class="device-permission-label">
               <i data-lucide="compass" class="w-3.5 h-3.5 text-emerald-300"></i>
               Orientamento
             </span>
-            <span id="orientation-permission-state" class="mt-1 inline-flex text-[9px] bg-gray-900 text-gray-400 px-1.5 py-0.5 rounded border border-gray-800 font-bold uppercase">Verifica</span>
+            <span id="orientation-permission-state" class="inline-flex text-[9px] bg-gray-900 text-gray-400 px-1.5 py-0.5 rounded border border-gray-800 font-bold uppercase">Verifica</span>
+                    </button>
+                    <button id="btn-motion-permission" class="device-permission-button" type="button">
+            <span class="device-permission-label">
+              <i data-lucide="activity" class="w-3.5 h-3.5 text-rose-300"></i>
+              Vibrazioni
+            </span>
+            <span id="motion-permission-state" class="inline-flex text-[9px] bg-gray-900 text-gray-400 px-1.5 py-0.5 rounded border border-gray-800 font-bold uppercase">Verifica</span>
                     </button>
                 </div>
                 </div>
@@ -1087,7 +1095,7 @@
     <!-- JAVASCRIPT APPLICATIVO (moduli ES) -->
     <!-- Tailwind resta zero-build, ma fuori dal percorso critico iniziale. -->
     <script async src="https://cdn.tailwindcss.com/3.4.17" onload="document.documentElement.classList.add('tw-ready')" onerror="document.documentElement.classList.add('tw-ready')"></script>
-    <script type="module" src="src/js/main.js"></script>
+    <script type="module" src="src/js/main.js?v=dashboard-settings-collapse-20260605"></script>
 </body>
 
 </html>

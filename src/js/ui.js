@@ -94,6 +94,7 @@ const TOOL_CURSORS = {
 };
 const DEVICE_DASHBOARD_STORAGE_KEY = 'gpxsuite-device-dashboard-v1';
 const DEVICE_DASHBOARD_TILT_ZERO_KEY = 'gpxsuite-device-tilt-zero-v1';
+const DEVICE_DASHBOARD_MOTION_PERMISSION_KEY = 'gpxsuite-motion-permission-v1';
 const DEVICE_DASHBOARD_SETTINGS_VERSION = 3;
 const DEVICE_DASHBOARD_POSITIONS = ['top-right', 'top-left', 'bottom-center', 'bottom-right', 'bottom-left'];
 const DEVICE_DASHBOARD_SIZES = ['compact', 'medium', 'large'];
@@ -161,6 +162,7 @@ let _deviceDashboardMotionState = {
 };
 let _deviceDashboardTiltHoldTimer = null;
 let _deviceDashboardTiltPermissionPrompted = false;
+let _deviceDashboardMotionPermissionGranted = readPersistedDashboardMotionGrant();
 
 function easeInOutCubic(t) {
     return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -274,6 +276,23 @@ function persistDeviceDashboardTiltZero() {
     }
 }
 
+function readPersistedDashboardMotionGrant() {
+    if (typeof localStorage === 'undefined') return false;
+    try {
+        return localStorage.getItem(DEVICE_DASHBOARD_MOTION_PERMISSION_KEY) === 'granted';
+    } catch (err) {
+        return false;
+    }
+}
+
+function persistDashboardMotionGrant(granted) {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        if (granted) localStorage.setItem(DEVICE_DASHBOARD_MOTION_PERMISSION_KEY, 'granted');
+        else localStorage.removeItem(DEVICE_DASHBOARD_MOTION_PERMISSION_KEY);
+    } catch (err) {}
+}
+
 function getEnabledDeviceDashboardFields() {
     return DEVICE_DASHBOARD_FIELDS.filter(field => _deviceDashboardSettings.fields[field.id]?.enabled === true);
 }
@@ -320,6 +339,7 @@ async function requestDashboardMotionPermission() {
         showToast("Sensore vibrazioni non supportato da questo browser", "error");
         return false;
     }
+    if (_deviceDashboardMotionPermissionGranted) return true;
     try {
         const MotionEvent = window.DeviceMotionEvent;
         if (typeof MotionEvent.requestPermission === 'function') {
@@ -329,6 +349,8 @@ async function requestDashboardMotionPermission() {
                 return false;
             }
         }
+        _deviceDashboardMotionPermissionGranted = true;
+        persistDashboardMotionGrant(true);
         return true;
     } catch (err) {
         console.warn('Movimento dispositivo non disponibile', err);
@@ -356,6 +378,22 @@ async function requestDashboardOrientationPermission() {
         console.warn('Inclinometro non disponibile', err);
         return false;
     }
+}
+
+function requestDashboardSensorPermissionsFromGesture() {
+    const requests = [];
+    if (typeof window.DeviceOrientationEvent !== 'undefined') {
+        requests.push(requestDashboardOrientationPermission());
+    }
+    if (typeof window.DeviceMotionEvent !== 'undefined') {
+        requests.push(requestDashboardMotionPermission());
+    }
+    if (requests.length === 0) return;
+
+    Promise.allSettled(requests).then(() => {
+        syncDeviceDashboardSettingsForm();
+        scheduleDevicePermissionRefresh(true);
+    });
 }
 
 async function ensureDashboardTiltPermissionIfEnabled(fromGesture = false) {
@@ -552,6 +590,24 @@ function setDeviceDashboardSettingsExpanded(expanded) {
     panel.dataset.expanded = expanded ? 'true' : 'false';
     toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
     content.classList.toggle('hidden', !expanded);
+    if (!expanded) collapseDeviceDashboardFieldSettings();
+}
+
+function setDeviceDashboardFieldSettingsExpanded(fieldId, expanded) {
+    const row = document.querySelector(`[data-dashboard-setting-row="${fieldId}"]`);
+    const toggle = document.querySelector(`[data-dashboard-setting-toggle="${fieldId}"]`);
+    if (!row) return;
+    row.dataset.expanded = expanded ? 'true' : 'false';
+    if (toggle) toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+}
+
+function collapseDeviceDashboardFieldSettings() {
+    DEVICE_DASHBOARD_FIELDS.forEach(field => setDeviceDashboardFieldSettingsExpanded(field.id, false));
+}
+
+function collapseDeviceDashboardSettingsPanel() {
+    setDeviceDashboardSettingsExpanded(false);
+    collapseDeviceDashboardFieldSettings();
 }
 
 function syncDeviceDashboardSettingsForm() {
@@ -598,6 +654,30 @@ function bindDeviceDashboardSettingsForm() {
         const positionInput = document.querySelector(`[data-dashboard-position-field="${field.id}"]`);
         const sizeInput = document.querySelector(`[data-dashboard-size-field="${field.id}"]`);
         const styleInput = document.querySelector(`[data-dashboard-style-field="${field.id}"]`);
+        const row = enabledInput?.closest('.device-dashboard-setting-row');
+
+        if (row && row.dataset.bound !== 'true') {
+            row.dataset.bound = 'true';
+            row.dataset.dashboardSettingRow = field.id;
+            row.dataset.expanded = 'false';
+            row.setAttribute('role', 'button');
+            row.setAttribute('tabindex', '0');
+            row.setAttribute('aria-expanded', 'false');
+            row.setAttribute('data-dashboard-setting-toggle', field.id);
+            row.addEventListener('click', event => {
+                if (event.target.closest('[data-dashboard-field]') || event.target.closest('.device-dashboard-field-controls')) return;
+                event.preventDefault();
+                const expanded = row.dataset.expanded !== 'true';
+                setDeviceDashboardFieldSettingsExpanded(field.id, expanded);
+            });
+            row.addEventListener('keydown', event => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                if (event.target.closest('[data-dashboard-field]') || event.target.closest('.device-dashboard-field-controls')) return;
+                event.preventDefault();
+                const expanded = row.dataset.expanded !== 'true';
+                setDeviceDashboardFieldSettingsExpanded(field.id, expanded);
+            });
+        }
 
         if (enabledInput && enabledInput.dataset.bound !== 'true') {
             enabledInput.dataset.bound = 'true';
@@ -837,7 +917,12 @@ function renderDeviceDashboard() {
         const position = _deviceDashboardSettings.fields[field.id]?.position || field.defaultPosition;
         return position === 'bottom-center';
     });
+    const hasBottomWidget = enabledFields.some(field => {
+        const position = _deviceDashboardSettings.fields[field.id]?.position || field.defaultPosition;
+        return position.startsWith('bottom-');
+    });
     document.body.classList.toggle('device-dashboard-bottom-center-active', hasBottomCenterWidget);
+    document.body.classList.toggle('device-dashboard-bottom-active', hasBottomWidget);
     syncDeviceDashboardSensors();
     dashboard.classList.toggle('hidden', enabledFields.length === 0);
     if (enabledFields.length === 0) return;
@@ -908,8 +993,11 @@ function updateMapillaryToolbarButton() {
     btn.classList.toggle('text-gray-300', !active);
 }
 
-function updateDeviceLocationToolbarButton(status = {}) {
-    _lastDeviceLocationStatus = { ...status };
+function updateDeviceLocationToolbarButton(status = null) {
+    if (status && typeof status === 'object') {
+        _lastDeviceLocationStatus = { ..._lastDeviceLocationStatus, ...status };
+    }
+    status = _lastDeviceLocationStatus;
     renderDeviceDashboard();
     const buttons = ['btn-device-location-main', 'btn-device-location']
         .map(id => document.getElementById(id))
@@ -1025,8 +1113,11 @@ function setPermissionBadge(id, state, withMargin = true) {
 async function queryBrowserPermission(name) {
     if (!navigator.permissions || typeof navigator.permissions.query !== 'function') return 'unknown';
     try {
-        const permission = await navigator.permissions.query({ name });
-        return permission?.state || 'unknown';
+        const query = navigator.permissions.query({ name })
+            .then(permission => permission?.state || 'unknown')
+            .catch(() => 'unknown');
+        const timeout = new Promise(resolve => setTimeout(() => resolve('unknown'), 800));
+        return await Promise.race([query, timeout]);
     } catch {
         return 'unknown';
     }
@@ -1039,6 +1130,14 @@ function getOrientationPermissionState() {
     return 'granted';
 }
 
+function getDashboardMotionPermissionState() {
+    if (typeof window.DeviceMotionEvent === 'undefined') return 'unsupported';
+    if (_deviceDashboardMotionPermissionGranted) return 'granted';
+    const MotionEvent = window.DeviceMotionEvent;
+    if (typeof MotionEvent.requestPermission === 'function') return 'prompt';
+    return 'granted';
+}
+
 async function refreshDevicePermissionUi(force = false) {
     const now = Date.now();
     if (!force && now - _lastPermissionRefreshAt < 3000) return;
@@ -1046,16 +1145,18 @@ async function refreshDevicePermissionUi(force = false) {
 
     const geoState = _lastDeviceLocationStatus.error === 'permission-denied' ?
         'denied' :
-        (_lastDeviceLocationStatus.waiting ? 'requesting' :
-            (_lastDeviceLocationStatus.active ? 'granted' : await queryBrowserPermission('geolocation')));
+            (_lastDeviceLocationStatus.waiting ? 'requesting' :
+                (_lastDeviceLocationStatus.active ? 'granted' : await queryBrowserPermission('geolocation')));
     const orientationState = _lastDeviceLocationStatus.orientationPermission || getOrientationPermissionState();
+    const motionState = getDashboardMotionPermissionState();
 
-    setPermissionBadge('location-permission-state', geoState);
-    setPermissionBadge('orientation-permission-state', orientationState);
+    setPermissionBadge('location-permission-state', geoState, false);
+    setPermissionBadge('orientation-permission-state', orientationState, false);
+    setPermissionBadge('motion-permission-state', motionState, false);
 
     const overall = document.getElementById('device-permissions-badge');
     if (overall) {
-        const states = [geoState, orientationState];
+        const states = [geoState, orientationState, motionState];
         const overallState = states.includes('denied') ? 'denied' :
             (states.includes('prompt') || states.includes('requesting') ? 'prompt' :
                 (states.includes('unsupported') ? 'unsupported' : 'granted'));
@@ -1071,6 +1172,14 @@ async function refreshDevicePermissionUi(force = false) {
         orientationButton.disabled = unsupported;
         orientationButton.classList.toggle('opacity-50', unsupported);
         orientationButton.classList.toggle('cursor-not-allowed', unsupported);
+    }
+
+    const motionButton = document.getElementById('btn-motion-permission');
+    if (motionButton) {
+        const unsupported = motionState === 'unsupported';
+        motionButton.disabled = unsupported;
+        motionButton.classList.toggle('opacity-50', unsupported);
+        motionButton.classList.toggle('cursor-not-allowed', unsupported);
     }
 }
 
@@ -3008,6 +3117,7 @@ function isPrintSetupOpen() {
 
 function closeMainMenu() {
     document.getElementById('panel-main-menu').classList.add('-translate-x-80');
+    collapseDeviceDashboardSettingsPanel();
 }
 
 function closeSidebar() {
@@ -3740,6 +3850,7 @@ export function setupEvents() {
     document.getElementById('map-style-sat').onclick = () => _setBaseMap('sat');
     document.getElementById('map-style-topo').onclick = () => _setBaseMap('topo');
     document.getElementById('map-style-acqua').onclick = () => _setBaseMap('acqua');
+    document.getElementById('map-style-outdoor').onclick = () => _setBaseMap('outdoor');
     document.getElementById('toggle-hybrid').onchange = () => {
         if (currentStyle === 'sat') _setBaseMap('sat');
     };
@@ -3827,6 +3938,8 @@ export function setupEvents() {
         const btnDeviceLocation = document.getElementById(id);
         if (!btnDeviceLocation) return;
         btnDeviceLocation.onclick = () => {
+            const willActivateLocation = !_lastDeviceLocationStatus.active && !_lastDeviceLocationStatus.waiting;
+            if (willActivateLocation) requestDashboardSensorPermissionsFromGesture();
             const active = _toggleDeviceLocation ? _toggleDeviceLocation() : false;
             if (active && isCompactLayout()) {
                 closeMobileToolbar();
@@ -3839,12 +3952,17 @@ export function setupEvents() {
     }
     updateDeviceLocationToolbarButton();
     document.getElementById('btn-location-permission')?.addEventListener('click', () => {
+        requestDashboardSensorPermissionsFromGesture();
         _requestDeviceLocationPermission?.();
         scheduleDevicePermissionRefresh(true);
         setTimeout(() => scheduleDevicePermissionRefresh(true), 1200);
     });
     document.getElementById('btn-orientation-permission')?.addEventListener('click', async() => {
         await _requestDeviceOrientationPermission?.();
+        scheduleDevicePermissionRefresh(true);
+    });
+    document.getElementById('btn-motion-permission')?.addEventListener('click', async() => {
+        await requestDashboardMotionPermission();
         scheduleDevicePermissionRefresh(true);
     });
     scheduleDevicePermissionRefresh(true);

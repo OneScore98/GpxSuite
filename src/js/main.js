@@ -35,7 +35,7 @@ import {
     updateRecordingSettings,
     getDefaultRecordingName,
     restoreDeviceOverlays
-} from './location.js';
+} from './location.js?v=dashboard-settings-collapse-20260605';
 import {
     togglePrintPlanning,
     disablePrintPlanning,
@@ -102,7 +102,7 @@ import {
     zoomToWaypoint,
     deleteWaypoint,
     searchNominatim
-} from './ui.js';
+} from './ui.js?v=dashboard-settings-collapse-20260605';
 
 initDeviceLocation({
     showToast,

@@ -72,6 +72,7 @@ let _orientationHeading = null;
 let _currentHeading = null;
 let _orientationListening = false;
 let _orientationPermissionGranted = readPersistedOrientationGrant();
+let _orientationPermissionPromise = null;
 let _orientationRequestToken = 0;
 let _lastOrientationStatusAt = 0;
 let _lastOrientationStatusHeading = null;
@@ -1259,8 +1260,9 @@ async function startOrientationTracking() {
 async function requestOrientationAccess() {
     if (typeof window.DeviceOrientationEvent === 'undefined') return false;
     if (_orientationPermissionGranted) return true;
+    if (_orientationPermissionPromise) return _orientationPermissionPromise;
 
-    try {
+    _orientationPermissionPromise = (async() => {
         const OrientationEvent = window.DeviceOrientationEvent;
         if (typeof OrientationEvent.requestPermission === 'function') {
             const permission = await OrientationEvent.requestPermission();
@@ -1271,9 +1273,15 @@ async function requestOrientationAccess() {
         _orientationPermissionGranted = true;
         persistOrientationGrant(true);
         return true;
+    })();
+
+    try {
+        return await _orientationPermissionPromise;
     } catch (err) {
         console.warn('Orientamento dispositivo non disponibile', err);
         return false;
+    } finally {
+        _orientationPermissionPromise = null;
     }
 }
 
@@ -1352,9 +1360,15 @@ function emitStatus(extra = {}) {
         accuracy: fix?.accuracy ?? null,
         speed: fix?.speed ?? null,
         orientationHeading: Number.isFinite(_orientationHeading) ? _orientationHeading : null,
+        orientationPermission: getOrientationPermissionStatus(),
         updatedAt: fix?.timestamp ?? null,
         ...extra
     });
+}
+
+function getOrientationPermissionStatus() {
+    if (typeof window.DeviceOrientationEvent === 'undefined') return 'unsupported';
+    return _orientationPermissionGranted ? 'granted' : 'prompt';
 }
 
 function emitRecordingStatus(extra = {}) {
