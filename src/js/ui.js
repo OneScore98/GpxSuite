@@ -93,12 +93,17 @@ const TOOL_CURSORS = {
     waypoint: createSvgCursor('<path d="M12 22s7-6.2 7-12a7 7 0 10-14 0c0 5.8 7 12 7 12z" fill="#2563eb" stroke="#f8fafc" stroke-width="2"/><circle cx="12" cy="10" r="2.5" fill="#f8fafc"/>', 12, 22)
 };
 const DEVICE_DASHBOARD_STORAGE_KEY = 'gpxsuite-device-dashboard-v1';
-const DEVICE_DASHBOARD_SETTINGS_VERSION = 2;
-const DEVICE_DASHBOARD_POSITIONS = ['top-right', 'top-left', 'bottom-right', 'bottom-left'];
+const DEVICE_DASHBOARD_TILT_ZERO_KEY = 'gpxsuite-device-tilt-zero-v1';
+const DEVICE_DASHBOARD_SETTINGS_VERSION = 3;
+const DEVICE_DASHBOARD_POSITIONS = ['top-right', 'top-left', 'bottom-center', 'bottom-right', 'bottom-left'];
 const DEVICE_DASHBOARD_SIZES = ['compact', 'medium', 'large'];
 const DEVICE_DASHBOARD_STYLES = ['map', 'outdoor', 'night'];
 const DEFAULT_DEVICE_DASHBOARD_SIZE = 'compact';
 const DEFAULT_DEVICE_DASHBOARD_STYLE = 'map';
+const DEVICE_DASHBOARD_SENSOR_RENDER_MS = 120;
+const DEVICE_DASHBOARD_TILT_MAX_DEG = 35;
+const DEVICE_DASHBOARD_ZERO_HOLD_MS = 620;
+const DEVICE_DASHBOARD_SENSOR_STALE_MS = 4500;
 const DEVICE_DASHBOARD_FIELDS = [{
         id: 'compass',
         label: 'Bussola',
@@ -119,9 +124,42 @@ const DEVICE_DASHBOARD_FIELDS = [{
         icon: 'gauge',
         defaultPosition: 'top-right',
         defaultEnabled: true
+    },
+    {
+        id: 'tilt',
+        label: 'Inclinometro',
+        icon: 'gauge',
+        defaultPosition: 'bottom-center',
+        defaultEnabled: false
+    },
+    {
+        id: 'vibration',
+        label: 'Vibrazioni',
+        icon: 'activity',
+        defaultPosition: 'bottom-center',
+        defaultEnabled: false
     }
 ];
 let _deviceDashboardSettings = readDeviceDashboardSettings();
+let _deviceDashboardSensorListeners = { orientation: false, motion: false };
+let _deviceDashboardSensorRenderTimer = null;
+let _lastDeviceDashboardSensorRenderAt = 0;
+let _deviceDashboardTiltZero = readDeviceDashboardTiltZero();
+let _deviceDashboardTiltState = {
+    rawTilt: null,
+    rawPitch: null,
+    tilt: null,
+    pitch: null,
+    updatedAt: 0
+};
+let _deviceDashboardMotionState = {
+    magnitude: null,
+    lastMagnitude: null,
+    vibration: null,
+    level: null,
+    updatedAt: 0
+};
+let _deviceDashboardTiltHoldTimer = null;
 
 function easeInOutCubic(t) {
     return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -164,15 +202,17 @@ function normalizeDeviceDashboardSettings(settings) {
     const defaults = createDefaultDeviceDashboardSettings();
     const fields = {};
     const legacySize = DEVICE_DASHBOARD_SIZES.includes(settings?.size) ? settings.size : DEFAULT_DEVICE_DASHBOARD_SIZE;
-    const isLegacySettings = settings?.version !== DEVICE_DASHBOARD_SETTINGS_VERSION;
+    const savedVersion = Number(settings?.version) || 0;
+    const isLegacySettings = savedVersion > 0 && savedVersion < 2;
     DEVICE_DASHBOARD_FIELDS.forEach(field => {
         const saved = settings?.fields?.[field.id] || {};
+        const hasSavedField = Boolean(settings?.fields && Object.prototype.hasOwnProperty.call(settings.fields, field.id));
         const useDefaultConfig = isLegacySettings && saved.enabled !== true;
         const savedPosition = DEVICE_DASHBOARD_POSITIONS.includes(saved.position) ? saved.position : defaults.fields[field.id].position;
         const savedSize = DEVICE_DASHBOARD_SIZES.includes(saved.size) ? saved.size : legacySize;
         const savedStyle = normalizeDeviceDashboardStyle(saved.style);
         fields[field.id] = {
-            enabled: isLegacySettings ? field.defaultEnabled === true : saved.enabled === true,
+            enabled: isLegacySettings || !hasSavedField ? field.defaultEnabled === true : saved.enabled === true,
             position: useDefaultConfig ? defaults.fields[field.id].position : savedPosition,
             size: savedSize,
             style: savedStyle
@@ -207,8 +247,259 @@ function persistDeviceDashboardSettings() {
     }
 }
 
+function readDeviceDashboardTiltZero() {
+    if (typeof localStorage === 'undefined') return { tilt: 0, pitch: 0, updatedAt: 0 };
+    try {
+        const raw = localStorage.getItem(DEVICE_DASHBOARD_TILT_ZERO_KEY);
+        if (!raw) return { tilt: 0, pitch: 0, updatedAt: 0 };
+        const parsed = JSON.parse(raw);
+        return {
+            tilt: Number.isFinite(Number(parsed?.tilt)) ? Number(parsed.tilt) : 0,
+            pitch: Number.isFinite(Number(parsed?.pitch)) ? Number(parsed.pitch) : 0,
+            updatedAt: Number.isFinite(Number(parsed?.updatedAt)) ? Number(parsed.updatedAt) : 0
+        };
+    } catch (err) {
+        console.warn('Zero inclinometro non leggibile:', err);
+        return { tilt: 0, pitch: 0, updatedAt: 0 };
+    }
+}
+
+function persistDeviceDashboardTiltZero() {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        localStorage.setItem(DEVICE_DASHBOARD_TILT_ZERO_KEY, JSON.stringify(_deviceDashboardTiltZero));
+    } catch (err) {
+        console.warn('Zero inclinometro non salvato:', err);
+    }
+}
+
 function getEnabledDeviceDashboardFields() {
     return DEVICE_DASHBOARD_FIELDS.filter(field => _deviceDashboardSettings.fields[field.id]?.enabled === true);
+}
+
+function isDeviceDashboardFieldEnabled(fieldId) {
+    return _deviceDashboardSettings.fields[fieldId]?.enabled === true;
+}
+
+function isDeviceDashboardSensorFresh(updatedAt) {
+    return Number.isFinite(updatedAt) && updatedAt > 0 && Date.now() - updatedAt <= DEVICE_DASHBOARD_SENSOR_STALE_MS;
+}
+
+function clampDeviceDashboardValue(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+}
+
+function formatDeviceDashboardSignedDegree(value) {
+    const number = parseDeviceDashboardNumber(value);
+    if (number === null) return '--°';
+    const rounded = Math.round(number);
+    return `${rounded > 0 ? '+' : ''}${rounded}°`;
+}
+
+function getScreenOrientationAngle() {
+    const angle = Number(window.screen?.orientation?.angle ?? window.orientation ?? 0);
+    if (!Number.isFinite(angle)) return 0;
+    return ((angle % 360) + 360) % 360;
+}
+
+function normalizeDeviceDashboardOrientation(event) {
+    const beta = Number(event?.beta);
+    const gamma = Number(event?.gamma);
+    if (!Number.isFinite(beta) || !Number.isFinite(gamma)) return null;
+
+    const angle = getScreenOrientationAngle();
+    if (angle === 90) return { tilt: beta, pitch: -gamma };
+    if (angle === 270) return { tilt: -beta, pitch: gamma };
+    if (angle === 180) return { tilt: -gamma, pitch: -beta };
+    return { tilt: gamma, pitch: beta };
+}
+
+async function requestDashboardMotionPermission() {
+    if (typeof window.DeviceMotionEvent === 'undefined') {
+        showToast("Sensore vibrazioni non supportato da questo browser", "error");
+        return false;
+    }
+    try {
+        const MotionEvent = window.DeviceMotionEvent;
+        if (typeof MotionEvent.requestPermission === 'function') {
+            const permission = await MotionEvent.requestPermission();
+            if (permission !== 'granted') {
+                showToast("Permesso movimento non concesso", "error");
+                return false;
+            }
+        }
+        return true;
+    } catch (err) {
+        console.warn('Movimento dispositivo non disponibile', err);
+        showToast("Sensore vibrazioni non disponibile", "error");
+        return false;
+    }
+}
+
+async function requestDashboardOrientationPermission() {
+    if (typeof window.DeviceOrientationEvent === 'undefined') {
+        showToast("Inclinometro non supportato da questo browser", "error");
+        return false;
+    }
+    if (_requestDeviceOrientationPermission) {
+        return await _requestDeviceOrientationPermission();
+    }
+    try {
+        const OrientationEvent = window.DeviceOrientationEvent;
+        if (typeof OrientationEvent.requestPermission === 'function') {
+            const permission = await OrientationEvent.requestPermission();
+            return permission === 'granted';
+        }
+        return true;
+    } catch (err) {
+        console.warn('Inclinometro non disponibile', err);
+        return false;
+    }
+}
+
+function scheduleDeviceDashboardSensorRender() {
+    const now = Date.now();
+    const elapsed = now - _lastDeviceDashboardSensorRenderAt;
+    if (elapsed >= DEVICE_DASHBOARD_SENSOR_RENDER_MS) {
+        _lastDeviceDashboardSensorRenderAt = now;
+        if (_deviceDashboardSensorRenderTimer) {
+            clearTimeout(_deviceDashboardSensorRenderTimer);
+            _deviceDashboardSensorRenderTimer = null;
+        }
+        renderDeviceDashboard();
+        return;
+    }
+    if (_deviceDashboardSensorRenderTimer) return;
+    _deviceDashboardSensorRenderTimer = setTimeout(() => {
+        _deviceDashboardSensorRenderTimer = null;
+        _lastDeviceDashboardSensorRenderAt = Date.now();
+        renderDeviceDashboard();
+    }, DEVICE_DASHBOARD_SENSOR_RENDER_MS - elapsed);
+}
+
+function handleDeviceDashboardOrientation(event) {
+    const angles = normalizeDeviceDashboardOrientation(event);
+    if (!angles) return;
+
+    const rawTilt = angles.tilt;
+    const rawPitch = angles.pitch;
+    const tilt = clampDeviceDashboardValue(rawTilt - _deviceDashboardTiltZero.tilt, -89, 89);
+    const pitch = clampDeviceDashboardValue(rawPitch - _deviceDashboardTiltZero.pitch, -89, 89);
+    const fresh = isDeviceDashboardSensorFresh(_deviceDashboardTiltState.updatedAt);
+    const smooth = fresh ? 0.28 : 1;
+
+    _deviceDashboardTiltState = {
+        rawTilt,
+        rawPitch,
+        tilt: Number.isFinite(_deviceDashboardTiltState.tilt) ?
+            (_deviceDashboardTiltState.tilt * (1 - smooth) + tilt * smooth) :
+            tilt,
+        pitch: Number.isFinite(_deviceDashboardTiltState.pitch) ?
+            (_deviceDashboardTiltState.pitch * (1 - smooth) + pitch * smooth) :
+            pitch,
+        updatedAt: Date.now()
+    };
+    scheduleDeviceDashboardSensorRender();
+}
+
+function handleDeviceDashboardMotion(event) {
+    const acceleration = event?.acceleration || event?.accelerationIncludingGravity;
+    if (!acceleration) return;
+
+    const ax = Number(acceleration.x) || 0;
+    const ay = Number(acceleration.y) || 0;
+    const az = Number(acceleration.z) || 0;
+    const magnitude = Math.sqrt(ax * ax + ay * ay + az * az);
+    const previousMagnitude = Number.isFinite(_deviceDashboardMotionState.magnitude) ?
+        _deviceDashboardMotionState.magnitude :
+        magnitude;
+    const jerk = Math.abs(magnitude - previousMagnitude);
+    const previousVibration = Number.isFinite(_deviceDashboardMotionState.vibration) ?
+        _deviceDashboardMotionState.vibration :
+        jerk;
+    const vibration = previousVibration * 0.82 + jerk * 0.18;
+    const level = clampDeviceDashboardValue(Math.round(1 + Math.min(vibration, 5.5) / 5.5 * 9), 1, 10);
+
+    _deviceDashboardMotionState = {
+        magnitude,
+        lastMagnitude: previousMagnitude,
+        vibration,
+        level,
+        updatedAt: Date.now()
+    };
+    scheduleDeviceDashboardSensorRender();
+}
+
+function syncDeviceDashboardSensors() {
+    const needsOrientation = isDeviceDashboardFieldEnabled('tilt');
+    const needsMotion = isDeviceDashboardFieldEnabled('vibration');
+
+    if (needsOrientation && !_deviceDashboardSensorListeners.orientation && typeof window.DeviceOrientationEvent !== 'undefined') {
+        window.addEventListener('deviceorientationabsolute', handleDeviceDashboardOrientation, true);
+        window.addEventListener('deviceorientation', handleDeviceDashboardOrientation, true);
+        _deviceDashboardSensorListeners.orientation = true;
+    } else if (!needsOrientation && _deviceDashboardSensorListeners.orientation) {
+        window.removeEventListener('deviceorientationabsolute', handleDeviceDashboardOrientation, true);
+        window.removeEventListener('deviceorientation', handleDeviceDashboardOrientation, true);
+        _deviceDashboardSensorListeners.orientation = false;
+        _deviceDashboardTiltState = { rawTilt: null, rawPitch: null, tilt: null, pitch: null, updatedAt: 0 };
+    }
+
+    if (needsMotion && !_deviceDashboardSensorListeners.motion && typeof window.DeviceMotionEvent !== 'undefined') {
+        window.addEventListener('devicemotion', handleDeviceDashboardMotion, true);
+        _deviceDashboardSensorListeners.motion = true;
+    } else if (!needsMotion && _deviceDashboardSensorListeners.motion) {
+        window.removeEventListener('devicemotion', handleDeviceDashboardMotion, true);
+        _deviceDashboardSensorListeners.motion = false;
+        _deviceDashboardMotionState = { magnitude: null, lastMagnitude: null, vibration: null, level: null, updatedAt: 0 };
+    }
+}
+
+function setDeviceDashboardTiltZeroFromCurrent() {
+    if (!isDeviceDashboardSensorFresh(_deviceDashboardTiltState.updatedAt)) {
+        showToast("Inclinometro non ancora disponibile", "info");
+        return false;
+    }
+    _deviceDashboardTiltZero = {
+        tilt: _deviceDashboardTiltState.rawTilt,
+        pitch: _deviceDashboardTiltState.rawPitch,
+        updatedAt: Date.now()
+    };
+    persistDeviceDashboardTiltZero();
+    showToast("Zero inclinometro impostato", "success");
+    renderDeviceDashboard();
+    return true;
+}
+
+function clearDeviceDashboardTiltHold(card) {
+    if (_deviceDashboardTiltHoldTimer) {
+        clearTimeout(_deviceDashboardTiltHoldTimer);
+        _deviceDashboardTiltHoldTimer = null;
+    }
+    card?.classList.remove('device-dashboard-card--zero-arming');
+}
+
+function bindDeviceDashboardCardInteractions() {
+    const tiltCard = document.querySelector('[data-dashboard-field-card="tilt"]');
+    if (!tiltCard || tiltCard.dataset.bound === 'true') return;
+    tiltCard.dataset.bound = 'true';
+    const startHold = event => {
+        event.preventDefault();
+        clearDeviceDashboardTiltHold(tiltCard);
+        tiltCard.classList.add('device-dashboard-card--zero-arming');
+        _deviceDashboardTiltHoldTimer = setTimeout(() => {
+            _deviceDashboardTiltHoldTimer = null;
+            tiltCard.classList.remove('device-dashboard-card--zero-arming');
+            setDeviceDashboardTiltZeroFromCurrent();
+        }, DEVICE_DASHBOARD_ZERO_HOLD_MS);
+        if (typeof tiltCard.setPointerCapture === 'function' && event.pointerId !== undefined) {
+            try { tiltCard.setPointerCapture(event.pointerId); } catch (err) {}
+        }
+    };
+    tiltCard.addEventListener('pointerdown', startHold);
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(eventName => {
+        tiltCard.addEventListener(eventName, () => clearDeviceDashboardTiltHold(tiltCard));
+    });
 }
 
 function updateDeviceDashboardSettingsBadge() {
@@ -278,9 +569,15 @@ function bindDeviceDashboardSettingsForm() {
 
         if (enabledInput && enabledInput.dataset.bound !== 'true') {
             enabledInput.dataset.bound = 'true';
-            enabledInput.addEventListener('change', () => {
+            enabledInput.addEventListener('change', async() => {
                 _deviceDashboardSettings.fields[field.id].enabled = enabledInput.checked;
                 persistDeviceDashboardSettings();
+                if (enabledInput.checked && field.id === 'tilt') {
+                    await requestDashboardOrientationPermission();
+                }
+                if (enabledInput.checked && field.id === 'vibration') {
+                    await requestDashboardMotionPermission();
+                }
                 syncDeviceDashboardSettingsForm();
                 schedulePersistAppSession();
             });
@@ -348,6 +645,68 @@ function getLocationUnavailableMeta(status) {
     return 'Dato non disponibile';
 }
 
+function buildDeviceDashboardTiltMetric() {
+    const fresh = isDeviceDashboardSensorFresh(_deviceDashboardTiltState.updatedAt);
+    const tilt = fresh ? _deviceDashboardTiltState.tilt : null;
+    const pitch = fresh ? _deviceDashboardTiltState.pitch : null;
+    const tiltPercent = fresh ? clampDeviceDashboardValue((tilt / DEVICE_DASHBOARD_TILT_MAX_DEG) * 42, -42, 42) : 0;
+    const pitchPercent = fresh ? clampDeviceDashboardValue((pitch / DEVICE_DASHBOARD_TILT_MAX_DEG) * 42, -42, 42) : 0;
+    const horizonRotation = fresh ? clampDeviceDashboardValue(-tilt, -45, 45) : 0;
+    const zeroActive = _deviceDashboardTiltZero.updatedAt > 0;
+    const statusLabel = fresh ? (zeroActive ? 'ZERO' : 'LIVE') : 'N/D';
+
+    return {
+        value: fresh ? `${formatDeviceDashboardSignedDegree(tilt)} ${formatDeviceDashboardSignedDegree(pitch)}` : '--° --°',
+        valueClass: 'device-dashboard-value--tilt',
+        meta: fresh ? 'Inclinometro dispositivo' : 'Sensore non disponibile',
+        valueHtml: `
+            <div class="device-tilt-widget">
+                <div class="device-tilt-gauge" style="--tilt-x:${tiltPercent.toFixed(1)}%;--tilt-y:${pitchPercent.toFixed(1)}%;--tilt-rotation:${horizonRotation.toFixed(1)}deg">
+                    <div class="device-tilt-crosshair"></div>
+                    <div class="device-tilt-horizon"></div>
+                    <div class="device-tilt-ball"></div>
+                </div>
+                <div class="device-tilt-readouts">
+                    <span>T ${safeHtml(formatDeviceDashboardSignedDegree(tilt))}</span>
+                    <span>P ${safeHtml(formatDeviceDashboardSignedDegree(pitch))}</span>
+                    <span>${safeHtml(statusLabel)}</span>
+                </div>
+            </div>
+        `
+    };
+}
+
+function renderDeviceDashboardVibrationBars(level) {
+    let html = '';
+    for (let i = 1; i <= 10; i++) {
+        html += `<span class="device-vibration-bar" data-active="${level !== null && i <= level ? 'true' : 'false'}"></span>`;
+    }
+    return html;
+}
+
+function buildDeviceDashboardVibrationMetric() {
+    const fresh = isDeviceDashboardSensorFresh(_deviceDashboardMotionState.updatedAt);
+    const level = fresh ? _deviceDashboardMotionState.level : null;
+    const vibration = fresh ? _deviceDashboardMotionState.vibration : null;
+    const fill = level !== null ? `${level * 10}%` : '0%';
+
+    return {
+        value: level !== null ? `${level}/10` : '--/10',
+        valueClass: 'device-dashboard-value--vibration',
+        meta: fresh ? 'Vibrazione dispositivo' : 'Sensore non disponibile',
+        valueHtml: `
+            <div class="device-vibration-widget" style="--vibration-fill:${safeHtml(fill)}">
+                <div class="device-vibration-main">
+                    <span class="device-vibration-score">${level !== null ? safeHtml(level) : '--'}</span>
+                    <span class="device-vibration-scale">/10</span>
+                </div>
+                <div class="device-vibration-bars">${renderDeviceDashboardVibrationBars(level)}</div>
+                <div class="device-vibration-trace">${vibration !== null ? safeHtml(formatDeviceDashboardNumber(vibration, 1)) : 'N/D'}</div>
+            </div>
+        `
+    };
+}
+
 function buildDeviceDashboardMetric(field, status) {
     const fix = status.fix || {};
     const heading = parseDeviceDashboardNumber(status.heading);
@@ -386,6 +745,14 @@ function buildDeviceDashboardMetric(field, status) {
         };
     }
 
+    if (field.id === 'tilt') {
+        return buildDeviceDashboardTiltMetric();
+    }
+
+    if (field.id === 'vibration') {
+        return buildDeviceDashboardVibrationMetric();
+    }
+
     return {
         value: '--',
         meta: ''
@@ -400,8 +767,10 @@ function renderDeviceDashboardCard(field, status) {
     const fieldSettings = _deviceDashboardSettings.fields[field.id] || {};
     const size = DEVICE_DASHBOARD_SIZES.includes(fieldSettings.size) ? fieldSettings.size : DEFAULT_DEVICE_DASHBOARD_SIZE;
     const style = normalizeDeviceDashboardStyle(fieldSettings.style);
+    const title = field.id === 'tilt' ? 'Tieni premuto per impostare lo zero' : safeHtml(metric.meta || field.label);
+    const titleAttr = title ? ` title="${safeHtml(title)}"` : '';
     return `
-        <div class="device-dashboard-card device-dashboard-card--${safeHtml(field.id)}" data-dashboard-size="${safeHtml(size)}" data-dashboard-style="${safeHtml(style)}"${headingStyle}>
+        <div class="device-dashboard-card device-dashboard-card--${safeHtml(field.id)}" data-dashboard-field-card="${safeHtml(field.id)}" data-dashboard-size="${safeHtml(size)}" data-dashboard-style="${safeHtml(style)}"${titleAttr}${headingStyle}>
             <div class="device-dashboard-icon">
                 <i data-lucide="${safeHtml(field.icon)}" class="w-4 h-4"></i>
             </div>
@@ -425,6 +794,12 @@ function renderDeviceDashboard() {
     });
 
     const enabledFields = getEnabledDeviceDashboardFields();
+    const hasBottomCenterWidget = enabledFields.some(field => {
+        const position = _deviceDashboardSettings.fields[field.id]?.position || field.defaultPosition;
+        return position === 'bottom-center';
+    });
+    document.body.classList.toggle('device-dashboard-bottom-center-active', hasBottomCenterWidget);
+    syncDeviceDashboardSensors();
     dashboard.classList.toggle('hidden', enabledFields.length === 0);
     if (enabledFields.length === 0) return;
 
@@ -434,6 +809,7 @@ function renderDeviceDashboard() {
         if (zone) zone.insertAdjacentHTML('beforeend', renderDeviceDashboardCard(field, _lastDeviceLocationStatus));
     });
     refreshLucideIcons();
+    bindDeviceDashboardCardInteractions();
 }
 
 function updateMapToolCursor() {

@@ -219,6 +219,7 @@
     <div id="device-dashboard" class="device-dashboard hidden absolute inset-0 z-[12] pointer-events-none" aria-live="polite">
         <div class="device-dashboard-zone device-dashboard-zone--top-left" data-dashboard-zone="top-left"></div>
         <div class="device-dashboard-zone device-dashboard-zone--top-right" data-dashboard-zone="top-right"></div>
+        <div class="device-dashboard-zone device-dashboard-zone--bottom-center" data-dashboard-zone="bottom-center"></div>
         <div class="device-dashboard-zone device-dashboard-zone--bottom-left" data-dashboard-zone="bottom-left"></div>
         <div class="device-dashboard-zone device-dashboard-zone--bottom-right" data-dashboard-zone="bottom-right"></div>
     </div>
@@ -492,6 +493,7 @@
                         <select id="dashboard-position-compass" data-dashboard-position-field="compass" class="device-dashboard-position-select">
               <option value="top-right">Alto destra</option>
               <option value="top-left">Alto sinistra</option>
+              <option value="bottom-center">Basso centro</option>
               <option value="bottom-right">Basso destra</option>
               <option value="bottom-left">Basso sinistra</option>
             </select>
@@ -522,6 +524,7 @@
                         <select id="dashboard-position-altitude" data-dashboard-position-field="altitude" class="device-dashboard-position-select">
               <option value="top-right">Alto destra</option>
               <option value="top-left">Alto sinistra</option>
+              <option value="bottom-center">Basso centro</option>
               <option value="bottom-right">Basso destra</option>
               <option value="bottom-left">Basso sinistra</option>
             </select>
@@ -552,6 +555,7 @@
                         <select id="dashboard-position-speed" data-dashboard-position-field="speed" class="device-dashboard-position-select">
               <option value="top-right">Alto destra</option>
               <option value="top-left">Alto sinistra</option>
+              <option value="bottom-center">Basso centro</option>
               <option value="bottom-right">Basso destra</option>
               <option value="bottom-left">Basso sinistra</option>
             </select>
@@ -561,6 +565,68 @@
               <option value="large">Grande</option>
             </select>
                         <select id="dashboard-style-speed" data-dashboard-style-field="speed" class="device-dashboard-position-select">
+              <option value="map">Mappa</option>
+              <option value="outdoor">Outdoor</option>
+              <option value="night">Notte</option>
+            </select>
+                        </div>
+                    </div>
+                    <div class="device-dashboard-setting-row">
+                        <label class="flex items-center gap-2 min-w-0">
+              <input type="checkbox" id="dashboard-field-tilt" data-dashboard-field="tilt" class="accent-cyan-500">
+              <span class="min-w-0">
+                <span class="flex items-center gap-1.5 text-xs text-gray-200">
+                  <i data-lucide="gauge" class="w-3.5 h-3.5 text-cyan-300"></i>
+                  Inclinometro
+                </span>
+                <span class="block text-[9px] text-gray-500">Tilt e pitch fuoristrada</span>
+              </span>
+            </label>
+                        <div class="device-dashboard-field-controls">
+                        <select id="dashboard-position-tilt" data-dashboard-position-field="tilt" class="device-dashboard-position-select">
+              <option value="top-right">Alto destra</option>
+              <option value="top-left">Alto sinistra</option>
+              <option value="bottom-center">Basso centro</option>
+              <option value="bottom-right">Basso destra</option>
+              <option value="bottom-left">Basso sinistra</option>
+            </select>
+                        <select id="dashboard-size-tilt" data-dashboard-size-field="tilt" class="device-dashboard-position-select">
+              <option value="compact">Piccola</option>
+              <option value="medium">Media</option>
+              <option value="large">Grande</option>
+            </select>
+                        <select id="dashboard-style-tilt" data-dashboard-style-field="tilt" class="device-dashboard-position-select">
+              <option value="map">Mappa</option>
+              <option value="outdoor">Outdoor</option>
+              <option value="night">Notte</option>
+            </select>
+                        </div>
+                    </div>
+                    <div class="device-dashboard-setting-row">
+                        <label class="flex items-center gap-2 min-w-0">
+              <input type="checkbox" id="dashboard-field-vibration" data-dashboard-field="vibration" class="accent-rose-500">
+              <span class="min-w-0">
+                <span class="flex items-center gap-1.5 text-xs text-gray-200">
+                  <i data-lucide="activity" class="w-3.5 h-3.5 text-rose-300"></i>
+                  Vibrazioni
+                </span>
+                <span class="block text-[9px] text-gray-500">Scala scossoni 1-10</span>
+              </span>
+            </label>
+                        <div class="device-dashboard-field-controls">
+                        <select id="dashboard-position-vibration" data-dashboard-position-field="vibration" class="device-dashboard-position-select">
+              <option value="top-right">Alto destra</option>
+              <option value="top-left">Alto sinistra</option>
+              <option value="bottom-center">Basso centro</option>
+              <option value="bottom-right">Basso destra</option>
+              <option value="bottom-left">Basso sinistra</option>
+            </select>
+                        <select id="dashboard-size-vibration" data-dashboard-size-field="vibration" class="device-dashboard-position-select">
+              <option value="compact">Piccola</option>
+              <option value="medium">Media</option>
+              <option value="large">Grande</option>
+            </select>
+                        <select id="dashboard-style-vibration" data-dashboard-style-field="vibration" class="device-dashboard-position-select">
               <option value="map">Mappa</option>
               <option value="outdoor">Outdoor</option>
               <option value="night">Notte</option>
