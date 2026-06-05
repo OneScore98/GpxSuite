@@ -57,7 +57,10 @@ function parseGpx(xmlText, fileName) {
                 const lon = parseFloat(pt.getAttribute("lon"));
                 const eleNode = pt.getElementsByTagName("ele")[0];
                 const ele = eleNode ? parseFloat(eleNode.textContent) : 0;
+                const timeNode = pt.getElementsByTagName("time")[0];
+                const time = timeNode ? Date.parse(timeNode.textContent) : NaN;
                 parsedPoints[k] = { lat, lon, ele, isUserClicked: false };
+                if (Number.isFinite(time)) parsedPoints[k].time = time;
 
                 if (firstPoint === null) firstPoint = { lat, lon };
             }

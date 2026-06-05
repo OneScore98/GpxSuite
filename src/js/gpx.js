@@ -142,7 +142,10 @@ async function parseInline(xmlText, fileName) {
                 const lon = parseFloat(pt.getAttribute("lon"));
                 const eleNode = pt.getElementsByTagName("ele")[0];
                 const ele = eleNode ? parseFloat(eleNode.textContent) : 0;
+                const timeNode = pt.getElementsByTagName("time")[0];
+                const time = timeNode ? Date.parse(timeNode.textContent) : NaN;
                 parsedPoints[k] = { lat, lon, ele, isUserClicked: false };
+                if (Number.isFinite(time)) parsedPoints[k].time = time;
                 if (firstPoint === null) firstPoint = { lat, lon };
 
                 if (k > 0 && k % CHUNK === 0) await yieldToMain();
@@ -236,6 +239,8 @@ export function exportGPX(trackId = activeTrackId) {
                 const pt = exportPoints[i];
                 parts.push(`      <trkpt lat="${pt.lat.toFixed(6)}" lon="${pt.lon.toFixed(6)}">\n`);
                 if (pt.ele) parts.push(`        <ele>${pt.ele}</ele>\n`);
+                const timeMs = typeof pt.time === 'number' ? pt.time : Date.parse(pt.time);
+                if (Number.isFinite(timeMs)) parts.push(`        <time>${new Date(timeMs).toISOString()}</time>\n`);
                 parts.push(`      </trkpt>\n`);
             }
 

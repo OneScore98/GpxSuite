@@ -1913,12 +1913,15 @@ function classifyTrackLegAsOffroad(points, index, osmSegments) {
 }
 
 function clonePoint(point) {
-    return {
+    const cloned = {
         lat: point.lat,
         lon: point.lon,
         ele: point.ele || 0,
         isUserClicked: point.isUserClicked === true
     };
+    if (point.time) cloned.time = point.time;
+    if (point.surface) cloned.surface = point.surface;
+    return cloned;
 }
 
 function getAnalyzableSegments(sourceTrack) {
@@ -2001,6 +2004,7 @@ function createOffroadTrack(sourceTrack, extractedRanges, nameBase, summary) {
         localSource: 'derived',
         name: `Offroad - ${nameBase}`,
         desc: `Tratti non asfaltati estratti da ${sourceTrackName}. OSM highway/surface/tracktype. Blocchi OSM: ${summary.osmChunkCount}; segmenti non asfaltati: ${summary.unpavedLegCount}; fuori rete OSM: ${summary.unmappedLegCount}.`,
+        surface: 'offroad',
         color: generateDistinctTrackColor(tracks.map(track => track.color)),
         width: Math.max((sourceTrack.width || 3) + 2, 5),
         visible: true,
@@ -2008,6 +2012,7 @@ function createOffroadTrack(sourceTrack, extractedRanges, nameBase, summary) {
         segments: extractedRanges.map((item, index) => ({
             id: `seg_offroad_${createdAt}_${index + 1}`,
             name: `${item.sourceSegment.name || 'Segmento'} - offroad ${index + 1}`,
+            surface: 'offroad',
             points: item.sourceSegment.points.slice(item.range.start, item.range.end + 1).map(clonePoint),
             visible: true
         })),

@@ -767,6 +767,99 @@ body.auth-locked #print-drag-grid {
     color: #1f2937;
 }
 
+#panel-bottom-stats:not(.translate-y-60) {
+    transform: translateY(0) !important;
+    transition-duration: 0s !important;
+}
+
+.stats-panel-header {
+    gap: 0.75rem;
+}
+
+.stats-panel-title-wrap {
+    min-width: 0;
+}
+
+.stats-panel-title {
+    white-space: nowrap;
+}
+
+.stats-chart-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-shrink: 0;
+}
+
+.stats-control-group {
+    display: inline-grid;
+    grid-auto-flow: column;
+    align-items: center;
+    gap: 0.12rem;
+    padding: 0.12rem;
+    border: 1px solid rgba(31, 41, 55, 0.95);
+    border-radius: 0.65rem;
+    background: rgba(17, 24, 39, 0.86);
+}
+
+.stats-segment-button {
+    min-width: 2.7rem;
+    height: 1.65rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    padding: 0 0.45rem;
+    border-radius: 0.5rem;
+    color: #9ca3af;
+    font-size: 0.64rem;
+    font-weight: 700;
+    line-height: 1;
+    transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.stats-segment-button[data-active="true"] {
+    background: rgba(37, 99, 235, 0.94);
+    color: #fff;
+    box-shadow: 0 0.35rem 0.9rem rgba(37, 99, 235, 0.24);
+}
+
+.stats-close-button {
+    width: 1.9rem;
+    height: 1.9rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.55rem;
+}
+
+.stats-chart-shell {
+    min-height: 0;
+}
+
+.stats-summary-panel {
+    font-variant-numeric: tabular-nums;
+}
+
+.stats-summary-panel > div {
+    min-width: 0;
+    gap: 0.55rem;
+}
+
+.stats-summary-panel span:first-child {
+    min-width: 0;
+}
+
+.stats-summary-panel span:last-child {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.stats-surface-row span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 #recording-status-chip {
     left: 50%;
     bottom: calc(var(--safe-bottom) + 3.35rem);
@@ -2178,7 +2271,7 @@ label {
 
     #panel-bottom-stats {
         bottom: calc(var(--safe-bottom) + 7.35rem);
-        height: min(42vh, 22rem);
+        height: min(58vh, calc(var(--app-height) - var(--safe-top) - var(--safe-bottom) - 8.2rem));
         z-index: 20;
     }
 
@@ -2193,19 +2286,46 @@ label {
         border-radius: 1rem;
     }
 
-    #panel-bottom-stats .px-4.py-2 {
+    #panel-bottom-stats .stats-panel-header {
         padding: 0.65rem 0.8rem;
+        align-items: flex-start;
+        flex-direction: column;
     }
 
-    #panel-bottom-stats .px-4.py-2 .flex.items-center.gap-4 {
+    #panel-bottom-stats .stats-panel-title-wrap {
         display: grid;
         grid-template-columns: 1fr;
         gap: 0.4rem;
         min-width: 0;
+        width: 100%;
     }
 
-    #panel-bottom-stats .px-4.py-2 .text-xs.font-bold {
+    #panel-bottom-stats .stats-panel-title {
         font-size: 0.7rem;
+    }
+
+    #panel-bottom-stats .stats-chart-controls {
+        width: 100%;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+    }
+
+    #panel-bottom-stats .stats-control-group {
+        flex: 1 1 8rem;
+        grid-auto-columns: minmax(0, 1fr);
+    }
+
+    #panel-bottom-stats .stats-segment-button {
+        min-width: 0;
+        height: 1.9rem;
+        padding: 0 0.35rem;
+        font-size: 0.62rem;
+    }
+
+    #panel-bottom-stats .stats-close-button {
+        margin-left: auto;
+        width: 2rem;
+        height: 2rem;
     }
 
     #quick-stats-row {
@@ -2215,25 +2335,32 @@ label {
         font-size: 0.68rem;
     }
 
-    #panel-bottom-stats .flex-1.p-3.flex.gap-4.min-h-0 {
+    #panel-bottom-stats .stats-panel-body {
         flex-direction: column;
         gap: 0.45rem;
         padding: 0.55rem;
+        overflow-y: auto;
     }
 
-    #panel-bottom-stats .w-52 {
+    #panel-bottom-stats .stats-chart-shell {
+        flex: 1 0 12rem;
+        min-height: 12rem;
+    }
+
+    #panel-bottom-stats .stats-summary-panel {
         width: 100%;
         border-left: 0;
         border-top: 1px solid rgba(31, 41, 55, 1);
         padding-left: 0;
-        padding-top: 0.75rem;
+        padding-top: 0.6rem;
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 0.35rem 0.8rem;
         font-size: 0.68rem;
+        flex: 0 0 auto;
     }
 
-    #panel-bottom-stats .w-52 > div {
+    #panel-bottom-stats .stats-summary-panel > div {
         min-width: 0;
         gap: 0.45rem;
     }
@@ -2659,7 +2786,11 @@ label {
         left: calc(var(--safe-left) + 0.6rem);
         right: calc(var(--safe-right) + 0.6rem);
         bottom: calc(var(--safe-bottom) + 4.1rem);
-        height: min(38vh, 20rem);
+        height: min(64vh, calc(var(--app-height) - var(--safe-top) - var(--safe-bottom) - 5.2rem));
+    }
+
+    body.stats-panel-open #recording-status-chip {
+        display: none;
     }
 
     @media (orientation: landscape) {
