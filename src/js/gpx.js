@@ -36,6 +36,19 @@ function yieldToMain() {
     return new Promise(resolve => setTimeout(resolve, 0));
 }
 
+function readSurfaceExtension(node) {
+    const direct = node.getElementsByTagName("surface")[0];
+    if (direct?.textContent) return direct.textContent.trim();
+
+    if (typeof node.getElementsByTagNameNS === 'function') {
+        const namespaced = node.getElementsByTagNameNS('*', 'surface')[0];
+        if (namespaced?.textContent) return namespaced.textContent.trim();
+    }
+
+    const prefixed = node.getElementsByTagName("gpxsuite:surface")[0];
+    return prefixed?.textContent ? prefixed.textContent.trim() : '';
+}
+
 export async function importGPX(xmlText, fileName) {
     showToast("Importazione in corso...", "info");
 
@@ -144,8 +157,13 @@ async function parseInline(xmlText, fileName) {
                 const ele = eleNode ? parseFloat(eleNode.textContent) : 0;
                 const timeNode = pt.getElementsByTagName("time")[0];
                 const time = timeNode ? Date.parse(timeNode.textContent) : NaN;
+                const surface = readSurfaceExtension(pt);
                 parsedPoints[k] = { lat, lon, ele, isUserClicked: false };
                 if (Number.isFinite(time)) parsedPoints[k].time = time;
+                if (surface) {
+                    parsedPoints[k].surface = surface;
+                    parsedPoints[k].surfaceFromPrev = surface;
+                }
                 if (firstPoint === null) firstPoint = { lat, lon };
 
                 if (k > 0 && k % CHUNK === 0) await yieldToMain();
@@ -231,7 +249,8 @@ export function exportGPX(trackId = activeTrackId) {
 
             // Sull'export usiamo la versione iterativa (non ricorsiva): la versione
             // ricorsiva esplode lo stack su tracce con decine di migliaia di punti.
-            const exportPoints = seg.points.length > 150
+            const hasSurfaceData = seg.points.some(point => point.surfaceFromPrev || point.surface);
+            const exportPoints = seg.points.length > 150 && !hasSurfaceData
                 ? simplifyDouglasPeucker(seg.points, 0.00005)
                 : seg.points;
 
@@ -241,6 +260,12 @@ export function exportGPX(trackId = activeTrackId) {
                 if (pt.ele) parts.push(`        <ele>${pt.ele}</ele>\n`);
                 const timeMs = typeof pt.time === 'number' ? pt.time : Date.parse(pt.time);
                 if (Number.isFinite(timeMs)) parts.push(`        <time>${new Date(timeMs).toISOString()}</time>\n`);
+                const surface = pt.surfaceFromPrev || pt.surface;
+                if (surface) {
+                    parts.push(`        <extensions>\n`);
+                    parts.push(`          <surface>${escapeXml(surface)}</surface>\n`);
+                    parts.push(`        </extensions>\n`);
+                }
                 parts.push(`      </trkpt>\n`);
             }
 

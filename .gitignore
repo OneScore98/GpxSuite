@@ -4,6 +4,7 @@ supabase/.temp/
 # Documentazione e istruzioni locali
 *.md
 !README.md
+.codexrules
 
 # Variabili d'ambiente locali
 .env

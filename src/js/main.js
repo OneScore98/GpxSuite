@@ -94,6 +94,7 @@ import {
     addNewSegmentToTrack,
     renameSegment,
     renameSegmentFromMenu,
+    fetchSurfaceDataForTrack,
     extractOffroadFromTrack,
     extractOffroadFromSegment,
     setSegmentActive,
@@ -189,6 +190,7 @@ window.deleteTrack = deleteTrack;
 window.addNewSegmentToTrack = addNewSegmentToTrack;
 window.renameSegment = renameSegment;
 window.renameSegmentFromMenu = renameSegmentFromMenu;
+window.fetchSurfaceDataForTrack = fetchSurfaceDataForTrack;
 window.extractOffroadFromTrack = extractOffroadFromTrack;
 window.extractOffroadFromSegment = extractOffroadFromSegment;
 window.setSegmentActive = setSegmentActive;

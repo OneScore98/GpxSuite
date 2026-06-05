@@ -18,6 +18,19 @@ self.onmessage = function(e) {
     }
 };
 
+function readSurfaceExtension(node) {
+    const direct = node.getElementsByTagName("surface")[0];
+    if (direct && direct.textContent) return direct.textContent.trim();
+
+    if (typeof node.getElementsByTagNameNS === 'function') {
+        const namespaced = node.getElementsByTagNameNS('*', 'surface')[0];
+        if (namespaced && namespaced.textContent) return namespaced.textContent.trim();
+    }
+
+    const prefixed = node.getElementsByTagName("gpxsuite:surface")[0];
+    return prefixed && prefixed.textContent ? prefixed.textContent.trim() : '';
+}
+
 function parseGpx(xmlText, fileName) {
     // DOMParser è disponibile nei DedicatedWorker dei browser moderni
     const parser = new DOMParser();
@@ -59,8 +72,13 @@ function parseGpx(xmlText, fileName) {
                 const ele = eleNode ? parseFloat(eleNode.textContent) : 0;
                 const timeNode = pt.getElementsByTagName("time")[0];
                 const time = timeNode ? Date.parse(timeNode.textContent) : NaN;
+                const surface = readSurfaceExtension(pt);
                 parsedPoints[k] = { lat, lon, ele, isUserClicked: false };
                 if (Number.isFinite(time)) parsedPoints[k].time = time;
+                if (surface) {
+                    parsedPoints[k].surface = surface;
+                    parsedPoints[k].surfaceFromPrev = surface;
+                }
 
                 if (firstPoint === null) firstPoint = { lat, lon };
             }

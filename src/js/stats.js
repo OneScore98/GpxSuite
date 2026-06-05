@@ -141,6 +141,7 @@ function createChart() {
                 legend: { display: false },
                 tooltip: {
                     callbacks: {
+                        title: items => formatChartTooltipTitle(items?.[0]?.parsed?.x),
                         label: context => formatChartTooltipLabel(context.parsed?.y)
                     }
                 }
@@ -209,12 +210,30 @@ function syncStatsControls() {
 function formatXAxisTick(value) {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return '';
-    return _chartXAxis === 'time' ? `${numeric.toFixed(0)} min` : `${numeric.toFixed(2)} km`;
+    return _chartXAxis === 'time' ? formatElapsedMinutes(numeric, true) : `${numeric.toFixed(2)} km`;
 }
 
 function formatYAxisTick(value) {
     const metric = CHART_METRICS[_chartMetric] || CHART_METRICS.altitude;
     return metric.tick(value);
+}
+
+function formatElapsedMinutes(value, compact = false) {
+    const minutes = Math.max(0, Number(value) || 0);
+    if (minutes < 60) return compact ? `${Math.round(minutes)}m` : `${Math.round(minutes)} min`;
+
+    const hours = Math.floor(minutes / 60);
+    const mins = Math.round(minutes % 60);
+    if (compact) return `${hours}h${String(mins).padStart(2, '0')}`;
+    return `${hours} h ${String(mins).padStart(2, '0')} min`;
+}
+
+function formatChartTooltipTitle(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return '';
+    return _chartXAxis === 'time'
+        ? `Tempo: ${formatElapsedMinutes(numeric)}`
+        : `Distanza: ${numeric.toFixed(2)} km`;
 }
 
 function formatChartTooltipLabel(value) {
@@ -276,6 +295,18 @@ function resolveSegmentSurface(track, segment) {
         track?.surfaceType ||
         track?.desc ||
         track?.name
+    );
+}
+
+function resolveLegSurface(track, segment, fromPoint, toPoint, fallbackSurface) {
+    return normalizeSurfaceValue(
+        toPoint?.surfaceFromPrev ||
+        toPoint?.surface ||
+        fromPoint?.surfaceNext ||
+        fromPoint?.surface ||
+        fallbackSurface ||
+        segment?.surface ||
+        track?.surface
     );
 }
 
@@ -424,7 +455,7 @@ function _doUpdateStats() {
 
             const pts = seg.points;
             const n = pts.length;
-            const surface = resolveSegmentSurface(track, seg);
+            const segmentSurface = resolveSegmentSurface(track, seg);
             for (let i = 0; i < n; i++) {
                 const pt = pts[i];
                 const ele = Number(pt.ele) || 0;
@@ -464,14 +495,20 @@ function _doUpdateStats() {
                         }
                     }
 
+                    const surface = resolveLegSurface(track, seg, prevPt, pt, segmentSurface);
                     surfaceKm[surface] = (surfaceKm[surface] || 0) + d;
-                    const bandStart = useTimeAxis && prevTimeMs !== null
-                        ? (prevTimeMs - minTimeMs) / 60000
-                        : startDist;
-                    const bandEnd = useTimeAxis && timeMs !== null
-                        ? (timeMs - minTimeMs) / 60000
-                        : cumulativeDist;
-                    pushSurfaceBand(surfaceBands, surface, bandStart, bandEnd);
+                    if (useTimeAxis) {
+                        if (prevTimeMs !== null && timeMs !== null) {
+                            pushSurfaceBand(
+                                surfaceBands,
+                                surface,
+                                (prevTimeMs - minTimeMs) / 60000,
+                                (timeMs - minTimeMs) / 60000
+                            );
+                        }
+                    } else {
+                        pushSurfaceBand(surfaceBands, surface, startDist, cumulativeDist);
+                    }
                 }
 
                 if (ele > maxElevation) maxElevation = ele;
@@ -509,7 +546,7 @@ function _doUpdateStats() {
     const $ = (id) => document.getElementById(id);
     const setText = (id, text) => {
         const el = $(id);
-        if (el) el.innerText = text;
+        if (el) el.textContent = text;
     };
     setText('stat-dist', totalDistance.toFixed(2) + ' km');
     setText('stat-ascent', `+${Math.round(totalAscent)} m`);

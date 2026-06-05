@@ -1241,6 +1241,7 @@ function openTrackContextMenuAt(trackId, clientX, clientY) {
       ${createTreeContextMenuButton('clipboard-paste', 'Incolla', `pasteTreeSelection('${track.id}')`, !hasClipboard)}
       ${createTreeContextMenuButton('scissors', 'Taglia', 'cutTreeSelection()')}
       ${createTreeContextMenuButton('copy-plus', 'Duplica', `duplicateTreeSelection('${track.id}')`)}
+      ${createTreeContextMenuButton('database', 'Recupera superfici OSM', `fetchSurfaceDataForTrack('${track.id}')`, pointCount < 2)}
       ${createTreeContextMenuButton('route', 'Estrai tratti non asfaltati', `extractOffroadFromTrack('${track.id}')`, pointCount < 2)}
       ${createTreeContextMenuButton('download', 'Scarica traccia', `downloadTrackGPX('${track.id}', 'context_menu')`)}
       <div class="my-1 border-t border-gray-800"></div>
@@ -1877,6 +1878,32 @@ function findNearestOsmWaySegment(point, osmSegments) {
     return best ? { ...best, distance: bestDistance } : null;
 }
 
+function classifyTrackLegSurface(points, index, osmSegments) {
+    const from = points[index - 1];
+    const to = points[index];
+    const mid = {
+        lat: (from.lat + to.lat) / 2,
+        lon: (from.lon + to.lon) / 2
+    };
+    const nearest = findNearestOsmWaySegment(mid, osmSegments);
+    const legDistance = segmentDistanceMeters(points, index - 1, index);
+
+    if (!nearest || nearest.distance > Math.max(OSM_MATCH_THRESHOLD_M, Math.min(80, legDistance * 0.35))) {
+        return {
+            surface: 'unknown',
+            reason: 'unmapped',
+            distance: nearest?.distance || Infinity
+        };
+    }
+
+    return {
+        surface: nearest.surfaceClass || 'unknown',
+        reason: nearest.surfaceClass === 'unknown' ? 'unknown-road' : 'matched',
+        distance: nearest.distance,
+        tags: nearest.way.tags
+    };
+}
+
 function classifyTrackLegAsOffroad(points, index, osmSegments) {
     const from = points[index - 1];
     const to = points[index];
@@ -1993,6 +2020,109 @@ async function analyzeOffroadSegment(sourceSegment) {
     };
 }
 
+function createSurfaceSummary() {
+    return {
+        osmWayCount: 0,
+        osmChunkCount: 0,
+        matchedWayCount: 0,
+        pavedLegCount: 0,
+        offroadLegCount: 0,
+        unknownLegCount: 0,
+        pavedKm: 0,
+        offroadKm: 0,
+        unknownKm: 0
+    };
+}
+
+function addSurfaceSummary(summary, partial) {
+    summary.osmWayCount += partial.osmWayCount;
+    summary.osmChunkCount += partial.osmChunkCount;
+    summary.matchedWayCount += partial.matchedWayCount;
+    summary.pavedLegCount += partial.pavedLegCount;
+    summary.offroadLegCount += partial.offroadLegCount;
+    summary.unknownLegCount += partial.unknownLegCount;
+    summary.pavedKm += partial.pavedKm;
+    summary.offroadKm += partial.offroadKm;
+    summary.unknownKm += partial.unknownKm;
+}
+
+function getDominantSurfaceFromSummary(summary) {
+    const knownKm = summary.pavedKm + summary.offroadKm;
+    if (knownKm <= 0) return 'unknown';
+    return summary.offroadKm >= summary.pavedKm ? 'offroad' : 'paved';
+}
+
+async function analyzeSurfaceSegment(sourceSegment) {
+    const points = sourceSegment.points || [];
+    const chunks = splitOffroadAnalysisChunks(points);
+    const legSurfaces = new Array(points.length).fill('unknown');
+    const seenOsmWayIds = new Set();
+    const summary = createSurfaceSummary();
+    summary.osmChunkCount = chunks.length;
+
+    for (let c = 0; c < chunks.length; c += OVERPASS_MAX_CHUNKS_PER_REQUEST) {
+        const endChunkIndex = Math.min(chunks.length - 1, c + OVERPASS_MAX_CHUNKS_PER_REQUEST - 1);
+        const osmWays = await fetchOsmWaysForChunkBatchWithRetry(points, chunks, c, endChunkIndex);
+        for (let w = 0; w < osmWays.length; w++) {
+            seenOsmWayIds.add(osmWays[w].id);
+        }
+
+        const osmSegments = buildOsmWaySegments(osmWays);
+        for (let chunkIndex = c; chunkIndex <= endChunkIndex; chunkIndex++) {
+            const chunk = chunks[chunkIndex];
+            for (let i = chunk.startIndex + 1; i <= chunk.endIndex; i++) {
+                const classification = classifyTrackLegSurface(points, i, osmSegments);
+                const surface = classification.surface || 'unknown';
+                const distanceKm = segmentDistanceKm(points, i - 1, i);
+                legSurfaces[i] = surface;
+
+                if (surface === 'paved') {
+                    summary.pavedLegCount++;
+                    summary.pavedKm += distanceKm;
+                    summary.matchedWayCount++;
+                } else if (surface === 'offroad') {
+                    summary.offroadLegCount++;
+                    summary.offroadKm += distanceKm;
+                    summary.matchedWayCount++;
+                } else {
+                    summary.unknownLegCount++;
+                    summary.unknownKm += distanceKm;
+                }
+            }
+        }
+    }
+
+    summary.osmWayCount = seenOsmWayIds.size;
+    return { legSurfaces, summary };
+}
+
+function applySurfaceAnalysisToSegment(sourceSegment, analysis) {
+    const points = sourceSegment.points || [];
+    const legSurfaces = analysis.legSurfaces || [];
+    let firstSurface = null;
+
+    for (let i = 1; i < points.length; i++) {
+        const surface = legSurfaces[i] || 'unknown';
+        points[i].surfaceFromPrev = surface;
+        points[i].surface = surface;
+        if (firstSurface === null) firstSurface = surface;
+    }
+
+    if (points[0] && firstSurface !== null) {
+        points[0].surface = firstSurface;
+    }
+    sourceSegment.surface = getDominantSurfaceFromSummary(analysis.summary);
+}
+
+function formatFetchedSurfaceSummary(summary) {
+    const totalKm = summary.pavedKm + summary.offroadKm + summary.unknownKm;
+    if (totalKm <= 0) return 'nessun tratto analizzato';
+    const pavedPercent = Math.round((summary.pavedKm / totalKm) * 100);
+    const offroadPercent = Math.round((summary.offroadKm / totalKm) * 100);
+    const unknownPercent = Math.max(0, 100 - pavedPercent - offroadPercent);
+    return `asfalto ${pavedPercent}%, offroad ${offroadPercent}%, N/D ${unknownPercent}%`;
+}
+
 function createOffroadTrack(sourceTrack, extractedRanges, nameBase, summary) {
     const createdAt = Date.now();
     const sourceTrackName = sourceTrack.name || 'Traccia';
@@ -2091,6 +2221,46 @@ export async function extractOffroadFromTrack(trackId) {
     const sourceTrack = tracks.find(track => track.id === trackId);
     const sourceSegments = getAnalyzableSegments(sourceTrack);
     await extractOffroadFromSources(sourceTrack, sourceSegments, sourceTrack?.name || 'Traccia');
+}
+
+export async function fetchSurfaceDataForTrack(trackId) {
+    closeTrackContextMenu();
+
+    const sourceTrack = tracks.find(track => track.id === trackId);
+    const sourceSegments = getAnalyzableSegments(sourceTrack);
+    if (!sourceTrack || sourceSegments.length === 0) {
+        showToast("Nessun segmento valido per recuperare le superfici", "error");
+        return;
+    }
+
+    const totalChunks = countOffroadAnalysisChunks(sourceSegments);
+    showToast(`Richiesta superfici Overpass: ${sourceSegments.length} segmenti, ${totalChunks} blocchi...`, "info");
+
+    try {
+        const summary = createSurfaceSummary();
+        for (let i = 0; i < sourceSegments.length; i++) {
+            const sourceSegment = sourceSegments[i];
+            const analysis = await analyzeSurfaceSegment(sourceSegment);
+            applySurfaceAnalysisToSegment(sourceSegment, analysis);
+            addSurfaceSummary(summary, analysis.summary);
+        }
+
+        sourceTrack.surface = getDominantSurfaceFromSummary(summary);
+        sourceTrack.surfaceAnalyzedAt = Date.now();
+        sourceTrack.localUpdatedAt = Date.now();
+
+        if (_saveHistoryState) _saveHistoryState();
+        if (_updateMapData) _updateMapData(true);
+        renderGisTree();
+        updateActiveTracksHeader();
+        forceUpdateStats();
+        schedulePersistTracks(tracks);
+        schedulePersistAppSession();
+        showToast(`Superfici aggiornate: ${formatFetchedSurfaceSummary(summary)}`, "success");
+    } catch (err) {
+        console.error(err);
+        showToast(getOffroadAnalysisErrorMessage(err), "error");
+    }
 }
 
 export async function extractOffroadFromSegment(trackId, segId) {
