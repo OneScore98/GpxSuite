@@ -160,6 +160,7 @@ let _deviceDashboardMotionState = {
     updatedAt: 0
 };
 let _deviceDashboardTiltHoldTimer = null;
+let _deviceDashboardTiltPermissionPrompted = false;
 
 function easeInOutCubic(t) {
     return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -357,6 +358,30 @@ async function requestDashboardOrientationPermission() {
     }
 }
 
+async function ensureDashboardTiltPermissionIfEnabled(fromGesture = false) {
+    if (!isDeviceDashboardFieldEnabled('tilt')) return false;
+    if (typeof window.DeviceOrientationEvent === 'undefined') return false;
+    if (isDeviceDashboardSensorFresh(_deviceDashboardTiltState.updatedAt)) return true;
+
+    const OrientationEvent = window.DeviceOrientationEvent;
+    const requiresGesture = typeof OrientationEvent.requestPermission === 'function';
+    if (requiresGesture && !fromGesture) {
+        if (!_deviceDashboardTiltPermissionPrompted) {
+            _deviceDashboardTiltPermissionPrompted = true;
+            showToast("Tocca l'inclinometro per autorizzare il sensore", "info");
+        }
+        return false;
+    }
+
+    _deviceDashboardTiltPermissionPrompted = true;
+    const granted = await requestDashboardOrientationPermission();
+    if (granted) {
+        syncDeviceDashboardSensors();
+        scheduleDeviceDashboardSensorRender();
+    }
+    return granted;
+}
+
 function scheduleDeviceDashboardSensorRender() {
     const now = Date.now();
     const elapsed = now - _lastDeviceDashboardSensorRenderAt;
@@ -486,6 +511,13 @@ function bindDeviceDashboardCardInteractions() {
     const startHold = event => {
         event.preventDefault();
         clearDeviceDashboardTiltHold(tiltCard);
+        const needsGesturePermission = typeof window.DeviceOrientationEvent !== 'undefined' &&
+            typeof window.DeviceOrientationEvent.requestPermission === 'function' &&
+            !isDeviceDashboardSensorFresh(_deviceDashboardTiltState.updatedAt);
+        if (needsGesturePermission) {
+            ensureDashboardTiltPermissionIfEnabled(true).catch(err => console.warn('Permesso inclinometro non richiesto:', err));
+            return;
+        }
         tiltCard.classList.add('device-dashboard-card--zero-arming');
         _deviceDashboardTiltHoldTimer = setTimeout(() => {
             _deviceDashboardTiltHoldTimer = null;
@@ -573,6 +605,7 @@ function bindDeviceDashboardSettingsForm() {
                 _deviceDashboardSettings.fields[field.id].enabled = enabledInput.checked;
                 persistDeviceDashboardSettings();
                 if (enabledInput.checked && field.id === 'tilt') {
+                    _deviceDashboardTiltPermissionPrompted = false;
                     await requestDashboardOrientationPermission();
                 }
                 if (enabledInput.checked && field.id === 'vibration') {
@@ -3859,6 +3892,7 @@ export function setupEvents() {
         _setDeviceRecordingStatusHandler(updateDeviceRecordingUi);
     }
     bindDeviceDashboardSettingsForm();
+    ensureDashboardTiltPermissionIfEnabled(false).catch(err => console.warn('Permesso inclinometro non richiesto:', err));
     bindRecordingSettingsForm();
     updateDeviceRecordingUi(_getDeviceRecordingStatus ? _getDeviceRecordingStatus() : { state: 'idle' });
 

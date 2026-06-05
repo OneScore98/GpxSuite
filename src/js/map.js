@@ -447,13 +447,13 @@ function createHydroBaseMapStyle() {
                 type: 'line',
                 source: 'openmaptiles',
                 'source-layer': 'waterway',
-                minzoom: 9,
+                minzoom: 8,
                 filter: ['all', ['==', ['get', 'class'], 'canal'], ['!=', ['get', 'brunnel'], 'tunnel']],
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
                 paint: {
-                    'line-color': '#d9f8ff',
-                    'line-opacity': 0.86,
-                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 9, 1.2, 14, 7, 19, 14]
+                    'line-color': '#d1f5ff',
+                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 8, 0.48, 13, 0.86],
+                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 8, 0.75, 14, 7, 19, 14]
                 }
             },
             {
@@ -461,13 +461,13 @@ function createHydroBaseMapStyle() {
                 type: 'line',
                 source: 'openmaptiles',
                 'source-layer': 'waterway',
-                minzoom: 9,
+                minzoom: 8,
                 filter: ['all', ['==', ['get', 'class'], 'canal'], ['!=', ['get', 'brunnel'], 'tunnel']],
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
                 paint: {
-                    'line-color': '#1596d2',
-                    'line-opacity': 0.88,
-                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 9, 0.45, 14, 2.8, 19, 5.8]
+                    'line-color': '#168bb7',
+                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 8, 0.58, 13, 0.9],
+                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 8, 0.28, 14, 2.8, 19, 5.8]
                 }
             },
             {
@@ -475,13 +475,13 @@ function createHydroBaseMapStyle() {
                 type: 'line',
                 source: 'openmaptiles',
                 'source-layer': 'waterway',
-                minzoom: 11,
-                filter: ['all', ['match', ['get', 'class'], ['stream', 'ditch', 'drain'], true, false], ['!=', ['get', 'brunnel'], 'tunnel']],
+                minzoom: 10,
+                filter: ['all', ['==', ['get', 'class'], 'stream'], ['!=', ['get', 'brunnel'], 'tunnel']],
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
                 paint: {
                     'line-color': '#d8f8ff',
-                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 11, 0.54, 15, 0.9],
-                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 11, 0.7, 15, 4.5, 19, 9]
+                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 10, 0.5, 15, 0.9],
+                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 10, 0.55, 15, 4.5, 19, 9]
                 }
             },
             {
@@ -489,13 +489,13 @@ function createHydroBaseMapStyle() {
                 type: 'line',
                 source: 'openmaptiles',
                 'source-layer': 'waterway',
-                minzoom: 11,
-                filter: ['all', ['match', ['get', 'class'], ['stream', 'ditch', 'drain'], true, false], ['!=', ['get', 'brunnel'], 'tunnel'], ['!=', ['get', 'intermittent'], 1]],
+                minzoom: 10,
+                filter: ['all', ['==', ['get', 'class'], 'stream'], ['!=', ['get', 'brunnel'], 'tunnel'], ['!=', ['get', 'intermittent'], 1]],
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
                 paint: {
-                    'line-color': '#1aa0dc',
-                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 11, 0.66, 15, 0.94],
-                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 11, 0.25, 15, 1.8, 19, 3.8]
+                    'line-color': '#109fd1',
+                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 10, 0.62, 15, 0.94],
+                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 10, 0.22, 15, 1.8, 19, 3.8]
                 }
             },
             {
@@ -503,14 +503,57 @@ function createHydroBaseMapStyle() {
                 type: 'line',
                 source: 'openmaptiles',
                 'source-layer': 'waterway',
-                minzoom: 12,
-                filter: ['all', ['match', ['get', 'class'], ['stream', 'ditch', 'drain'], true, false], ['!=', ['get', 'brunnel'], 'tunnel'], ['==', ['get', 'intermittent'], 1]],
+                minzoom: 10.5,
+                filter: ['all', ['==', ['get', 'class'], 'stream'], ['!=', ['get', 'brunnel'], 'tunnel'], ['==', ['get', 'intermittent'], 1]],
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
                 paint: {
-                    'line-color': '#1aa0dc',
+                    'line-color': '#109fd1',
                     'line-dasharray': [2, 2],
                     'line-opacity': 0.64,
-                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 12, 0.25, 15, 1.6, 19, 3.3]
+                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 10.5, 0.2, 15, 1.6, 19, 3.3]
+                }
+            },
+            {
+                id: 'idro-waterway-minor-glow',
+                type: 'line',
+                source: 'openmaptiles',
+                'source-layer': 'waterway',
+                minzoom: 9.8,
+                filter: ['all', ['match', ['get', 'class'], ['ditch', 'drain'], true, false], ['!=', ['get', 'brunnel'], 'tunnel']],
+                layout: { 'line-cap': 'round', 'line-join': 'round' },
+                paint: {
+                    'line-color': '#d4fbfb',
+                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 9.8, 0.44, 15, 0.82],
+                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 9.8, 0.42, 15, 3.7, 19, 7.2]
+                }
+            },
+            {
+                id: 'idro-waterway-minor-core',
+                type: 'line',
+                source: 'openmaptiles',
+                'source-layer': 'waterway',
+                minzoom: 9.8,
+                filter: ['all', ['match', ['get', 'class'], ['ditch', 'drain'], true, false], ['!=', ['get', 'brunnel'], 'tunnel'], ['!=', ['get', 'intermittent'], 1]],
+                layout: { 'line-cap': 'round', 'line-join': 'round' },
+                paint: {
+                    'line-color': '#1bb4bd',
+                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 9.8, 0.54, 15, 0.88],
+                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 9.8, 0.16, 15, 1.25, 19, 2.9]
+                }
+            },
+            {
+                id: 'idro-waterway-minor-intermittent',
+                type: 'line',
+                source: 'openmaptiles',
+                'source-layer': 'waterway',
+                minzoom: 10.5,
+                filter: ['all', ['match', ['get', 'class'], ['ditch', 'drain'], true, false], ['!=', ['get', 'brunnel'], 'tunnel'], ['==', ['get', 'intermittent'], 1]],
+                layout: { 'line-cap': 'round', 'line-join': 'round' },
+                paint: {
+                    'line-color': '#1bb4bd',
+                    'line-dasharray': [1.6, 1.8],
+                    'line-opacity': 0.58,
+                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 10.5, 0.16, 15, 1.1, 19, 2.6]
                 }
             },
             {
