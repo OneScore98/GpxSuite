@@ -101,7 +101,8 @@ import {
     deleteSegment,
     zoomToWaypoint,
     deleteWaypoint,
-    searchNominatim
+    searchNominatim,
+    getCurrentRecordingSensorData
 } from './ui.js?v=dashboard-settings-collapse-20260605';
 
 initDeviceLocation({
@@ -110,7 +111,8 @@ initDeviceLocation({
     renderGisTree,
     updateActiveTracksHeader,
     schedulePersistTracks,
-    saveHistoryState
+    saveHistoryState,
+    getSensorData: getCurrentRecordingSensorData
 });
 
 // Ricrea overlay registrazione/localizzazione dopo ogni cambio basemap.

@@ -902,6 +902,14 @@
                         <i data-lucide="trending-up" class="w-3 h-3"></i>
                         <span>Pend</span>
                     </button>
+                    <button type="button" class="stats-segment-button" data-stats-metric="tilt" title="Inclinazione (tracce con sensori attivi)">
+                        <i data-lucide="arrow-up-down" class="w-3 h-3"></i>
+                        <span>Tilt</span>
+                    </button>
+                    <button type="button" class="stats-segment-button" data-stats-metric="vibration" title="Vibrazioni (tracce con sensori attivi)">
+                        <i data-lucide="activity" class="w-3 h-3"></i>
+                        <span>Vibr</span>
+                    </button>
                 </div>
                 <div class="stats-control-group" role="group" aria-label="Asse X">
                     <button type="button" class="stats-segment-button" data-stats-x="distance" data-active="true" title="Asse X distanza">
@@ -944,6 +952,14 @@
                 <div class="stats-surface-row flex justify-between border-b border-gray-800/50 pb-1">
                     <span>Surface:</span>
                     <span id="stat-surface-summary" class="font-bold text-cyan-200">N/D</span>
+                </div>
+                <div class="flex justify-between border-b border-gray-800/50 pb-1" title="Inclinazione massima registrata (richiede sensore attivo)">
+                    <span>Inclin. Max:</span>
+                    <span id="stat-max-tilt" class="font-bold text-violet-400">--</span>
+                </div>
+                <div class="flex justify-between border-b border-gray-800/50 pb-1" title="Livello medio vibrazioni (richiede sensore attivo, scala 1–10)">
+                    <span>Vibr. Media:</span>
+                    <span id="stat-avg-vibration" class="font-bold text-rose-400">--</span>
                 </div>
                 <div class="flex justify-between pt-1">
                     <span>Segmenti Totali:</span>

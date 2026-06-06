@@ -437,6 +437,7 @@ function createHydroBaseMapStyle() {
                 }
             },
             {
+                // Fiumi — blu navy profondo (più scuro e più largo)
                 id: 'idro-waterway-river-glow',
                 type: 'line',
                 source: 'openmaptiles',
@@ -444,7 +445,7 @@ function createHydroBaseMapStyle() {
                 filter: ['all', ['==', ['get', 'class'], 'river'], ['!=', ['get', 'brunnel'], 'tunnel']],
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
                 paint: {
-                    'line-color': '#d5f8ff',
+                    'line-color': '#b8e8fa',
                     'line-opacity': 0.9,
                     'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 6, 1, 10, 4, 14, 12, 19, 22]
                 }
@@ -457,7 +458,7 @@ function createHydroBaseMapStyle() {
                 filter: ['all', ['==', ['get', 'class'], 'river'], ['!=', ['get', 'brunnel'], 'tunnel']],
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
                 paint: {
-                    'line-color': '#53bdeb',
+                    'line-color': '#3a9edb',
                     'line-opacity': 0.82,
                     'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 6, 0.55, 10, 2.4, 14, 7, 19, 13]
                 }
@@ -470,7 +471,7 @@ function createHydroBaseMapStyle() {
                 filter: ['all', ['==', ['get', 'class'], 'river'], ['!=', ['get', 'brunnel'], 'tunnel'], ['!=', ['get', 'intermittent'], 1]],
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
                 paint: {
-                    'line-color': '#087fc4',
+                    'line-color': '#0565a8',
                     'line-opacity': 0.95,
                     'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 6, 0.25, 10, 1.1, 14, 3.8, 19, 7]
                 }
@@ -483,24 +484,25 @@ function createHydroBaseMapStyle() {
                 filter: ['all', ['==', ['get', 'class'], 'river'], ['!=', ['get', 'brunnel'], 'tunnel'], ['==', ['get', 'intermittent'], 1]],
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
                 paint: {
-                    'line-color': '#087fc4',
+                    'line-color': '#0565a8',
                     'line-dasharray': [3, 2.2],
                     'line-opacity': 0.7,
                     'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 7, 0.25, 13, 2.8, 19, 5.5]
                 }
             },
             {
+                // Canali — blu medio/reale, visibili da zoom 5
                 id: 'idro-waterway-canal-glow',
                 type: 'line',
                 source: 'openmaptiles',
                 'source-layer': 'waterway',
-                minzoom: 8,
+                minzoom: 5,
                 filter: ['all', ['==', ['get', 'class'], 'canal'], ['!=', ['get', 'brunnel'], 'tunnel']],
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
                 paint: {
-                    'line-color': '#d1f5ff',
-                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 8, 0.48, 13, 0.86],
-                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 8, 0.75, 14, 7, 19, 14]
+                    'line-color': '#b2e0f7',
+                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 5, 0.38, 10, 0.62, 14, 0.86],
+                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 5, 0.3, 8, 0.75, 14, 7, 19, 14]
                 }
             },
             {
@@ -508,27 +510,28 @@ function createHydroBaseMapStyle() {
                 type: 'line',
                 source: 'openmaptiles',
                 'source-layer': 'waterway',
-                minzoom: 8,
+                minzoom: 5,
                 filter: ['all', ['==', ['get', 'class'], 'canal'], ['!=', ['get', 'brunnel'], 'tunnel']],
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
                 paint: {
-                    'line-color': '#168bb7',
-                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 8, 0.58, 13, 0.9],
-                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 8, 0.28, 14, 2.8, 19, 5.8]
+                    'line-color': '#1480c2',
+                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 5, 0.48, 10, 0.68, 14, 0.92],
+                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 5, 0.12, 8, 0.28, 14, 2.8, 19, 5.8]
                 }
             },
             {
+                // Torrenti/ruscelli — azzurro vivo, visibili da zoom 7
                 id: 'idro-waterway-stream-glow',
                 type: 'line',
                 source: 'openmaptiles',
                 'source-layer': 'waterway',
-                minzoom: 10,
+                minzoom: 7,
                 filter: ['all', ['==', ['get', 'class'], 'stream'], ['!=', ['get', 'brunnel'], 'tunnel']],
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
                 paint: {
-                    'line-color': '#d8f8ff',
-                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 10, 0.5, 15, 0.9],
-                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 10, 0.55, 15, 4.5, 19, 9]
+                    'line-color': '#caeffe',
+                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0.32, 11, 0.58, 15, 0.88],
+                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 7, 0.25, 10, 0.55, 15, 4.5, 19, 9]
                 }
             },
             {
@@ -536,13 +539,13 @@ function createHydroBaseMapStyle() {
                 type: 'line',
                 source: 'openmaptiles',
                 'source-layer': 'waterway',
-                minzoom: 10,
+                minzoom: 7,
                 filter: ['all', ['==', ['get', 'class'], 'stream'], ['!=', ['get', 'brunnel'], 'tunnel'], ['!=', ['get', 'intermittent'], 1]],
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
                 paint: {
-                    'line-color': '#109fd1',
-                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 10, 0.62, 15, 0.94],
-                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 10, 0.22, 15, 1.8, 19, 3.8]
+                    'line-color': '#1aace0',
+                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0.44, 11, 0.68, 15, 0.94],
+                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 7, 0.1, 10, 0.22, 15, 1.8, 19, 3.8]
                 }
             },
             {
@@ -550,28 +553,29 @@ function createHydroBaseMapStyle() {
                 type: 'line',
                 source: 'openmaptiles',
                 'source-layer': 'waterway',
-                minzoom: 10.5,
+                minzoom: 7.5,
                 filter: ['all', ['==', ['get', 'class'], 'stream'], ['!=', ['get', 'brunnel'], 'tunnel'], ['==', ['get', 'intermittent'], 1]],
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
                 paint: {
-                    'line-color': '#109fd1',
+                    'line-color': '#1aace0',
                     'line-dasharray': [2, 2],
-                    'line-opacity': 0.64,
-                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 10.5, 0.2, 15, 1.6, 19, 3.3]
+                    'line-opacity': 0.58,
+                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 7.5, 0.1, 10, 0.2, 15, 1.6, 19, 3.3]
                 }
             },
             {
+                // Fossi e canali minori — azzurro chiaro/turchese, visibili da zoom 8
                 id: 'idro-waterway-minor-glow',
                 type: 'line',
                 source: 'openmaptiles',
                 'source-layer': 'waterway',
-                minzoom: 9.8,
+                minzoom: 8,
                 filter: ['all', ['match', ['get', 'class'], ['ditch', 'drain'], true, false], ['!=', ['get', 'brunnel'], 'tunnel']],
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
                 paint: {
-                    'line-color': '#d4fbfb',
-                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 9.8, 0.44, 15, 0.82],
-                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 9.8, 0.42, 15, 3.7, 19, 7.2]
+                    'line-color': '#c6f4f4',
+                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 8, 0.32, 12, 0.56, 15, 0.80],
+                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 8, 0.22, 11, 0.42, 15, 3.7, 19, 7.2]
                 }
             },
             {
@@ -579,13 +583,13 @@ function createHydroBaseMapStyle() {
                 type: 'line',
                 source: 'openmaptiles',
                 'source-layer': 'waterway',
-                minzoom: 9.8,
+                minzoom: 8,
                 filter: ['all', ['match', ['get', 'class'], ['ditch', 'drain'], true, false], ['!=', ['get', 'brunnel'], 'tunnel'], ['!=', ['get', 'intermittent'], 1]],
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
                 paint: {
-                    'line-color': '#1bb4bd',
-                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 9.8, 0.54, 15, 0.88],
-                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 9.8, 0.16, 15, 1.25, 19, 2.9]
+                    'line-color': '#28c0cc',
+                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 8, 0.42, 12, 0.62, 15, 0.88],
+                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 8, 0.08, 11, 0.16, 15, 1.25, 19, 2.9]
                 }
             },
             {
@@ -593,14 +597,14 @@ function createHydroBaseMapStyle() {
                 type: 'line',
                 source: 'openmaptiles',
                 'source-layer': 'waterway',
-                minzoom: 10.5,
+                minzoom: 8.5,
                 filter: ['all', ['match', ['get', 'class'], ['ditch', 'drain'], true, false], ['!=', ['get', 'brunnel'], 'tunnel'], ['==', ['get', 'intermittent'], 1]],
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
                 paint: {
-                    'line-color': '#1bb4bd',
+                    'line-color': '#28c0cc',
                     'line-dasharray': [1.6, 1.8],
-                    'line-opacity': 0.58,
-                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 10.5, 0.16, 15, 1.1, 19, 2.6]
+                    'line-opacity': 0.52,
+                    'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 8.5, 0.08, 11, 0.16, 15, 1.1, 19, 2.6]
                 }
             },
             {
@@ -632,6 +636,7 @@ function createHydroBaseMapStyle() {
                         'picnic_site',
                         'camp_site',
                         'campsite',
+                        'bbq',
                         'information',
                         'drinking_water',
                         'ferry_terminal',
@@ -651,7 +656,7 @@ function createHydroBaseMapStyle() {
                     'icon-image': ['match', ['get', 'subclass'],
                         ['waterfall', 'spring'], 'water',
                         ['viewpoint'], 'mountain',
-                        ['picnic_site'], 'picnic_site',
+                        ['picnic_site', 'bbq'], 'picnic_site',
                         ['camp_site', 'campsite'], 'campsite',
                         ['information'], 'information',
                         ['drinking_water'], 'drinking_water',
@@ -678,6 +683,105 @@ function createHydroBaseMapStyle() {
                 },
                 paint: {
                     'icon-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0.72, 16, 0.9],
+                    'text-color': '#53615b',
+                    'text-halo-color': 'rgba(247, 244, 236, 0.92)',
+                    'text-halo-width': 1.2
+                }
+            },
+            {
+                // POI standard: distributori, supermercati, farmacie, ospedali, scuole, banche, ecc.
+                id: 'idro-standard-poi',
+                type: 'symbol',
+                source: 'openmaptiles',
+                'source-layer': 'poi',
+                minzoom: 14,
+                filter: ['all',
+                    ['match', ['geometry-type'], ['Point', 'MultiPoint'], true, false],
+                    ['match', ['get', 'subclass'], [
+                        'fuel',
+                        'supermarket',
+                        'convenience',
+                        'pharmacy',
+                        'hospital',
+                        'clinic',
+                        'doctors',
+                        'dentist',
+                        'school',
+                        'kindergarten',
+                        'college',
+                        'university',
+                        'bank',
+                        'atm',
+                        'post_office',
+                        'fire_station',
+                        'police',
+                        'fast_food',
+                        'hotel',
+                        'hostel',
+                        'motel',
+                        'guest_house',
+                        'museum',
+                        'cinema',
+                        'theatre',
+                        'bicycle_rental',
+                        'hairdresser',
+                        'laundry',
+                        'bakery',
+                        'butcher',
+                        'clothes',
+                        'playground',
+                        'shelter',
+                        'lighthouse',
+                        'place_of_worship',
+                        'church',
+                        'mosque',
+                        'synagogue'
+                    ], true, false]
+                ],
+                layout: {
+                    'icon-image': ['match', ['get', 'subclass'],
+                        ['fuel'], 'fuel',
+                        ['supermarket', 'convenience'], 'grocery',
+                        ['pharmacy'], 'pharmacy',
+                        ['hospital', 'clinic', 'doctors'], 'hospital',
+                        ['dentist'], 'dentist',
+                        ['school', 'kindergarten', 'college', 'university'], 'school',
+                        ['bank', 'atm'], 'bank',
+                        ['post_office'], 'post',
+                        ['fire_station'], 'fire_station',
+                        ['police'], 'police',
+                        ['fast_food'], 'fast_food',
+                        ['hotel', 'hostel', 'motel', 'guest_house'], 'lodging',
+                        ['museum'], 'museum',
+                        ['cinema'], 'cinema',
+                        ['theatre'], 'theatre',
+                        ['bicycle_rental'], 'bicycle_rental',
+                        ['hairdresser'], 'hairdresser',
+                        ['laundry'], 'laundry',
+                        ['bakery'], 'bakery',
+                        ['butcher'], 'butcher',
+                        ['clothes'], 'clothing_store',
+                        ['playground'], 'playground',
+                        ['shelter'], 'shelter',
+                        ['lighthouse'], 'lighthouse',
+                        ['place_of_worship', 'church'], 'place_of_worship',
+                        ['mosque'], 'religious_muslim',
+                        ['synagogue'], 'religious_jewish',
+                        'circle'
+                    ],
+                    'icon-size': ['interpolate', ['linear'], ['zoom'], 14, 0.38, 17, 0.54],
+                    'icon-padding': 2,
+                    'icon-allow-overlap': false,
+                    'text-anchor': 'top',
+                    'text-field': ['step', ['zoom'], '', 16, ['coalesce', ['get', 'name:it'], ['get', 'name'], ['get', 'name_en']]],
+                    'text-font': ['Noto Sans Regular'],
+                    'text-max-width': 8,
+                    'text-offset': [0, 0.75],
+                    'text-optional': true,
+                    'text-size': ['interpolate', ['linear'], ['zoom'], 16, 10, 18, 11]
+                },
+                paint: {
+                    'icon-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0.68, 16, 0.88],
                     'text-color': '#53615b',
                     'text-halo-color': 'rgba(247, 244, 236, 0.92)',
                     'text-halo-width': 1.2

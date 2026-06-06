@@ -22,19 +22,36 @@ const CHART_METRICS = {
         label: 'Altitudine (m)',
         color: '#38bdf8',
         unit: 'm',
-        tick: value => `${Math.round(Number(value))} m`
+        tick: value => `${Math.round(Number(value))} m`,
+        spanGaps: true
     },
     speed: {
         label: 'Velocità (km/h)',
         color: '#f59e0b',
         unit: 'km/h',
-        tick: value => `${Number(value).toFixed(1)} km/h`
+        tick: value => `${Number(value).toFixed(1)} km/h`,
+        spanGaps: false
     },
     slope: {
         label: 'Pendenza (%)',
         color: '#ef4444',
         unit: '%',
-        tick: value => `${Number(value).toFixed(1)}%`
+        tick: value => `${Number(value).toFixed(1)}%`,
+        spanGaps: false
+    },
+    tilt: {
+        label: 'Inclinazione (°)',
+        color: '#a78bfa',
+        unit: '°',
+        tick: value => `${Number(value).toFixed(1)}°`,
+        spanGaps: false
+    },
+    vibration: {
+        label: 'Vibrazioni (liv.)',
+        color: '#f87171',
+        unit: '',
+        tick: value => `${Math.round(Number(value))}`,
+        spanGaps: false
     }
 };
 
@@ -328,6 +345,9 @@ function updateChartAppearance(currentChart) {
     dataset.borderColor = metric.color;
     dataset.backgroundColor = 'transparent';
     dataset.fill = false;
+    // spanGaps: true solo per altitudine (dati GPS possono avere buchi)
+    // false per slope/speed/tilt/vibrazione per non collegare segmenti diversi
+    dataset.spanGaps = metric.spanGaps !== false;
     currentChart.options.scales.x.ticks.callback = value => formatXAxisTick(value);
     currentChart.options.scales.y.ticks.callback = value => formatYAxisTick(value);
 }
@@ -399,6 +419,12 @@ function _doUpdateStats() {
     let timedDistance = 0;
     let timedHours    = 0;
     let totalSegments = 0;
+    let maxTilt       = 0;
+    let maxVibration  = 0;
+    let totalVibration = 0;
+    let vibrationCount = 0;
+    let hasTiltData    = false;
+    let hasVibrationData = false;
     const surfaceKm = { paved: 0, offroad: 0, unknown: 0 };
 
     // Profilo campionato in-loop (no array intermedio gigante)
@@ -411,6 +437,8 @@ function _doUpdateStats() {
     let pointIndex = 0;
     let minTimeMs = Infinity;
     let maxTimeMs = -Infinity;
+    // Flag: primo segmento assoluto (non inserire separatore prima)
+    let isFirstSegment = true;
 
     // ── Conteggio rapido punti totali e range temporale per il sampling ───────
     let pointsTotalEstimate = 0;
@@ -456,12 +484,18 @@ function _doUpdateStats() {
             const pts = seg.points;
             const n = pts.length;
             const segmentSurface = resolveSegmentSurface(track, seg);
+            // Traccia l'indice iniziale in chartData per inserire il separatore
+            const segChartStartIndex = chartData.length;
+            let segSeparatorInserted = false;
+
             for (let i = 0; i < n; i++) {
                 const pt = pts[i];
                 const ele = Number(pt.ele) || 0;
                 const timeMs = readPointTimeMs(pt);
                 let currentSpeed = null;
                 let currentSlope = null;
+                let currentTilt = null;
+                let currentVibration = null;
 
                 if (prevPt !== null) {
                     const startDist = cumulativeDist;
@@ -513,6 +547,21 @@ function _doUpdateStats() {
 
                 if (ele > maxElevation) maxElevation = ele;
 
+                // Dati sensori inclinometro e vibrazioni (da registrazione)
+                if (Number.isFinite(pt.tilt)) {
+                    currentTilt = pt.tilt;
+                    const absTilt = Math.abs(pt.tilt);
+                    if (absTilt > maxTilt) maxTilt = absTilt;
+                    hasTiltData = true;
+                }
+                if (Number.isFinite(pt.vibrationLevel)) {
+                    currentVibration = pt.vibrationLevel;
+                    totalVibration += pt.vibrationLevel;
+                    vibrationCount++;
+                    if (pt.vibrationLevel > maxVibration) maxVibration = pt.vibrationLevel;
+                    hasVibrationData = true;
+                }
+
                 const pointX = useTimeAxis && timeMs !== null
                     ? (timeMs - minTimeMs) / 60000
                     : (!useTimeAxis ? cumulativeDist : null);
@@ -521,6 +570,17 @@ function _doUpdateStats() {
                     pointY = currentSpeed;
                 } else if (_chartMetric === 'slope') {
                     pointY = currentSlope;
+                } else if (_chartMetric === 'tilt') {
+                    pointY = currentTilt;
+                } else if (_chartMetric === 'vibration') {
+                    pointY = currentVibration;
+                }
+
+                // Separatore null tra segmenti: rompe la linea tra segmenti diversi
+                // (spanGaps:false per slope/speed/tilt/vibrazione lo rende visivo)
+                if (!isFirstSegment && !segSeparatorInserted && Number.isFinite(pointX)) {
+                    chartData.push({ x: pointX, y: null });
+                    segSeparatorInserted = true;
                 }
 
                 // Sampling inline per il chart — niente array intermedio
@@ -530,6 +590,10 @@ function _doUpdateStats() {
                 pointIndex++;
                 prevPt = pt;
                 prevTimeMs = timeMs;
+            }
+
+            if (chartData.length > segChartStartIndex) {
+                isFirstSegment = false;
             }
         }
     }
@@ -564,6 +628,10 @@ function _doUpdateStats() {
     if (surfaceEl) {
         surfaceEl.title = `Asfalto ${surfaceKm.paved.toFixed(2)} km, Offroad ${surfaceKm.offroad.toFixed(2)} km, N/D ${surfaceKm.unknown.toFixed(2)} km`;
     }
+    // Statistiche sensori (disponibili solo se la traccia è stata registrata con sensori attivi)
+    setText('stat-max-tilt', hasTiltData ? `${maxTilt.toFixed(1)}°` : '--');
+    setText('stat-avg-vibration', hasVibrationData ? `${(totalVibration / vibrationCount).toFixed(1)}` : '--');
+    setText('stat-max-vibration', hasVibrationData ? `${maxVibration}` : '--');
 
     // ── Aggiorna il grafico selezionato ──────────────────────────────────────
     const applyChartData = (currentChart) => {

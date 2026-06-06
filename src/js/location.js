@@ -91,6 +91,7 @@ let _renderGisTree = null;
 let _updateActiveTracksHeader = null;
 let _schedulePersistTracks = null;
 let _saveHistoryState = null;
+let _getSensorData = null;
 let _recordingSettings = { ...DEFAULT_RECORDING_SETTINGS };
 let _recording = createEmptyRecording();
 let _recordingTickIntervalId = null;
@@ -111,6 +112,9 @@ export function initDeviceLocation(options = {}) {
     _updateActiveTracksHeader = typeof options.updateActiveTracksHeader === 'function' ? options.updateActiveTracksHeader : null;
     _schedulePersistTracks = typeof options.schedulePersistTracks === 'function' ? options.schedulePersistTracks : null;
     _saveHistoryState = typeof options.saveHistoryState === 'function' ? options.saveHistoryState : null;
+    // Funzione opzionale per leggere i dati sensore correnti (tilt, pitch, vibrazione)
+    // iniettata da ui.js tramite main.js per arricchire i punti GPS registrati
+    _getSensorData = typeof options.getSensorData === 'function' ? options.getSensorData : null;
     bindPageVisibilityHandling();
 }
 
@@ -247,8 +251,8 @@ export async function finishDeviceRecording(name = getDefaultRecordingName()) {
 
     const recording = _recording;
     const recordedPoints = chooseRecordedPointsForSave(recording);
-    if (recordedPoints.length < 2) {
-        notify("Servono almeno due punti GPS validi per salvare la registrazione", "error");
+    if (recordedPoints.length < 1) {
+        notify("Nessun punto GPS registrato", "error");
         emitRecordingStatus();
         return null;
     }
@@ -814,12 +818,20 @@ function updateLiveLocationFrame(fix, moving, heading) {
 }
 
 function createRecordingPoint(fix, lat = fix.lat, lon = fix.lon) {
-    return {
+    const point = {
         lat,
         lon,
         ele: _recordingSettings.saveElevation && Number.isFinite(fix.ele) ? Math.round(fix.ele) : 0,
         time: fix.timestamp
     };
+    // Arricchisce il punto con dati sensore (tilt, pitch, vibrazione) se disponibili
+    if (_getSensorData) {
+        const sensor = _getSensorData();
+        if (Number.isFinite(sensor?.tilt)) point.tilt = Math.round(sensor.tilt * 10) / 10;
+        if (Number.isFinite(sensor?.pitch)) point.pitch = Math.round(sensor.pitch * 10) / 10;
+        if (Number.isFinite(sensor?.vibrationLevel)) point.vibrationLevel = sensor.vibrationLevel;
+    }
+    return point;
 }
 
 function normalizeRecordingPoint(point) {
@@ -880,6 +892,11 @@ function shouldAcceptRecordingFix(fix) {
     if (elapsedMs < _recordingSettings.minIntervalMs) return false;
 
     const distance = distanceMeters(lastPoint, fix);
+
+    // Se fermo (nessuno spostamento significativo) ma è trascorso l'intervallo minimo,
+    // registra il punto comunque — permette la registrazione stazionaria in base al tempo
+    if (distance < RECORDING_STILL_MIN_DISTANCE_M) return true;
+
     if (distance < requiredRecordingDistance(fix)) return false;
 
     const impliedSpeed = distance / Math.max(0.001, elapsedMs / 1000);

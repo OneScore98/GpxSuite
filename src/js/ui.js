@@ -528,6 +528,18 @@ function syncDeviceDashboardSensors() {
     }
 }
 
+// Restituisce i dati sensore correnti per arricchire i punti GPS durante la registrazione.
+// Chiamata da location.js tramite dependency injection in initDeviceLocation.
+export function getCurrentRecordingSensorData() {
+    const tiltFresh = isDeviceDashboardSensorFresh(_deviceDashboardTiltState.updatedAt);
+    const motionFresh = isDeviceDashboardSensorFresh(_deviceDashboardMotionState.updatedAt);
+    return {
+        tilt: tiltFresh && Number.isFinite(_deviceDashboardTiltState.tilt) ? _deviceDashboardTiltState.tilt : null,
+        pitch: tiltFresh && Number.isFinite(_deviceDashboardTiltState.pitch) ? _deviceDashboardTiltState.pitch : null,
+        vibrationLevel: motionFresh && Number.isFinite(_deviceDashboardMotionState.level) ? _deviceDashboardMotionState.level : null
+    };
+}
+
 function setDeviceDashboardTiltZeroFromCurrent() {
     if (!isDeviceDashboardSensorFresh(_deviceDashboardTiltState.updatedAt)) {
         showToast("Inclinometro non ancora disponibile", "info");
