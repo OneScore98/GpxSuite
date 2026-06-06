@@ -432,12 +432,12 @@ function createHydroBaseMapStyle() {
                 filter: ['!=', ['get', 'brunnel'], 'tunnel'],
                 paint: {
                     'line-color': '#45b6ea',
-                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0.38, 14, 0.8],
+                    'line-opacity': 0,
                     'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 7, 0.25, 14, 1.2, 18, 2.4]
                 }
             },
             {
-                // Fiumi — blu navy profondo (più scuro e più largo)
+                // Fiumi — glow nascosto: ridondante sui fiumi con fill poligonale
                 id: 'idro-waterway-river-glow',
                 type: 'line',
                 source: 'openmaptiles',
@@ -446,11 +446,12 @@ function createHydroBaseMapStyle() {
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
                 paint: {
                     'line-color': '#b8e8fa',
-                    'line-opacity': 0.9,
-                    'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 6, 1, 10, 4, 14, 12, 19, 22]
+                    'line-opacity': 0,
+                    'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 4, 2, 7, 6, 10, 14, 14, 22, 19, 32]
                 }
             },
             {
+                // Fiumi — halo nascosto: ridondante sui fiumi con fill poligonale
                 id: 'idro-waterway-river-halo',
                 type: 'line',
                 source: 'openmaptiles',
@@ -458,22 +459,9 @@ function createHydroBaseMapStyle() {
                 filter: ['all', ['==', ['get', 'class'], 'river'], ['!=', ['get', 'brunnel'], 'tunnel']],
                 layout: { 'line-cap': 'round', 'line-join': 'round' },
                 paint: {
-                    'line-color': '#3a9edb',
-                    'line-opacity': 0.82,
-                    'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 6, 0.55, 10, 2.4, 14, 7, 19, 13]
-                }
-            },
-            {
-                id: 'idro-waterway-river-core',
-                type: 'line',
-                source: 'openmaptiles',
-                'source-layer': 'waterway',
-                filter: ['all', ['==', ['get', 'class'], 'river'], ['!=', ['get', 'brunnel'], 'tunnel'], ['!=', ['get', 'intermittent'], 1]],
-                layout: { 'line-cap': 'round', 'line-join': 'round' },
-                paint: {
-                    'line-color': '#0565a8',
-                    'line-opacity': 0.95,
-                    'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 6, 0.25, 10, 1.1, 14, 3.8, 19, 7]
+                    'line-color': '#5ab8e8',
+                    'line-opacity': 0,
+                    'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 4, 1, 7, 3.5, 10, 8, 14, 14, 19, 22]
                 }
             },
             {
@@ -622,6 +610,86 @@ function createHydroBaseMapStyle() {
                 }
             },
             {
+                // Ponti — bordo bianco (outline, stile classico stradale)
+                id: 'idro-bridge-casing',
+                type: 'line',
+                source: 'openmaptiles',
+                'source-layer': 'transportation',
+                filter: ['all',
+                    ['match', ['geometry-type'], ['LineString', 'MultiLineString'], true, false],
+                    ['==', ['get', 'brunnel'], 'bridge']
+                ],
+                layout: { 'line-cap': 'butt', 'line-join': 'round' },
+                paint: {
+                    'line-color': '#c8bfb0',
+                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 10, 0.85, 14, 1.0],
+                    'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 10, 4.5, 12, 9, 16, 22]
+                }
+            },
+            {
+                // Ponti — superficie stradale (stesso colore delle strade normali)
+                id: 'idro-bridge-road',
+                type: 'line',
+                source: 'openmaptiles',
+                'source-layer': 'transportation',
+                filter: ['all',
+                    ['match', ['geometry-type'], ['LineString', 'MultiLineString'], true, false],
+                    ['==', ['get', 'brunnel'], 'bridge']
+                ],
+                layout: { 'line-cap': 'butt', 'line-join': 'round' },
+                paint: {
+                    'line-color': '#f5f4ee',
+                    'line-opacity': ['interpolate', ['linear'], ['zoom'], 10, 0.95, 14, 1.0],
+                    'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 10, 2.5, 12, 6, 16, 16]
+                }
+            },
+            {
+                // POI importanti visibili già da zoom 10 (porto, traghetto, picnic, ristorante, rifugio, panorama)
+                id: 'idro-river-poi-lowzoom',
+                type: 'symbol',
+                source: 'openmaptiles',
+                'source-layer': 'poi',
+                minzoom: 10,
+                maxzoom: 14,
+                filter: ['all',
+                    ['match', ['geometry-type'], ['Point', 'MultiPoint'], true, false],
+                    ['match', ['get', 'subclass'], [
+                        'ferry_terminal', 'ferry',
+                        'marina', 'harbor', 'boat_rental',
+                        'picnic_site', 'bbq',
+                        'viewpoint',
+                        'camp_site', 'campsite',
+                        'shelter',
+                        'restaurant', 'cafe',
+                        'drinking_water',
+                        'information'
+                    ], true, false]
+                ],
+                layout: {
+                    'icon-image': ['match', ['get', 'subclass'],
+                        ['ferry_terminal', 'ferry'], 'ferry',
+                        ['marina', 'boat_rental', 'harbor'], 'harbor',
+                        ['picnic_site', 'bbq'], 'picnic_site',
+                        ['viewpoint'], 'mountain',
+                        ['camp_site', 'campsite'], 'campsite',
+                        ['shelter'], 'shelter',
+                        ['restaurant'], 'restaurant',
+                        ['cafe'], 'cafe',
+                        ['drinking_water'], 'drinking_water',
+                        ['information'], 'information',
+                        'circle'
+                    ],
+                    'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.9, 12, 1.1, 14, 1.3],
+                    'icon-allow-overlap': false,
+                    'icon-ignore-placement': false,
+                    'icon-padding': 2,
+                    'text-field': ''
+                },
+                paint: {
+                    'icon-opacity': ['interpolate', ['linear'], ['zoom'], 10, 0.9, 13, 1.0]
+                }
+            },
+            {
                 id: 'idro-river-poi',
                 type: 'symbol',
                 source: 'openmaptiles',
@@ -670,7 +738,7 @@ function createHydroBaseMapStyle() {
                         ['bar'], 'bar',
                         'circle'
                     ],
-                    'icon-size': ['interpolate', ['linear'], ['zoom'], 14, 0.42, 17, 0.58],
+                    'icon-size': ['interpolate', ['linear'], ['zoom'], 14, 1.1, 17, 1.4],
                     'icon-padding': 2,
                     'icon-allow-overlap': false,
                     'text-anchor': 'top',
@@ -769,7 +837,7 @@ function createHydroBaseMapStyle() {
                         ['synagogue'], 'religious_jewish',
                         'circle'
                     ],
-                    'icon-size': ['interpolate', ['linear'], ['zoom'], 14, 0.38, 17, 0.54],
+                    'icon-size': ['interpolate', ['linear'], ['zoom'], 14, 1.0, 17, 1.3],
                     'icon-padding': 2,
                     'icon-allow-overlap': false,
                     'text-anchor': 'top',
@@ -832,20 +900,21 @@ function createHydroBaseMapStyle() {
                 type: 'symbol',
                 source: 'openmaptiles',
                 'source-layer': 'waterway',
-                minzoom: 10,
+                minzoom: 9,
                 filter: ['match', ['geometry-type'], ['LineString', 'MultiLineString'], true, false],
                 layout: {
                     'symbol-placement': 'line',
-                    'symbol-spacing': 320,
+                    'symbol-spacing': 280,
                     'text-field': ['coalesce', ['get', 'name:it'], ['get', 'name'], ['get', 'name_en']],
                     'text-font': ['Noto Sans Italic'],
-                    'text-size': ['interpolate', ['linear'], ['zoom'], 10, 10, 15, 14],
-                    'text-max-width': 6
+                    'text-size': ['interpolate', ['linear'], ['zoom'], 9, 11, 12, 13, 15, 16],
+                    'text-max-width': 8
                 },
                 paint: {
-                    'text-color': '#056aa6',
-                    'text-halo-color': 'rgba(236, 251, 255, 0.9)',
-                    'text-halo-width': 1.6
+                    'text-color': '#1a5f8a',
+                    'text-opacity': ['interpolate', ['linear'], ['zoom'], 9, 0.8, 11, 1.0],
+                    'text-halo-color': 'rgba(240, 248, 255, 0.96)',
+                    'text-halo-width': 2.0
                 }
             },
             {
@@ -987,12 +1056,16 @@ function createOutdoorBaseMapStyle() {
             layer.paint['fill-opacity'] = 0.16;
         }
         if (layer.id === 'idro-water-outline') {
-            layer.paint['line-color'] = '#9fcbd8';
-            layer.paint['line-opacity'] = ['interpolate', ['linear'], ['zoom'], 7, 0.12, 14, 0.28];
+            // Nascosto: il bordo del poligono crea un brutto effetto sul fill
+            layer.paint['line-opacity'] = 0;
         }
         if (layer.id.startsWith('idro-waterway-') && layer.type === 'line' && layer.paint?.['line-opacity'] !== undefined) {
             layer.paint['line-opacity'] = ['interpolate', ['linear'], ['zoom'], 8, 0.08, 14, 0.24];
             layer.paint['line-color'] = '#8fc7d7';
+        }
+        // Glow e halo dei fiumi principali: nascosti perché ridondanti sui fiumi con fill poligonale
+        if (layer.id === 'idro-waterway-river-glow' || layer.id === 'idro-waterway-river-halo') {
+            layer.paint['line-opacity'] = 0;
         }
         if (layer.id === 'idro-road-minor') {
             layer.paint['line-opacity'] = ['interpolate', ['linear'], ['zoom'], 10, 0.18, 16, 0.42];
@@ -1017,13 +1090,23 @@ function createOutdoorBaseMapStyle() {
             layer.paint['text-halo-width'] = 1.45;
         }
         if (layer.id === 'idro-waterway-label' || layer.id === 'idro-water-name-point-label' || layer.id === 'idro-water-name-line-label') {
-            layer.paint['text-color'] = '#6d9cac';
-            layer.paint['text-opacity'] = ['interpolate', ['linear'], ['zoom'], 9, 0.2, 14, 0.42];
-            layer.paint['text-halo-color'] = 'rgba(245, 241, 231, 0.9)';
+            layer.paint['text-color'] = '#2a6e8c';
+            layer.paint['text-opacity'] = ['interpolate', ['linear'], ['zoom'], 9, 0.7, 12, 0.9, 16, 1.0];
+            layer.paint['text-halo-color'] = 'rgba(240, 248, 255, 0.95)';
+            layer.paint['text-halo-width'] = 1.8;
+            if (layer.layout) {
+                layer.layout['text-size'] = ['interpolate', ['linear'], ['zoom'], 9, 11, 12, 13, 15, 15];
+            }
         }
         if (layer.id === 'idro-river-poi') {
-            layer.minzoom = 12;
-            layer.paint['icon-opacity'] = ['interpolate', ['linear'], ['zoom'], 12, 0.52, 16, 0.86];
+            layer.minzoom = 14;
+            layer.paint['icon-opacity'] = ['interpolate', ['linear'], ['zoom'], 14, 0.72, 16, 0.92];
+        }
+        if (layer.id === 'idro-river-poi-lowzoom') {
+            layer.paint['icon-opacity'] = ['interpolate', ['linear'], ['zoom'], 10, 0.78, 13, 0.95];
+        }
+        if (layer.id === 'idro-bridge-casing') {
+            layer.paint['line-color'] = '#c8bfb0';
         }
     });
 
