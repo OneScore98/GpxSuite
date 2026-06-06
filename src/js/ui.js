@@ -359,21 +359,31 @@ async function requestDashboardMotionPermission() {
     }
 }
 
-async function requestDashboardOrientationPermission() {
+async function requestDashboardOrientationPermission(options = {}) {
     if (typeof window.DeviceOrientationEvent === 'undefined') {
         showToast("Inclinometro non supportato da questo browser", "error");
         return false;
     }
     if (_requestDeviceOrientationPermission) {
-        return await _requestDeviceOrientationPermission();
+        const granted = await _requestDeviceOrientationPermission({ forcePrompt: options.forcePrompt === true });
+        if (granted) {
+            syncDeviceDashboardSensors();
+            scheduleDeviceDashboardSensorRender();
+        }
+        return granted;
     }
     try {
         const OrientationEvent = window.DeviceOrientationEvent;
+        let granted = true;
         if (typeof OrientationEvent.requestPermission === 'function') {
             const permission = await OrientationEvent.requestPermission();
-            return permission === 'granted';
+            granted = permission === 'granted';
         }
-        return true;
+        if (granted) {
+            syncDeviceDashboardSensors();
+            scheduleDeviceDashboardSensorRender();
+        }
+        return granted;
     } catch (err) {
         console.warn('Inclinometro non disponibile', err);
         return false;
@@ -383,7 +393,7 @@ async function requestDashboardOrientationPermission() {
 function requestDashboardSensorPermissionsFromGesture() {
     const requests = [];
     if (typeof window.DeviceOrientationEvent !== 'undefined') {
-        requests.push(requestDashboardOrientationPermission());
+        requests.push(requestDashboardOrientationPermission({ forcePrompt: true }));
     }
     if (typeof window.DeviceMotionEvent !== 'undefined') {
         requests.push(requestDashboardMotionPermission());
@@ -412,7 +422,7 @@ async function ensureDashboardTiltPermissionIfEnabled(fromGesture = false) {
     }
 
     _deviceDashboardTiltPermissionPrompted = true;
-    const granted = await requestDashboardOrientationPermission();
+    const granted = await requestDashboardOrientationPermission({ forcePrompt: true });
     if (granted) {
         syncDeviceDashboardSensors();
         scheduleDeviceDashboardSensorRender();
@@ -686,7 +696,7 @@ function bindDeviceDashboardSettingsForm() {
                 persistDeviceDashboardSettings();
                 if (enabledInput.checked && field.id === 'tilt') {
                     _deviceDashboardTiltPermissionPrompted = false;
-                    await requestDashboardOrientationPermission();
+                    await requestDashboardOrientationPermission({ forcePrompt: true });
                 }
                 if (enabledInput.checked && field.id === 'vibration') {
                     await requestDashboardMotionPermission();
@@ -3958,7 +3968,7 @@ export function setupEvents() {
         setTimeout(() => scheduleDevicePermissionRefresh(true), 1200);
     });
     document.getElementById('btn-orientation-permission')?.addEventListener('click', async() => {
-        await _requestDeviceOrientationPermission?.();
+        await requestDashboardOrientationPermission({ forcePrompt: true });
         scheduleDevicePermissionRefresh(true);
     });
     document.getElementById('btn-motion-permission')?.addEventListener('click', async() => {

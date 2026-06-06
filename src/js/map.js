@@ -796,12 +796,18 @@ function createOutdoorBaseMapStyle() {
         attribution: 'Map data &copy; OpenTopoMap'
     };
 
-    const coloreCarrozzabileOsmAnd = '#9a6808';
-    const coloreStradaTerraOsmAnd = '#14972a';
-    const colorePistaOperativaOsmAnd = '#00a82a';
-    const coloreFondoDifficileOsmAnd = '#00b331';
-    const coloreDivietoOsmAnd = '#d71920';
+    const colorePistaOsmAnd = ['step', ['zoom'], '#663300', 13, '#996600'];
+    const coloreCheminOsmAnd = ['step', ['zoom'], '#558855', 14, '#008800'];
+    const coloreSentierOsmAnd = ['step', ['zoom'], '#444444', 15, '#000000'];
+    const coloreDivietoOsmAnd = '#ff3333';
+    const larghezzaPistaOsmAnd = ['interpolate', ['linear'], ['zoom'], 9, 0.6, 10, 0.9, 12, 1.25, 13, 1.5, 14, 2, 15, 2.5, 16, 3, 17, 3.5, 18, 4];
+    const larghezzaCheminOsmAnd = ['interpolate', ['linear'], ['zoom'], 9, 0.65, 10, 0.95, 12, 1.25, 13, 1.5, 14, 2, 15, 2.5, 16, 3, 17, 3.5, 18, 4];
+    const larghezzaSentierOsmAnd = ['interpolate', ['linear'], ['zoom'], 10, 0.5, 12, 0.8, 13, 1, 14, 1.5, 15, 1.75, 16, 2, 17, 2.25, 18, 2.5];
+    const trattinoPistaOsmAnd = [4, 1];
+    const trattinoCheminOsmAnd = [4, 1];
+    const trattinoSentierOsmAnd = [1, 1];
     const trackRoadClassFilter = ['match', ['get', 'class'], ['track', 'service'], true, false];
+    const outdoorWayClassFilter = ['match', ['get', 'class'], ['track', 'service', 'path', 'pedestrian', 'footway', 'cycleway'], true, false];
     const easyTrackFilter = ['any',
         ['match', ['get', 'tracktype'], ['grade1', 'grade2'], true, false],
         ['match', ['get', 'surface'], ['unhewn_cobblestone', 'paved', 'paving_stones', 'compacted', 'metal', 'chipseal', 'wood', 'fine_gravel', 'asphalt', 'concrete'], true, false]
@@ -811,20 +817,38 @@ function createOutdoorBaseMapStyle() {
         ['match', ['get', 'surface'], ['rock', 'gravel', 'pebblestone', 'cobblestone'], true, false]
     ];
     const weatherTrackFilter = ['==', ['get', 'tracktype'], 'grade4'];
-    const groundTrackFilter = ['any',
+    const bareGroundTrackFilter = ['any',
+        ['==', ['get', 'ford'], 'yes'],
+        ['match', ['get', 'smoothness'], ['very_horrible', 'horrible'], true, false],
         ['==', ['get', 'tracktype'], 'grade5'],
-        ['match', ['get', 'surface'], ['mud', 'grass', 'sand', 'dirt', 'earth', 'unpaved', 'ground'], true, false],
-        ['all', ['==', ['get', 'class'], 'track'], ['!', ['has', 'surface']], ['!', ['has', 'tracktype']]]
+        ['match', ['get', 'surface'], ['mud', 'grass', 'sand', 'dirt', 'earth', 'unpaved', 'ground'], true, false]
     ];
-    const hardGroundTrackFilter = ['any',
-        ['==', ['get', 'tracktype'], 'grade5'],
-        ['match', ['get', 'surface'], ['mud', 'grass', 'sand'], true, false]
+    const undefinedTrackFilter = ['all',
+        ['==', ['get', 'class'], 'track'],
+        ['!', ['has', 'surface']],
+        ['!', ['has', 'tracktype']],
+        ['!', ['has', 'ford']],
+        ['!', ['has', 'smoothness']]
     ];
-    const operatingTrackFilter = ['all', groundTrackFilter, ['!', hardGroundTrackFilter]];
+    const groundTrackFilter = ['any', bareGroundTrackFilter, undefinedTrackFilter];
     const trailFilter = ['match', ['get', 'class'], ['path', 'pedestrian'], true, false];
+    const accessoDivieto = ['private', 'no', 'destination', 'forestry', 'agricultural', 'customers'];
+    const forbiddenAccessFilter = ['any',
+        ['match', ['get', 'access'], accessoDivieto, true, false],
+        ['match', ['get', 'vehicle'], accessoDivieto, true, false],
+        ['match', ['get', 'motor_vehicle'], accessoDivieto, true, false],
+        ['match', ['get', 'motorcar'], accessoDivieto, true, false],
+        ['match', ['get', 'motorcycle'], accessoDivieto, true, false],
+        ['match', ['get', 'class'], ['cycleway', 'footway'], true, false]
+    ];
     const restrictedFilter = ['all',
-        trackRoadClassFilter,
-        ['match', ['get', 'access'], ['no', 'private', 'customers'], true, false]
+        outdoorWayClassFilter,
+        forbiddenAccessFilter
+    ];
+    const barrierKind = ['coalesce', ['get', 'barrier'], ['get', 'subclass'], ['get', 'class']];
+    const barrierFilter = ['all',
+        ['match', ['geometry-type'], ['Point', 'MultiPoint'], true, false],
+        ['match', barrierKind, ['gate', 'lift_gate', 'swing_gate', 'hampshire_gate', 'chain', 'fence', 'cycle_barrier', 'motorcycle_barrier', 'block', 'bollard', 'yes', 'entrance', 'stile', 'horse_stile', 'kissing_gate', 'turnstile', 'cattle_grid', 'toll_booth', 'border_control', 'debris', 'log'], true, false]
     ];
     const mtbScale = ['to-number', ['coalesce', ['get', 'mtb_scale'], ['get', 'mtb:scale']], -1];
     const easyDifficultyFilter = ['all',
@@ -882,10 +906,11 @@ function createOutdoorBaseMapStyle() {
         if (layer.id === 'idro-place-label') {
             layer.minzoom = 3;
             layer.filter = ['match', ['get', 'class'], ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood', 'state', 'country'], true, false];
-            layer.layout['text-size'] = ['interpolate', ['linear'], ['zoom'], 3, 10, 7, 12, 12, 15, 15, 17];
-            layer.paint['text-opacity'] = ['interpolate', ['linear'], ['zoom'], 3, 0.58, 12, 0.88];
-            layer.paint['text-color'] = '#4d4a43';
+            layer.layout['text-size'] = ['interpolate', ['linear'], ['zoom'], 3, 10.5, 7, 12.5, 12, 15.8, 15, 17.5];
+            layer.paint['text-opacity'] = ['interpolate', ['linear'], ['zoom'], 3, 0.72, 12, 0.95];
+            layer.paint['text-color'] = '#3f3b34';
             layer.paint['text-halo-color'] = '#f5f1e7';
+            layer.paint['text-halo-width'] = 1.45;
         }
         if (layer.id === 'idro-waterway-label' || layer.id === 'idro-water-name-point-label' || layer.id === 'idro-water-name-line-label') {
             layer.paint['text-color'] = '#6d9cac';
@@ -918,13 +943,13 @@ function createOutdoorBaseMapStyle() {
             type: 'line',
             source: 'openmaptiles',
             'source-layer': 'transportation',
-            minzoom: 8,
+            minzoom: 9,
             filter: ['all', trackRoadClassFilter, easyTrackFilter, ['!=', ['get', 'brunnel'], 'tunnel']],
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
                 'line-color': '#d2c5aa',
                 'line-opacity': 0.42,
-                'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 8, 0.55, 10, 1.25, 14, 4.5, 18, 8.4]
+                'line-width': ['interpolate', ['linear'], ['zoom'], 9, 1.2, 10, 1.8, 12, 2.5, 14, 4, 16, 6, 18, 8]
             }
         },
         {
@@ -932,13 +957,13 @@ function createOutdoorBaseMapStyle() {
             type: 'line',
             source: 'openmaptiles',
             'source-layer': 'transportation',
-            minzoom: 8,
+            minzoom: 9,
             filter: ['all', trackRoadClassFilter, easyTrackFilter, ['!=', ['get', 'brunnel'], 'tunnel']],
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
-                'line-color': coloreCarrozzabileOsmAnd,
+                'line-color': colorePistaOsmAnd,
                 'line-opacity': 0.96,
-                'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 8, 0.26, 10, 0.58, 14, 2.2, 18, 4.2]
+                'line-width': larghezzaPistaOsmAnd
             }
         },
         {
@@ -946,14 +971,14 @@ function createOutdoorBaseMapStyle() {
             type: 'line',
             source: 'openmaptiles',
             'source-layer': 'transportation',
-            minzoom: 8,
+            minzoom: 9,
             filter: ['all', trackRoadClassFilter, roughTrackFilter, ['!=', ['get', 'brunnel'], 'tunnel']],
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
                 'line-color': '#d2c5aa',
-                'line-dasharray': [2.8, 1.55],
+                'line-dasharray': trattinoPistaOsmAnd,
                 'line-opacity': 0.42,
-                'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 8, 0.8, 10, 1.85, 14, 6.1, 18, 11.2]
+                'line-width': ['interpolate', ['linear'], ['zoom'], 9, 1.35, 10, 2, 12, 2.8, 14, 4.4, 16, 6.6, 18, 8.8]
             }
         },
         {
@@ -961,14 +986,14 @@ function createOutdoorBaseMapStyle() {
             type: 'line',
             source: 'openmaptiles',
             'source-layer': 'transportation',
-            minzoom: 8,
+            minzoom: 9,
             filter: ['all', trackRoadClassFilter, roughTrackFilter, ['!=', ['get', 'brunnel'], 'tunnel']],
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
-                'line-color': coloreCarrozzabileOsmAnd,
-                'line-dasharray': [2.8, 1.55],
+                'line-color': colorePistaOsmAnd,
+                'line-dasharray': trattinoPistaOsmAnd,
                 'line-opacity': 0.96,
-                'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 8, 0.42, 10, 0.95, 14, 3.25, 18, 6.1]
+                'line-width': larghezzaPistaOsmAnd
             }
         },
         {
@@ -976,13 +1001,13 @@ function createOutdoorBaseMapStyle() {
             type: 'line',
             source: 'openmaptiles',
             'source-layer': 'transportation',
-            minzoom: 8,
+            minzoom: 9,
             filter: ['all', trackRoadClassFilter, weatherTrackFilter, ['!=', ['get', 'brunnel'], 'tunnel']],
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
                 'line-color': '#cae5c9',
                 'line-opacity': 0.42,
-                'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 8, 0.74, 10, 1.7, 14, 5.6, 18, 10.4]
+                'line-width': ['interpolate', ['linear'], ['zoom'], 9, 1.3, 10, 1.9, 13, 3, 14, 4, 16, 6, 18, 8]
             }
         },
         {
@@ -990,13 +1015,13 @@ function createOutdoorBaseMapStyle() {
             type: 'line',
             source: 'openmaptiles',
             'source-layer': 'transportation',
-            minzoom: 8,
+            minzoom: 9,
             filter: ['all', trackRoadClassFilter, weatherTrackFilter, ['!=', ['get', 'brunnel'], 'tunnel']],
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
-                'line-color': coloreStradaTerraOsmAnd,
+                'line-color': coloreCheminOsmAnd,
                 'line-opacity': 0.98,
-                'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 8, 0.38, 10, 0.84, 14, 2.85, 18, 5.4]
+                'line-width': larghezzaCheminOsmAnd
             }
         },
         {
@@ -1004,14 +1029,14 @@ function createOutdoorBaseMapStyle() {
             type: 'line',
             source: 'openmaptiles',
             'source-layer': 'transportation',
-            minzoom: 8,
-            filter: ['all', trackRoadClassFilter, operatingTrackFilter, ['!=', ['get', 'brunnel'], 'tunnel']],
+            minzoom: 9,
+            filter: ['all', trackRoadClassFilter, groundTrackFilter, ['!=', ['get', 'brunnel'], 'tunnel']],
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
                 'line-color': '#c8ebcf',
-                'line-dasharray': [4, 2.2],
+                'line-dasharray': trattinoCheminOsmAnd,
                 'line-opacity': 0.42,
-                'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 8, 0.68, 10, 1.55, 14, 5.2, 18, 9.8]
+                'line-width': ['interpolate', ['linear'], ['zoom'], 9, 1.3, 10, 1.9, 13, 3, 14, 4, 16, 6, 18, 8]
             }
         },
         {
@@ -1019,44 +1044,14 @@ function createOutdoorBaseMapStyle() {
             type: 'line',
             source: 'openmaptiles',
             'source-layer': 'transportation',
-            minzoom: 8,
-            filter: ['all', trackRoadClassFilter, operatingTrackFilter, ['!=', ['get', 'brunnel'], 'tunnel']],
+            minzoom: 9,
+            filter: ['all', trackRoadClassFilter, groundTrackFilter, ['!=', ['get', 'brunnel'], 'tunnel']],
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
-                'line-color': colorePistaOperativaOsmAnd,
-                'line-dasharray': [4, 2.2],
+                'line-color': coloreCheminOsmAnd,
+                'line-dasharray': trattinoCheminOsmAnd,
                 'line-opacity': 0.98,
-                'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 8, 0.34, 10, 0.78, 14, 2.65, 18, 5]
-            }
-        },
-        {
-            id: 'outdoor-track-hard-ground-casing',
-            type: 'line',
-            source: 'openmaptiles',
-            'source-layer': 'transportation',
-            minzoom: 8,
-            filter: ['all', trackRoadClassFilter, hardGroundTrackFilter, ['!=', ['get', 'brunnel'], 'tunnel']],
-            layout: { 'line-cap': 'round', 'line-join': 'round' },
-            paint: {
-                'line-color': '#bff0c8',
-                'line-dasharray': [2.25, 1.3],
-                'line-opacity': 0.44,
-                'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 8, 0.9, 10, 2.05, 14, 6.8, 18, 12.4]
-            }
-        },
-        {
-            id: 'outdoor-track-hard-ground',
-            type: 'line',
-            source: 'openmaptiles',
-            'source-layer': 'transportation',
-            minzoom: 8,
-            filter: ['all', trackRoadClassFilter, hardGroundTrackFilter, ['!=', ['get', 'brunnel'], 'tunnel']],
-            layout: { 'line-cap': 'round', 'line-join': 'round' },
-            paint: {
-                'line-color': coloreFondoDifficileOsmAnd,
-                'line-dasharray': [2.25, 1.3],
-                'line-opacity': 0.98,
-                'line-width': ['interpolate', ['exponential', 1.25], ['zoom'], 8, 0.48, 10, 1.1, 14, 3.65, 18, 6.9]
+                'line-width': larghezzaCheminOsmAnd
             }
         },
         {
@@ -1069,9 +1064,9 @@ function createOutdoorBaseMapStyle() {
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
                 'line-color': '#f8f4ec',
-                'line-dasharray': [0.25, 1.45],
+                'line-dasharray': trattinoSentierOsmAnd,
                 'line-opacity': 0.95,
-                'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 9, 1.1, 11, 2, 15, 4.5, 19, 7]
+                'line-width': ['interpolate', ['linear'], ['zoom'], 13, 2.2, 14, 3, 16, 4, 18, 5]
             }
         },
         {
@@ -1083,10 +1078,10 @@ function createOutdoorBaseMapStyle() {
             filter: ['all', trailFilter, ['!=', ['get', 'brunnel'], 'tunnel']],
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
-                'line-color': '#1f1f1f',
-                'line-dasharray': [0.25, 1.45],
+                'line-color': coloreSentierOsmAnd,
+                'line-dasharray': trattinoSentierOsmAnd,
                 'line-opacity': 0.88,
-                'line-width': ['interpolate', ['exponential', 1.2], ['zoom'], 9, 0.42, 11, 0.9, 15, 2.2, 19, 3.4]
+                'line-width': larghezzaSentierOsmAnd
             }
         },
         {
@@ -1099,9 +1094,9 @@ function createOutdoorBaseMapStyle() {
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
                 'line-color': '#000000',
-                'line-dasharray': [0.2, 2],
-                'line-opacity': 0.95,
-                'line-width': ['interpolate', ['linear'], ['zoom'], 13, 2.2, 17, 3.6]
+                'line-dasharray': trattinoSentierOsmAnd,
+                'line-opacity': 0.86,
+                'line-width': larghezzaSentierOsmAnd
             }
         },
         {
@@ -1114,9 +1109,9 @@ function createOutdoorBaseMapStyle() {
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
                 'line-color': '#000000',
-                'line-dasharray': [0.2, 2],
-                'line-opacity': 0.95,
-                'line-width': ['interpolate', ['linear'], ['zoom'], 13, 2.2, 17, 3.8]
+                'line-dasharray': trattinoSentierOsmAnd,
+                'line-opacity': 0.9,
+                'line-width': larghezzaSentierOsmAnd
             }
         },
         {
@@ -1129,9 +1124,9 @@ function createOutdoorBaseMapStyle() {
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
                 'line-color': '#000000',
-                'line-dasharray': [0.2, 2],
+                'line-dasharray': trattinoSentierOsmAnd,
                 'line-opacity': 0.96,
-                'line-width': ['interpolate', ['linear'], ['zoom'], 13, 2.4, 17, 4]
+                'line-width': larghezzaSentierOsmAnd
             }
         },
         {
@@ -1144,7 +1139,6 @@ function createOutdoorBaseMapStyle() {
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
                 'line-color': '#fff1f1',
-                'line-dasharray': [2.2, 1.2],
                 'line-opacity': 0.62,
                 'line-width': ['interpolate', ['linear'], ['zoom'], 11, 3.2, 16, 6]
             }
@@ -1159,11 +1153,101 @@ function createOutdoorBaseMapStyle() {
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
                 'line-color': coloreDivietoOsmAnd,
-                'line-dasharray': [2.2, 1.2],
                 'line-opacity': 0.98,
                 'line-width': ['interpolate', ['linear'], ['zoom'], 11, 1.5, 16, 3]
             }
+        },
+        {
+            id: 'outdoor-track-label',
+            type: 'symbol',
+            source: 'openmaptiles',
+            'source-layer': 'transportation_name',
+            minzoom: 13,
+            filter: ['match', ['geometry-type'], ['LineString', 'MultiLineString'], true, false],
+            layout: {
+                'symbol-placement': 'line',
+                'symbol-spacing': 320,
+                'text-field': ['coalesce', ['get', 'name:it'], ['get', 'name'], ['get', 'ref']],
+                'text-font': ['Noto Sans Italic'],
+                'text-size': ['interpolate', ['linear'], ['zoom'], 13, 8.5, 16, 10.5, 18, 11.5],
+                'text-rotation-alignment': 'map',
+                'text-optional': true
+            },
+            paint: {
+                'text-color': ['match', ['get', 'class'],
+                    ['path', 'pedestrian', 'footway'], '#252525',
+                    ['track', 'service'], '#6b4a1a',
+                    '#5f5b54'
+                ],
+                'text-opacity': ['interpolate', ['linear'], ['zoom'], 13, 0.45, 16, 0.76],
+                'text-halo-color': 'rgba(245, 241, 231, 0.96)',
+                'text-halo-width': 1.25
+            }
         }
+    ];
+
+    const createBarrierLayers = (suffix, sourceLayer) => [
+        {
+            id: `outdoor-barrier-far-${suffix}`,
+            type: 'circle',
+            source: 'openmaptiles',
+            'source-layer': sourceLayer,
+            minzoom: 13,
+            maxzoom: 16,
+            filter: barrierFilter,
+            paint: {
+                'circle-radius': ['interpolate', ['linear'], ['zoom'], 13, 2, 15, 3],
+                'circle-color': ['match', barrierKind, ['debris', 'log'], '#996600', coloreDivietoOsmAnd],
+                'circle-opacity': 0.9,
+                'circle-stroke-color': '#fff1f1',
+                'circle-stroke-width': 0.8
+            }
+        },
+        {
+            id: `outdoor-barrier-near-${suffix}`,
+            type: 'circle',
+            source: 'openmaptiles',
+            'source-layer': sourceLayer,
+            minzoom: 16,
+            filter: barrierFilter,
+            paint: {
+                'circle-radius': ['interpolate', ['linear'], ['zoom'], 16, 3.5, 18, 5],
+                'circle-color': ['match', barrierKind, ['debris', 'log'], '#996600', coloreDivietoOsmAnd],
+                'circle-opacity': 0.92,
+                'circle-stroke-color': '#fff7f0',
+                'circle-stroke-width': 1.25
+            }
+        },
+        {
+            id: `outdoor-barrier-label-${suffix}`,
+            type: 'symbol',
+            source: 'openmaptiles',
+            'source-layer': sourceLayer,
+            minzoom: 16,
+            filter: barrierFilter,
+            layout: {
+                'text-field': ['match', barrierKind,
+                    ['gate', 'lift_gate', 'swing_gate', 'hampshire_gate'], 'G',
+                    ['chain', 'fence'], 'C',
+                    ['bollard'], 'B',
+                    ['debris', 'log'], '!',
+                    'X'
+                ],
+                'text-font': ['Noto Sans Bold'],
+                'text-size': ['interpolate', ['linear'], ['zoom'], 16, 8, 18, 10],
+                'text-allow-overlap': true,
+                'text-ignore-placement': true
+            },
+            paint: {
+                'text-color': '#ffffff',
+                'text-halo-color': ['match', barrierKind, ['debris', 'log'], '#996600', coloreDivietoOsmAnd],
+                'text-halo-width': 0.8
+            }
+        }
+    ];
+    const barrierLayers = [
+        ...createBarrierLayers('transportation', 'transportation'),
+        ...createBarrierLayers('poi', 'poi')
     ];
 
     const naturalContextLayers = [
@@ -1225,11 +1309,11 @@ function createOutdoorBaseMapStyle() {
             type: 'symbol',
             source: 'openmaptiles',
             'source-layer': 'mountain_peak',
-            minzoom: 9,
+            minzoom: 8,
             filter: ['match', ['geometry-type'], ['Point', 'MultiPoint'], true, false],
             layout: {
                 'icon-image': 'mountain',
-                'icon-size': ['interpolate', ['linear'], ['zoom'], 9, 0.42, 13, 0.56],
+                'icon-size': ['interpolate', ['linear'], ['zoom'], 8, 0.42, 13, 0.6],
                 'icon-padding': 2,
                 'text-anchor': 'top',
                 'text-field': ['case',
@@ -1241,14 +1325,14 @@ function createOutdoorBaseMapStyle() {
                 'text-max-width': 8,
                 'text-offset': [0, 0.75],
                 'text-optional': true,
-                'text-size': ['interpolate', ['linear'], ['zoom'], 9, 9.5, 13, 11.5, 16, 12.5]
+                'text-size': ['interpolate', ['linear'], ['zoom'], 8, 10, 13, 12.2, 16, 13]
             },
             paint: {
-                'icon-opacity': ['interpolate', ['linear'], ['zoom'], 9, 0.48, 13, 0.88],
-                'text-color': '#5b5148',
-                'text-opacity': ['interpolate', ['linear'], ['zoom'], 9, 0.58, 13, 0.92],
+                'icon-opacity': ['interpolate', ['linear'], ['zoom'], 8, 0.62, 13, 0.92],
+                'text-color': '#4a4036',
+                'text-opacity': ['interpolate', ['linear'], ['zoom'], 8, 0.76, 13, 0.96],
                 'text-halo-color': 'rgba(245, 241, 231, 0.95)',
-                'text-halo-width': 1.2
+                'text-halo-width': 1.55
             }
         }
     ];
@@ -1257,7 +1341,7 @@ function createOutdoorBaseMapStyle() {
     style.layers.splice(contoursIndex === -1 ? style.layers.length : contoursIndex, 0, ...contourAndContextLayers);
 
     const labelsIndex = style.layers.findIndex(layer => layer.id === 'idro-road-label');
-    style.layers.splice(labelsIndex === -1 ? style.layers.length : labelsIndex, 0, ...outdoorLayers, ...naturalContextLayers);
+    style.layers.splice(labelsIndex === -1 ? style.layers.length : labelsIndex, 0, ...outdoorLayers, ...barrierLayers, ...naturalContextLayers);
     return style;
 }
 

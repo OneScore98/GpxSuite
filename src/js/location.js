@@ -314,14 +314,14 @@ export function requestDeviceLocationPermission() {
     return startDeviceLocation();
 }
 
-export async function requestDeviceOrientationPermission() {
+export async function requestDeviceOrientationPermission(options = {}) {
     if (typeof window.DeviceOrientationEvent === 'undefined') {
         notify("Orientamento dispositivo non supportato", "error");
         emitStatus({ orientationPermission: 'unsupported' });
         return false;
     }
 
-    const granted = await requestOrientationAccess();
+    const granted = await requestOrientationAccess({ forcePrompt: options.forcePrompt === true });
     if (!granted) {
         notify("Permesso orientamento non concesso", "error");
         emitStatus({ orientationPermission: 'denied' });
@@ -1257,9 +1257,9 @@ async function startOrientationTracking() {
     _orientationListening = true;
 }
 
-async function requestOrientationAccess() {
+async function requestOrientationAccess(options = {}) {
     if (typeof window.DeviceOrientationEvent === 'undefined') return false;
-    if (_orientationPermissionGranted) return true;
+    if (_orientationPermissionGranted && options.forcePrompt !== true) return true;
     if (_orientationPermissionPromise) return _orientationPermissionPromise;
 
     _orientationPermissionPromise = (async() => {
@@ -1570,7 +1570,9 @@ function readPersistedRecordingSnapshot() {
 // ---- Permesso orientamento dispositivo (iOS richiede gesto utente) -----
 // La permission API per DeviceOrientation NON espone uno stato persistito,
 // quindi memorizziamo noi l'esito del primo prompt, evitando di mostrare
-// per sempre "Da autorizzare" all'utente che ha già accettato.
+// per sempre "Da autorizzare" all'utente che ha già accettato. Quando la
+// richiesta parte da un gesto utente, il valore salvato viene comunque
+// riverificato per intercettare permessi revocati dal sistema/browser.
 function readPersistedOrientationGrant() {
     try {
         return localStorage.getItem(ORIENTATION_PERMISSION_KEY) === 'granted';
