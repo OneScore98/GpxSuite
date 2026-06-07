@@ -976,32 +976,60 @@ function createOutdoorBaseMapStyle() {
     const larghezzaPistaOsmAnd = ['interpolate', ['linear'], ['zoom'], 9, 0.6, 10, 0.9, 12, 1.25, 13, 1.5, 14, 2, 15, 2.5, 16, 3, 17, 3.5, 18, 4];
     const larghezzaCheminOsmAnd = ['interpolate', ['linear'], ['zoom'], 9, 0.65, 10, 0.95, 12, 1.25, 13, 1.5, 14, 2, 15, 2.5, 16, 3, 17, 3.5, 18, 4];
     const larghezzaSentierOsmAnd = ['interpolate', ['linear'], ['zoom'], 10, 0.5, 12, 0.8, 13, 1, 14, 1.5, 15, 1.75, 16, 2, 17, 2.25, 18, 2.5];
-    const trattinoPistaOsmAnd = [4, 1];
-    const trattinoCheminOsmAnd = [4, 1];
-    const trattinoSentierOsmAnd = [1, 1];
-    const trackRoadClassFilter = ['match', ['get', 'class'], ['track', 'service'], true, false];
+    // Tratteggi per categoria — usare con line-cap:'butt' (non 'round')
+    // Con cap round i cap arrotondati riempiono i gap e il tratteggio sparisce
+    const trattinoPistaOsmAnd = [7, 4];     // rough: dash lunghi, gap chiari
+    const trattinoCheminOsmAnd = [4, 4];    // ground: dash/gap uguali, aspetto puntinato
+    const trattinoSentierOsmAnd = [1, 1];   // sentieri: puntinato (con cap round → pallini)
+    // Solo highway=track (class=track in OpenMapTiles) per la classificazione offroad OsmAnd
+    // I service road (vialetti, parcheggi) sono esclusi: non fanno parte della gerarchia dei sentieri
+    const trackRoadClassFilter = ['==', ['get', 'class'], 'track'];
     const outdoorWayClassFilter = ['match', ['get', 'class'], ['track', 'service', 'path', 'pedestrian', 'footway', 'cycleway'], true, false];
-    const easyTrackFilter = ['any',
+
+    // --- Gerarchia offroad OsmAnd: predicati base (senza esclusioni) ---
+    //
+    // NOTA SCHEMA OpenMapTiles (usato da OpenFreeMap):
+    // - `tracktype`: grade1–grade5 presenti per class=track ✓
+    // - `surface`: SOLO 'paved' o 'unpaved' (i valori OSM originali asphalt/gravel/dirt/ecc.
+    //   vengono semplificati durante la generazione dei tile)
+    // - `smoothness`: NON presente nel layer transportation
+    // - `ford`: NON è una proprietà separata — è un valore di `brunnel` (brunnel='ford')
+    //
+    // Conseguenza pratica: la classificazione affidabile avviene principalmente tramite
+    // `tracktype`. La `surface` permette solo di distinguere paved (→ easy) da unpaved (→ ground).
+    // Tracks con surface=gravel/rock senza tracktype appaiono come ground (verde tratteggiato):
+    // classificazione conservativa/prudente per uso sul campo.
+
+    // Categoria 1: carrossabile solido — marrone pieno
+    // grade1/grade2 oppure superficie pavimentata
+    const easyPredicate = ['any',
         ['match', ['get', 'tracktype'], ['grade1', 'grade2'], true, false],
-        ['match', ['get', 'surface'], ['unhewn_cobblestone', 'paved', 'paving_stones', 'compacted', 'metal', 'chipseal', 'wood', 'fine_gravel', 'asphalt', 'concrete'], true, false]
+        ['==', ['get', 'surface'], 'paved']
     ];
-    const roughTrackFilter = ['any',
-        ['==', ['get', 'tracktype'], 'grade3'],
-        ['match', ['get', 'surface'], ['rock', 'gravel', 'pebblestone', 'cobblestone'], true, false]
+    // Categoria 2: carrossabile grossier — marrone tratteggiato
+    // grade3 (ghiaia/ciottoli/roccia non distinguibili da 'unpaved' → solo tracktype)
+    const roughPredicate = ['match', ['get', 'tracktype'], ['grade3'], true, false];
+    // Categoria 3: secondo meteo — verde pieno
+    // grade4
+    const weatherPredicate = ['match', ['get', 'tracktype'], ['grade4'], true, false];
+    // Categoria 4: sol nu — verde tratteggiato
+    // grade5, superficie non pavimentata, ford (via campo brunnel)
+    const groundPredicate = ['any',
+        ['==', ['get', 'brunnel'], 'ford'],
+        ['match', ['get', 'tracktype'], ['grade5'], true, false],
+        ['==', ['get', 'surface'], 'unpaved']
     ];
-    const weatherTrackFilter = ['==', ['get', 'tracktype'], 'grade4'];
-    const bareGroundTrackFilter = ['any',
-        ['==', ['get', 'ford'], 'yes'],
-        ['match', ['get', 'smoothness'], ['very_horrible', 'horrible'], true, false],
-        ['==', ['get', 'tracktype'], 'grade5'],
-        ['match', ['get', 'surface'], ['mud', 'grass', 'sand', 'dirt', 'earth', 'unpaved', 'ground'], true, false]
-    ];
+
+    // Filtri layer con esclusioni in cascata (priorità decrescente: easy > rough > weather > ground)
+    // Ogni categoria esclude quelle con priorità maggiore per evitare sovrapposizioni
+    const easyTrackFilter = ['all', trackRoadClassFilter, easyPredicate];
+    const roughTrackFilter = ['all', trackRoadClassFilter, roughPredicate, ['!', easyPredicate]];
+    const weatherTrackFilter = ['all', trackRoadClassFilter, weatherPredicate, ['!', easyPredicate], ['!', roughPredicate]];
+    const bareGroundTrackFilter = ['all', trackRoadClassFilter, groundPredicate, ['!', easyPredicate], ['!', roughPredicate]];
+    // Categoria 5: non precisato — verde tratteggiato (stesso stile della cat. 4, solo class=track)
     const undefinedTrackFilter = ['all',
         ['==', ['get', 'class'], 'track'],
-        ['!', ['has', 'surface']],
-        ['!', ['has', 'tracktype']],
-        ['!', ['has', 'ford']],
-        ['!', ['has', 'smoothness']]
+        ['!', easyPredicate], ['!', roughPredicate], ['!', weatherPredicate], ['!', groundPredicate]
     ];
     const groundTrackFilter = ['any', bareGroundTrackFilter, undefinedTrackFilter];
     const trailFilter = ['match', ['get', 'class'], ['path', 'pedestrian'], true, false];
@@ -1160,11 +1188,10 @@ function createOutdoorBaseMapStyle() {
             'source-layer': 'transportation',
             minzoom: 9,
             filter: ['all', trackRoadClassFilter, roughTrackFilter, ['!=', ['get', 'brunnel'], 'tunnel']],
-            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            layout: { 'line-cap': 'butt', 'line-join': 'round' },
             paint: {
                 'line-color': '#d2c5aa',
-                'line-dasharray': trattinoPistaOsmAnd,
-                'line-opacity': 0.42,
+                'line-opacity': 0.35,
                 'line-width': ['interpolate', ['linear'], ['zoom'], 9, 1.35, 10, 2, 12, 2.8, 14, 4.4, 16, 6.6, 18, 8.8]
             }
         },
@@ -1175,7 +1202,7 @@ function createOutdoorBaseMapStyle() {
             'source-layer': 'transportation',
             minzoom: 9,
             filter: ['all', trackRoadClassFilter, roughTrackFilter, ['!=', ['get', 'brunnel'], 'tunnel']],
-            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            layout: { 'line-cap': 'butt', 'line-join': 'round' },
             paint: {
                 'line-color': colorePistaOsmAnd,
                 'line-dasharray': trattinoPistaOsmAnd,
@@ -1218,11 +1245,10 @@ function createOutdoorBaseMapStyle() {
             'source-layer': 'transportation',
             minzoom: 9,
             filter: ['all', trackRoadClassFilter, groundTrackFilter, ['!=', ['get', 'brunnel'], 'tunnel']],
-            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            layout: { 'line-cap': 'butt', 'line-join': 'round' },
             paint: {
                 'line-color': '#c8ebcf',
-                'line-dasharray': trattinoCheminOsmAnd,
-                'line-opacity': 0.42,
+                'line-opacity': 0.35,
                 'line-width': ['interpolate', ['linear'], ['zoom'], 9, 1.3, 10, 1.9, 13, 3, 14, 4, 16, 6, 18, 8]
             }
         },
@@ -1233,7 +1259,7 @@ function createOutdoorBaseMapStyle() {
             'source-layer': 'transportation',
             minzoom: 9,
             filter: ['all', trackRoadClassFilter, groundTrackFilter, ['!=', ['get', 'brunnel'], 'tunnel']],
-            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            layout: { 'line-cap': 'butt', 'line-join': 'round' },
             paint: {
                 'line-color': coloreCheminOsmAnd,
                 'line-dasharray': trattinoCheminOsmAnd,

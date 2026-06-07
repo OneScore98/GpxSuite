@@ -687,14 +687,14 @@ function bindDeviceDashboardSettingsForm() {
             row.setAttribute('aria-expanded', 'false');
             row.setAttribute('data-dashboard-setting-toggle', field.id);
             row.addEventListener('click', event => {
-                if (event.target.closest('[data-dashboard-field]') || event.target.closest('.device-dashboard-field-controls')) return;
+                if (event.target.closest('[data-dashboard-field]') || event.target.closest('label') || event.target.closest('.device-dashboard-field-controls')) return;
                 event.preventDefault();
                 const expanded = row.dataset.expanded !== 'true';
                 setDeviceDashboardFieldSettingsExpanded(field.id, expanded);
             });
             row.addEventListener('keydown', event => {
                 if (event.key !== 'Enter' && event.key !== ' ') return;
-                if (event.target.closest('[data-dashboard-field]') || event.target.closest('.device-dashboard-field-controls')) return;
+                if (event.target.closest('[data-dashboard-field]') || event.target.closest('label') || event.target.closest('.device-dashboard-field-controls')) return;
                 event.preventDefault();
                 const expanded = row.dataset.expanded !== 'true';
                 setDeviceDashboardFieldSettingsExpanded(field.id, expanded);
