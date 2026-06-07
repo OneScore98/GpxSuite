@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Preview Statistiche GpxSuite</title>
+<script src="https://unpkg.com/lucide@1.16.0/dist/umd/lucide.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0f172a; font-family: ui-sans-serif, system-ui, sans-serif; display: flex; flex-direction: column; gap: 16px; padding: 16px; min-height: 100vh; }
+  h2 { color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px; }
+
+  /* === Simula il pannello reale === */
+  .stats-panel-preview {
+    background: rgba(3,7,18,0.95);
+    border: 1px solid #1f2937;
+    border-radius: 16px;
+    box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    height: 224px;
+  }
+
+  /* HEADER */
+  .stats-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid #1f2937;
+    flex-shrink: 0;
+    min-height: 36px;
+  }
+  .stats-panel-title { font-size: 11px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; }
+  .stats-chart-controls { display: flex; align-items: center; gap: 6px; flex: 1; justify-content: flex-end; }
+  .stats-control-group {
+    display: inline-grid; grid-auto-flow: column; align-items: center;
+    gap: 2px; padding: 2px; border: 1px solid #1f2937;
+    border-radius: 10px; background: rgba(17,24,39,0.86);
+  }
+  .stats-segment-button {
+    min-width: 40px; height: 26px; display: inline-flex; align-items: center;
+    justify-content: center; gap: 4px; padding: 0 7px; border-radius: 8px;
+    color: #9ca3af; font-size: 10px; font-weight: 700; cursor: pointer; border: none;
+    background: transparent; transition: all 160ms;
+  }
+  .stats-segment-button[data-active="true"] { background: rgba(37,99,235,0.94); color: #fff; }
+  .stats-close-button {
+    width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 8px; color: #6b7280; cursor: pointer; border: none; background: transparent;
+  }
+
+  /* KPI CARDS */
+  .stats-cards-strip {
+    display: flex; align-items: stretch; gap: 5px;
+    padding: 5px 10px 5px;
+    border-bottom: 1px solid rgba(31,41,55,0.8);
+    flex-shrink: 0;
+  }
+  .stat-kpi {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 1px; padding: 5px 4px; border-radius: 9px;
+    background: rgba(255,255,255,0.032); border: 1px solid rgba(255,255,255,0.055); min-width: 0;
+  }
+  .stat-kpi-icon { width: 12px; height: 12px; flex-shrink: 0; }
+  .stat-kpi-value { font-size: 14px; font-weight: 800; line-height: 1.15; white-space: nowrap; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  .stat-kpi-label { font-size: 8px; text-transform: uppercase; letter-spacing: 0.09em; color: #6b7280; white-space: nowrap; }
+  .stat-kpi--dist .stat-kpi-icon  { color: #60a5fa; }
+  .stat-kpi--dist .stat-kpi-value { color: #93c5fd; }
+  .stat-kpi--dist                 { border-color: rgba(59,130,246,0.2); }
+  .stat-kpi--ascent .stat-kpi-icon  { color: #34d399; }
+  .stat-kpi--ascent .stat-kpi-value { color: #6ee7b7; }
+  .stat-kpi--ascent                 { border-color: rgba(16,185,129,0.2); }
+  .stat-kpi--descent .stat-kpi-icon  { color: #f87171; }
+  .stat-kpi--descent .stat-kpi-value { color: #fca5a5; }
+  .stat-kpi--descent                 { border-color: rgba(239,68,68,0.2); }
+  .stat-kpi--alt .stat-kpi-icon  { color: #38bdf8; }
+  .stat-kpi--alt .stat-kpi-value { color: #7dd3fc; }
+  .stat-kpi--alt                 { border-color: rgba(14,165,233,0.2); }
+
+  /* BODY */
+  .stats-panel-body { flex: 1; display: flex; min-height: 0; overflow: hidden; }
+  .stats-chart-shell { flex: 1; min-width: 0; padding: 5px 4px 6px 8px; position: relative; display: flex; align-items: center; justify-content: center; }
+  .chart-placeholder { width: 100%; height: 100%; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px dashed rgba(59,130,246,0.2); display: flex; align-items: center; justify-content: center; }
+  .chart-placeholder span { font-size: 10px; color: #4b5563; }
+
+  /* SECONDARY GRID */
+  .stats-secondary-grid {
+    width: min(17rem, 29vw); display: grid; grid-template-columns: 1fr 1fr;
+    gap: 1px 5px; align-content: center;
+    border-left: 1px solid rgba(31,41,55,0.85);
+    padding: 6px 8px; overflow-y: auto; scrollbar-width: none; flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-row { display: flex; align-items: center; gap: 4px; min-width: 0; padding: 2px 3px; border-radius: 4px; }
+  .stat-row-icon { width: 10px; height: 10px; color: #4b5563; flex-shrink: 0; }
+  .stat-row-label { font-size: 9px; color: #6b7280; white-space: nowrap; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .stat-row-value { font-size: 9.5px; font-weight: 700; white-space: nowrap; text-align: right; }
+
+  /* Dati di esempio */
+  .text-amber-300 { color: #fcd34d; }
+  .text-orange-300 { color: #fdba74; }
+  .text-red-400 { color: #f87171; }
+  .text-cyan-300 { color: #67e8f9; }
+  .text-violet-400 { color: #a78bfa; }
+  .text-rose-400 { color: #fb7185; }
+  .text-rose-300 { color: #fda4af; }
+  .text-white { color: #fff; }
+  .text-gray-600 { color: #4b5563; }
+
+  /* MOBILE PREVIEW */
+  .mobile-preview {
+    max-width: 390px;
+  }
+  .mobile-panel {
+    height: min(248px, 44vh);
+  }
+  .mobile-panel .stats-secondary-grid { display: none; }
+  .mobile-panel .stats-chart-shell { padding: 5px 7px 6px; }
+
+  /* LABEL */
+  .label { background: rgba(37,99,235,0.15); color: #60a5fa; font-size: 9px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.1em; padding: 2px 8px; border-radius: 20px;
+    border: 1px solid rgba(37,99,235,0.3); display: inline-block; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+
+<div style="display:grid; grid-template-columns: 1fr 390px; gap: 24px; align-start: start;">
+
+  <!-- DESKTOP -->
+  <div>
+    <span class="label">Desktop</span>
+    <h2>Pannello statistiche — larghezza completa</h2>
+    <br>
+    <div class="stats-panel-preview">
+      <div class="stats-panel-header">
+        <span class="stats-panel-title">Statistiche</span>
+        <div class="stats-chart-controls">
+          <div class="stats-control-group">
+            <button class="stats-segment-button" data-active="true"><i data-lucide="mountain" class="stat-kpi-icon"></i> Alt</button>
+            <button class="stats-segment-button"><i data-lucide="gauge" class="stat-kpi-icon"></i> Vel</button>
+            <button class="stats-segment-button"><i data-lucide="trending-up" class="stat-kpi-icon"></i> Pend</button>
+            <button class="stats-segment-button"><i data-lucide="arrow-up-down" class="stat-kpi-icon"></i> Tilt</button>
+            <button class="stats-segment-button"><i data-lucide="activity" class="stat-kpi-icon"></i> Vibr</button>
+          </div>
+          <div class="stats-control-group">
+            <button class="stats-segment-button" data-active="true"><i data-lucide="ruler" class="stat-kpi-icon"></i> Km</button>
+            <button class="stats-segment-button"><i data-lucide="clock" class="stat-kpi-icon"></i> Tempo</button>
+          </div>
+        </div>
+        <button class="stats-close-button"><i data-lucide="chevrons-down"></i></button>
+      </div>
+
+      <div class="stats-cards-strip">
+        <div class="stat-kpi stat-kpi--dist">
+          <i data-lucide="route" class="stat-kpi-icon"></i>
+          <span class="stat-kpi-value">48.32 km</span>
+          <span class="stat-kpi-label">Distanza</span>
+        </div>
+        <div class="stat-kpi stat-kpi--ascent">
+          <i data-lucide="trending-up" class="stat-kpi-icon"></i>
+          <span class="stat-kpi-value">+1840 m</span>
+          <span class="stat-kpi-label">Ascesa</span>
+        </div>
+        <div class="stat-kpi stat-kpi--descent">
+          <i data-lucide="trending-down" class="stat-kpi-icon"></i>
+          <span class="stat-kpi-value">-1720 m</span>
+          <span class="stat-kpi-label">Discesa</span>
+        </div>
+        <div class="stat-kpi stat-kpi--alt">
+          <i data-lucide="mountain-snow" class="stat-kpi-icon"></i>
+          <span class="stat-kpi-value">2847 m</span>
+          <span class="stat-kpi-label">Alt. Max</span>
+        </div>
+      </div>
+
+      <div class="stats-panel-body">
+        <div class="stats-chart-shell">
+          <div class="chart-placeholder"><span>📈 Grafico altimetrico</span></div>
+        </div>
+        <div class="stats-secondary-grid">
+          <div class="stat-row">
+            <i data-lucide="gauge" class="stat-row-icon"></i>
+            <span class="stat-row-label">Vel. Media</span>
+            <span class="stat-row-value text-amber-300">12.4 km/h</span>
+          </div>
+          <div class="stat-row">
+            <i data-lucide="zap" class="stat-row-icon"></i>
+            <span class="stat-row-label">Vel. Max</span>
+            <span class="stat-row-value text-orange-300">38.1 km/h</span>
+          </div>
+          <div class="stat-row">
+            <i data-lucide="percent" class="stat-row-icon"></i>
+            <span class="stat-row-label">Pend. Media</span>
+            <span class="stat-row-value text-white">3.8%</span>
+          </div>
+          <div class="stat-row">
+            <i data-lucide="chevrons-up" class="stat-row-icon"></i>
+            <span class="stat-row-label">Pend. Max</span>
+            <span class="stat-row-value text-red-400">22.3%</span>
+          </div>
+          <div class="stat-row">
+            <i data-lucide="layers" class="stat-row-icon"></i>
+            <span class="stat-row-label">Superficie</span>
+            <span class="stat-row-value text-cyan-300">Offroad 68%</span>
+          </div>
+          <div class="stat-row">
+            <i data-lucide="git-branch" class="stat-row-icon"></i>
+            <span class="stat-row-label">Segmenti</span>
+            <span class="stat-row-value text-white">3</span>
+          </div>
+          <div class="stat-row">
+            <i data-lucide="arrow-up-down" class="stat-row-icon"></i>
+            <span class="stat-row-label">Inclin. Max</span>
+            <span class="stat-row-value text-violet-400">--</span>
+          </div>
+          <div class="stat-row">
+            <i data-lucide="activity" class="stat-row-icon"></i>
+            <span class="stat-row-label">Vibr. Med/Max</span>
+            <span class="stat-row-value"><span class="text-rose-400">--</span><span class="text-gray-600"> / </span><span class="text-rose-300">--</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MOBILE -->
+  <div class="mobile-preview">
+    <span class="label">Mobile</span>
+    <h2>Pannello su 390px</h2>
+    <br>
+    <div class="stats-panel-preview mobile-panel">
+      <div class="stats-panel-header" style="flex-direction:row;">
+        <div class="stats-chart-controls" style="flex:1;">
+          <div class="stats-control-group" style="flex:1; grid-auto-columns: 1fr;">
+            <button class="stats-segment-button" data-active="true" style="min-width:0;"><i data-lucide="mountain" class="stat-kpi-icon"></i> Alt</button>
+            <button class="stats-segment-button" style="min-width:0;"><i data-lucide="gauge" class="stat-kpi-icon"></i> Vel</button>
+            <button class="stats-segment-button" style="min-width:0;"><i data-lucide="trending-up" class="stat-kpi-icon"></i> Pend</button>
+            <button class="stats-segment-button" style="min-width:0;"><i data-lucide="arrow-up-down" class="stat-kpi-icon"></i> Tilt</button>
+            <button class="stats-segment-button" style="min-width:0;"><i data-lucide="activity" class="stat-kpi-icon"></i> Vibr</button>
+          </div>
+          <div class="stats-control-group">
+            <button class="stats-segment-button" data-active="true" style="min-width:0;"><i data-lucide="ruler" class="stat-kpi-icon"></i> Km</button>
+            <button class="stats-segment-button" style="min-width:0;"><i data-lucide="clock" class="stat-kpi-icon"></i> T</button>
+          </div>
+        </div>
+        <button class="stats-close-button" style="width:28px; height:28px;"><i data-lucide="chevrons-down"></i></button>
+      </div>
+
+      <div class="stats-cards-strip">
+        <div class="stat-kpi stat-kpi--dist">
+          <i data-lucide="route" class="stat-kpi-icon"></i>
+          <span class="stat-kpi-value" style="font-size:13px;">48.3 km</span>
+          <span class="stat-kpi-label">Distanza</span>
+        </div>
+        <div class="stat-kpi stat-kpi--ascent">
+          <i data-lucide="trending-up" class="stat-kpi-icon"></i>
+          <span class="stat-kpi-value" style="font-size:13px;">+1840 m</span>
+          <span class="stat-kpi-label">Ascesa</span>
+        </div>
+        <div class="stat-kpi stat-kpi--descent">
+          <i data-lucide="trending-down" class="stat-kpi-icon"></i>
+          <span class="stat-kpi-value" style="font-size:13px;">-1720 m</span>
+          <span class="stat-kpi-label">Discesa</span>
+        </div>
+        <div class="stat-kpi stat-kpi--alt">
+          <i data-lucide="mountain-snow" class="stat-kpi-icon"></i>
+          <span class="stat-kpi-value" style="font-size:13px;">2847 m</span>
+          <span class="stat-kpi-label">Alt. Max</span>
+        </div>
+      </div>
+
+      <div class="stats-panel-body">
+        <div class="stats-chart-shell">
+          <div class="chart-placeholder"><span>📈 Grafico altimetrico</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  lucide.createIcons();
+</script>
+</body>
+</html>

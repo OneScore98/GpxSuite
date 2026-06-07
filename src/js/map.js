@@ -38,7 +38,7 @@ import {
 
 import { renderGisTree, showToast, isGisTreeVisible, setSegmentActive, setTrackActive } from './ui.js';
 import { updateStatsAndProfile } from './stats.js';
-import { setupWaypointLayers, updateWaypointsOnMap, bindWaypointInteractions } from './waypoints.js';
+import { setupWaypointLayers, updateWaypointsOnMap, bindWaypointInteractions, refreshPinImages } from './waypoints.js';
 import { schedulePersistAppSession, schedulePersistTracks } from './storage.js';
 import { loadScriptOnce, loadStylesheetOnce } from './utils.js';
 
@@ -153,12 +153,12 @@ const APPLICATION_LAYER_ORDER = [
     'gpx-waypoints-cluster-halo-layer',
     'gpx-waypoints-cluster-layer',
     'gpx-waypoints-cluster-count-layer',
-    'gpx-waypoints-point-halo-layer',
-    'gpx-waypoints-point-layer',
     'gpx-waypoints-hit-layer',
     'gpx-waypoints-marker-layer',
     'gpx-waypoints-label-layer',
     'gpx-edit-points-layer',
+    'chart-hover-marker-halo',
+    'chart-hover-marker-dot',
     'mapillary-current-fov-fill-layer',
     'mapillary-current-fov-line-layer',
     'mapillary-current-image-halo-layer',
@@ -2047,6 +2047,42 @@ export function setupLayers() {
     // Sincronizza il LOD anche al primo idle (raro caso in cui zoomend non scatta)
     map.once('idle', () => applyLodToMap());
 
+    // ── Marker hover dal grafico altimetrico ───────────────────────────────
+    if (!map.getSource('chart-hover-marker')) {
+        map.addSource('chart-hover-marker', {
+            type: 'geojson',
+            data: { type: 'FeatureCollection', features: [] }
+        });
+    }
+    if (!map.getLayer('chart-hover-marker-halo')) {
+        map.addLayer({
+            id: 'chart-hover-marker-halo',
+            type: 'circle',
+            source: 'chart-hover-marker',
+            paint: {
+                'circle-radius': 10,
+                'circle-color': ['get', 'color'],
+                'circle-opacity': 0.28,
+                'circle-stroke-width': 0
+            }
+        });
+    }
+    if (!map.getLayer('chart-hover-marker-dot')) {
+        map.addLayer({
+            id: 'chart-hover-marker-dot',
+            type: 'circle',
+            source: 'chart-hover-marker',
+            paint: {
+                'circle-radius': 5,
+                'circle-color': ['get', 'color'],
+                'circle-stroke-width': 2,
+                'circle-stroke-color': 'rgba(255,255,255,0.95)',
+                'circle-opacity': 1
+            }
+        });
+    }
+    // ─────────────────────────────────────────────────────────────────────
+
     ensureApplicationLayersAboveMap();
 }
 
@@ -2972,6 +3008,9 @@ function setupStyleDependentLayers() {
 function restoreApplicationLayersAfterStyleLoad(reloadSerial) {
     if (reloadSerial !== _styleReloadSerial) return;
 
+    // Le immagini custom MapLibre vengono perse al cambio stile: svuota la cache
+    refreshPinImages();
+
     setupStyleDependentLayers();
     setupLayers();
 
@@ -3078,3 +3117,35 @@ export async function queryElevation(lon, lat) {
         return 0;
     }
 }
+
+// ── Marker hover grafico altimetrico — aggiornato da custom events di stats.js ──
+function _setChartHoverMarkerData(lat, lon, color) {
+    if (!mapLoaded) return;
+    const src = map.getSource('chart-hover-marker');
+    if (!src) return;
+    src.setData({
+        type: 'FeatureCollection',
+        features: [{
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [lon, lat] },
+            properties: { color: color || '#3b82f6' }
+        }]
+    });
+}
+
+function _clearChartHoverMarkerData() {
+    if (!mapLoaded) return;
+    const src = map.getSource('chart-hover-marker');
+    if (src) src.setData({ type: 'FeatureCollection', features: [] });
+}
+
+window.addEventListener('gpxsuite:chart-hover', (e) => {
+    const { lat, lon, color } = e.detail || {};
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        _setChartHoverMarkerData(lat, lon, color);
+    }
+});
+
+window.addEventListener('gpxsuite:chart-hover-clear', () => {
+    _clearChartHoverMarkerData();
+});

@@ -9,7 +9,7 @@
 //   3. Tutto il lavoro viene eseguito in un requestIdleCallback per non
 //      competere con il rendering della mappa durante pan/zoom
 
-import { chart, setChart, tracks } from './state.js';
+import { chart, setChart, tracks, activeTrackId } from './state.js';
 import { loadScriptOnce } from './utils.js';
 
 const CHART_JS_URL = 'https://cdn.jsdelivr.net/npm/chart.js';
@@ -73,6 +73,9 @@ const SURFACE_STYLES = {
 let _chartMetric = 'altitude';
 let _chartXAxis = 'distance';
 
+// Lookup geografico per il marker di hover sul grafico: {x, lat, lon}[]
+let _chartPointsGeo = [];
+
 const surfaceBandsPlugin = {
     id: 'gpxsuiteSurfaceBands',
     beforeDatasetsDraw(chartInstance) {
@@ -100,6 +103,43 @@ const surfaceBandsPlugin = {
         ctx.restore();
     }
 };
+
+// ── Hover chart → marker sulla traccia ───────────────────────────────────
+function _getActiveTrackColor() {
+    if (activeTrackId) {
+        const t = tracks.find(t => t.id === activeTrackId);
+        if (t?.color) return t.color;
+    }
+    for (const t of tracks) {
+        if (t.visible !== false && t.color) return t.color;
+    }
+    return '#3b82f6';
+}
+
+function _findNearestGeoPoint(xValue) {
+    const pts = _chartPointsGeo;
+    if (!pts.length) return null;
+    let lo = 0, hi = pts.length - 1;
+    while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (pts[mid].x < xValue) lo = mid + 1;
+        else hi = mid;
+    }
+    if (lo > 0 && Math.abs(pts[lo - 1].x - xValue) < Math.abs(pts[lo].x - xValue)) lo--;
+    return pts[lo];
+}
+
+function _dispatchChartHover(geo) {
+    if (!geo) return;
+    window.dispatchEvent(new CustomEvent('gpxsuite:chart-hover', {
+        detail: { lat: geo.lat, lon: geo.lon, color: _getActiveTrackColor() }
+    }));
+}
+
+function _dispatchChartHoverClear() {
+    window.dispatchEvent(new CustomEvent('gpxsuite:chart-hover-clear'));
+}
+// ─────────────────────────────────────────────────────────────────────────
 
 export function initChart() {
     bindStatsControls();
@@ -154,6 +194,16 @@ function createChart() {
             animation: false,           // animazioni disabilitate per dataset grandi
             parsing: false,             // Chart.js skip parsing — i dati arrivano già in formato {x,y}
             normalized: true,           // i dati sono ordinati: skip ulteriori ordinamenti interni
+            onHover: (event, _elements, chartInstance) => {
+                if (!event?.native || !_chartPointsGeo.length) return;
+                const xScale = chartInstance.scales?.x;
+                if (!xScale) return;
+                const rect = chartInstance.canvas.getBoundingClientRect();
+                const xPx = event.native.clientX - rect.left;
+                const xValue = xScale.getValueForPixel(xPx);
+                if (!Number.isFinite(xValue)) return;
+                _dispatchChartHover(_findNearestGeoPoint(xValue));
+            },
             plugins: {
                 legend: { display: false },
                 tooltip: {
@@ -185,6 +235,10 @@ function createChart() {
         }
     });
     setChart(newChart);
+
+    // Rimuovi il marker quando il mouse esce dal grafico
+    ctx.canvas.addEventListener('mouseleave', _dispatchChartHoverClear);
+
     return newChart;
 }
 
@@ -431,6 +485,8 @@ function _doUpdateStats() {
     const MAX_CHART_PTS = 500;
     const chartData = [];
     const surfaceBands = [];
+    // Lookup geografico per hover marker: {x, lat, lon}[] — parallelo a chartData
+    _chartPointsGeo = [];
     let cumulativeDist = 0;
     let prevPt = null;
     let prevTimeMs = null;
@@ -444,6 +500,7 @@ function _doUpdateStats() {
     let pointsTotalEstimate = 0;
     for (let ti = 0; ti < tracks.length; ti++) {
         const t = tracks[ti];
+        if (activeTrackId && t.id !== activeTrackId) continue;
         if (t.visible === false) continue;
         for (let si = 0; si < t.segments.length; si++) {
             const s = t.segments[si];
@@ -470,8 +527,10 @@ function _doUpdateStats() {
     }
 
     // ── Loop singolo: distanza, dislivello, velocita, pendenza, chart ─────────
+    // Le statistiche si riferiscono solo alla traccia attiva
     for (let ti = 0; ti < tracks.length; ti++) {
         const track = tracks[ti];
+        if (activeTrackId && track.id !== activeTrackId) continue;
         if (track.visible === false) continue;
         const segs = track.segments;
         for (let si = 0; si < segs.length; si++) {
@@ -586,6 +645,8 @@ function _doUpdateStats() {
                 // Sampling inline per il chart — niente array intermedio
                 if (pointIndex % chartStep === 0 && Number.isFinite(pointX) && Number.isFinite(pointY)) {
                     chartData.push({ x: pointX, y: pointY });
+                    // Lookup geografico per hover marker
+                    _chartPointsGeo.push({ x: pointX, lat: pt.lat, lon: pt.lon });
                 }
                 pointIndex++;
                 prevPt = pt;
