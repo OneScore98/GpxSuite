@@ -1066,13 +1066,20 @@ function finalizeRecordingTrack(recording, recordedPoints, trackName) {
     track.waypoints = Array.isArray(track.waypoints) ? track.waypoints : [];
     segment.name = 'Registrazione 1';
     segment.visible = true;
-    segment.points = recordedPoints.map(point => ({
-        lat: point.lat,
-        lon: point.lon,
-        ele: point.ele,
-        time: point.time,
-        isUserClicked: false
-    }));
+    segment.points = recordedPoints.map(point => {
+        const p = {
+            lat: point.lat,
+            lon: point.lon,
+            ele: point.ele,
+            time: point.time,
+            isUserClicked: false
+        };
+        // Preserva dati sensore registrati (tilt, pitch, vibrazione)
+        if (Number.isFinite(point.tilt)) p.tilt = point.tilt;
+        if (Number.isFinite(point.pitch)) p.pitch = point.pitch;
+        if (Number.isFinite(point.vibrationLevel)) p.vibrationLevel = point.vibrationLevel;
+        return p;
+    });
     track.segments = [segment];
     return track;
 }
@@ -1721,7 +1728,7 @@ async function saveRecordingGpx(track, suggestedFileName) {
 function buildGpxForTrack(track) {
     const parts = [];
     parts.push(`<?xml version="1.0" encoding="UTF-8"?>\n`);
-    parts.push(`<gpx version="1.1" creator="GpxSuite" xmlns="http://www.topografix.com/GPX/1/1">\n`);
+    parts.push(`<gpx version="1.1" creator="GpxSuite" xmlns="http://www.topografix.com/GPX/1/1" xmlns:gpxsuite="https://gpxsuite.app/extensions/1/0">\n`);
     parts.push(`  <trk>\n`);
     parts.push(`    <name>${escapeXml(track.name || 'Registrazione')}</name>\n`);
     parts.push(`    <desc>${escapeXml(track.desc || '')}</desc>\n`);
@@ -1734,6 +1741,13 @@ function buildGpxForTrack(track) {
             }
             if (point.time) {
                 parts.push(`        <time>${new Date(point.time).toISOString()}</time>\n`);
+            }
+            if (Number.isFinite(point.tilt) || Number.isFinite(point.pitch) || Number.isFinite(point.vibrationLevel)) {
+                parts.push(`        <extensions>\n`);
+                if (Number.isFinite(point.tilt)) parts.push(`          <gpxsuite:tilt>${point.tilt}</gpxsuite:tilt>\n`);
+                if (Number.isFinite(point.pitch)) parts.push(`          <gpxsuite:pitch>${point.pitch}</gpxsuite:pitch>\n`);
+                if (Number.isFinite(point.vibrationLevel)) parts.push(`          <gpxsuite:vibration>${point.vibrationLevel}</gpxsuite:vibration>\n`);
+                parts.push(`        </extensions>\n`);
             }
             parts.push(`      </trkpt>\n`);
         }

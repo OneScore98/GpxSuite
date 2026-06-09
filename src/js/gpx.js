@@ -36,6 +36,26 @@ function yieldToMain() {
     return new Promise(resolve => setTimeout(resolve, 0));
 }
 
+function readSensorExtensions(node) {
+    const result = {};
+    const fields = [
+        { tag: 'tilt',      prefixed: 'gpxsuite:tilt',      key: 'tilt' },
+        { tag: 'pitch',     prefixed: 'gpxsuite:pitch',     key: 'pitch' },
+        { tag: 'vibration', prefixed: 'gpxsuite:vibration', key: 'vibrationLevel' }
+    ];
+    for (let i = 0; i < fields.length; i++) {
+        const f = fields[i];
+        const el = node.getElementsByTagName(f.prefixed)[0] ||
+                   node.getElementsByTagName(f.tag)[0] ||
+                   (typeof node.getElementsByTagNameNS === 'function' ? node.getElementsByTagNameNS('*', f.tag)[0] : null);
+        if (el && el.textContent) {
+            const val = parseFloat(el.textContent);
+            if (Number.isFinite(val)) result[f.key] = val;
+        }
+    }
+    return result;
+}
+
 function readSurfaceExtension(node) {
     const direct = node.getElementsByTagName("surface")[0];
     if (direct?.textContent) return direct.textContent.trim();
@@ -158,12 +178,16 @@ async function parseInline(xmlText, fileName) {
                 const timeNode = pt.getElementsByTagName("time")[0];
                 const time = timeNode ? Date.parse(timeNode.textContent) : NaN;
                 const surface = readSurfaceExtension(pt);
+                const sensors = readSensorExtensions(pt);
                 parsedPoints[k] = { lat, lon, ele, isUserClicked: false };
                 if (Number.isFinite(time)) parsedPoints[k].time = time;
                 if (surface) {
                     parsedPoints[k].surface = surface;
                     parsedPoints[k].surfaceFromPrev = surface;
                 }
+                if (Number.isFinite(sensors.tilt)) parsedPoints[k].tilt = sensors.tilt;
+                if (Number.isFinite(sensors.pitch)) parsedPoints[k].pitch = sensors.pitch;
+                if (Number.isFinite(sensors.vibrationLevel)) parsedPoints[k].vibrationLevel = sensors.vibrationLevel;
                 if (firstPoint === null) firstPoint = { lat, lon };
 
                 if (k > 0 && k % CHUNK === 0) await yieldToMain();
