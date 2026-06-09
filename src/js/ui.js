@@ -101,7 +101,9 @@ const DEVICE_DASHBOARD_SIZES = ['compact', 'medium', 'large'];
 const DEVICE_DASHBOARD_STYLES = ['map', 'outdoor', 'night'];
 const DEFAULT_DEVICE_DASHBOARD_SIZE = 'compact';
 const DEFAULT_DEVICE_DASHBOARD_STYLE = 'map';
-const DEVICE_DASHBOARD_SENSOR_RENDER_MS = 120;
+// Ridotto da 120ms a 250ms: il dashboard sensori non necessita di 8fps,
+// 4fps è sufficiente per display numerici (velocità, altitudine, bussola).
+const DEVICE_DASHBOARD_SENSOR_RENDER_MS = 250;
 const DEVICE_DASHBOARD_TILT_MAX_DEG = 35;
 const DEVICE_DASHBOARD_ZERO_HOLD_MS = 620;
 const DEVICE_DASHBOARD_SENSOR_STALE_MS = 4500;
@@ -1285,6 +1287,7 @@ function syncRecordingSettingsForm() {
     setChecked('recording-show-live-track', settings.showLiveTrack);
     setChecked('recording-save-elevation', settings.saveElevation);
     setChecked('recording-keep-screen-on', settings.keepScreenOn);
+    setChecked('recording-high-accuracy-gps', settings.highAccuracyGps !== false);
 }
 
 function bindRecordingSettingsForm() {
@@ -1318,6 +1321,10 @@ function bindRecordingSettingsForm() {
     const wakeToggle = document.getElementById('recording-keep-screen-on');
     if (wakeToggle) {
         wakeToggle.onchange = () => _updateRecordingSettings?.({ keepScreenOn: wakeToggle.checked });
+    }
+    const gpsAccuracyToggle = document.getElementById('recording-high-accuracy-gps');
+    if (gpsAccuracyToggle) {
+        gpsAccuracyToggle.onchange = () => _updateRecordingSettings?.({ highAccuracyGps: gpsAccuracyToggle.checked });
     }
     const colorInput = document.getElementById('recording-track-color');
     if (colorInput) {

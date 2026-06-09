@@ -39,6 +39,9 @@ const RECORDING_SNAPSHOT_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const ORIENTATION_PERMISSION_KEY = 'gpxsuite-orientation-permission-v1';
 const ORIENTATION_STATUS_MIN_INTERVAL_MS = 180;
 const ORIENTATION_STATUS_MIN_DELTA_DEG = 0.5;
+// Throttle per aggiornamento marker orientamento: evita setData() a 60Hz sulla sorgente MapLibre.
+// 100ms = ~10fps per la freccetta di heading, percettivamente fluido e molto meno dispendioso.
+const ORIENTATION_MARKER_MIN_INTERVAL_MS = 100;
 
 const DEFAULT_RECORDING_SETTINGS = {
     minDistanceM: 5,
@@ -48,6 +51,9 @@ const DEFAULT_RECORDING_SETTINGS = {
     showLiveTrack: true,
     saveElevation: true,
     keepScreenOn: true,
+    // true = chip GPS ad alta precisione (default per attività sportive);
+    // false = profilo risparmio energetico: meno calore, meno batteria, accuratezza leggermente inferiore.
+    highAccuracyGps: true,
     trackColor: '#ef4444',
     trackWidth: 4
 };
@@ -76,6 +82,8 @@ let _orientationPermissionPromise = null;
 let _orientationRequestToken = 0;
 let _lastOrientationStatusAt = 0;
 let _lastOrientationStatusHeading = null;
+// Throttle separato per l'aggiornamento del marker (distinto dal throttle dello status)
+let _lastOrientationMarkerAt = 0;
 let _waitingForFirstFix = false;
 let _isMoving = false;
 let _lastFollowAt = 0;
@@ -162,6 +170,9 @@ export function updateRecordingSettings(settings = {}) {
     }
     if (typeof settings.keepScreenOn === 'boolean') {
         next.keepScreenOn = settings.keepScreenOn;
+    }
+    if (typeof settings.highAccuracyGps === 'boolean') {
+        next.highAccuracyGps = settings.highAccuracyGps;
     }
     if (typeof settings.trackColor === 'string' && /^#[0-9a-f]{6}$/i.test(settings.trackColor)) {
         next.trackColor = settings.trackColor;
@@ -412,6 +423,7 @@ export function stopDeviceLocation(reason = 'programmatic') {
     _currentHeading = null;
     _lastOrientationStatusAt = 0;
     _lastOrientationStatusHeading = null;
+    _lastOrientationMarkerAt = 0;
     _lastFollowAt = 0;
     _recentCenteredUntil = 0;
     _focusAnimationUntil = 0;
@@ -429,7 +441,17 @@ function desiredWatchMode() {
 }
 
 function geolocationOptionsForMode(mode) {
-    return mode === 'recording' ? RECORDING_GEOLOCATION_OPTIONS : LOCATION_GEOLOCATION_OPTIONS;
+    if (mode !== 'recording') return LOCATION_GEOLOCATION_OPTIONS;
+    // In modalità risparmio energetico, rilassa l'accuratezza GPS per ridurre
+    // il consumo del chip e il calore generato. L'accuratezza resta sufficiente
+    // per attività outdoor (trekking, ciclismo); per alpinismo/sport ad alta velocità
+    // si consiglia di mantenere highAccuracyGps: true.
+    const highAccuracy = _recordingSettings.highAccuracyGps !== false;
+    return {
+        enableHighAccuracy: highAccuracy,
+        maximumAge: highAccuracy ? 1000 : 3000,
+        timeout: 20000
+    };
 }
 
 function syncGeolocationWatchMode() {
@@ -1331,7 +1353,14 @@ function handleDeviceOrientation(event) {
     if (isPageHidden()) return;
     if ((_isMoving || _recording.state === 'recording') && _lastFix) {
         _lastHeading = heading;
-        updateLocationMarker(_lastFix, _isMoving, heading);
+        // Throttle: evita setData() sulla sorgente MapLibre a 60Hz.
+        // deviceorientation può sparare a 60fps; aggiorniamo il marker a ~10fps,
+        // sufficiente per una freccetta di heading visivamente fluida.
+        const nowMarker = Date.now();
+        if (nowMarker - _lastOrientationMarkerAt >= ORIENTATION_MARKER_MIN_INTERVAL_MS) {
+            _lastOrientationMarkerAt = nowMarker;
+            updateLocationMarker(_lastFix, _isMoving, heading);
+        }
     }
     const now = Date.now();
     if (

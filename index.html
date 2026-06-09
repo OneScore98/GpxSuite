@@ -690,6 +690,10 @@
           <input type="checkbox" id="recording-keep-screen-on" class="accent-red-500">
         </label>
                 <label class="flex items-center justify-between gap-3">
+          <span class="text-xs text-gray-300">GPS alta precisione</span>
+          <input type="checkbox" id="recording-high-accuracy-gps" class="accent-red-500" title="Disattiva per ridurre consumo energetico e calore del dispositivo">
+        </label>
+                <label class="flex items-center justify-between gap-3">
           <span class="text-xs text-gray-300">Colore traccia</span>
           <input type="color" id="recording-track-color" class="w-9 h-7 bg-gray-950 border border-gray-800 rounded cursor-pointer">
         </label>
@@ -915,6 +919,25 @@
                         <span>Tempo</span>
                     </button>
                 </div>
+                <!-- Colorazione traccia per metrica -->
+                <div class="stats-control-group" role="group" aria-label="Colora traccia per" title="Colora la traccia sulla mappa in base a un valore">
+                    <button type="button" class="stats-segment-button" data-stats-colorby="none" data-active="true" title="Nessuna colorazione speciale">
+                        <i data-lucide="palette" class="w-3 h-3"></i>
+                        <span>Std</span>
+                    </button>
+                    <button type="button" class="stats-segment-button" data-stats-colorby="altitude" title="Colora per altitudine">
+                        <i data-lucide="mountain" class="w-3 h-3"></i>
+                        <span>Alt</span>
+                    </button>
+                    <button type="button" class="stats-segment-button" data-stats-colorby="speed" title="Colora per velocità">
+                        <i data-lucide="gauge" class="w-3 h-3"></i>
+                        <span>Vel</span>
+                    </button>
+                    <button type="button" class="stats-segment-button" data-stats-colorby="slope" title="Colora per pendenza">
+                        <i data-lucide="trending-up" class="w-3 h-3"></i>
+                        <span>Pend</span>
+                    </button>
+                </div>
             </div>
             <button id="btn-close-bottom" class="stats-close-button text-gray-500 hover:text-white hover:bg-gray-800 transition-colors" title="Chiudi statistiche">
                 <i data-lucide="chevrons-down" class="w-3.5 h-3.5"></i>
@@ -925,6 +948,13 @@
         <div class="stats-panel-body flex-1 flex min-h-0">
             <div class="stats-chart-shell flex-1 min-w-0 h-full relative">
                 <canvas id="altitudeChart" class="w-full h-full"></canvas>
+                <!-- Legenda gradiente colore traccia (visibile solo con colorazione attiva) -->
+                <div id="stats-color-legend" style="display:none" class="absolute bottom-1 left-10 right-2 flex items-center gap-1.5 pointer-events-none">
+                    <span id="stats-color-legend-label" class="text-[9px] font-semibold text-gray-400 whitespace-nowrap"></span>
+                    <span id="stats-color-legend-min" class="text-[9px] text-green-400 font-mono whitespace-nowrap"></span>
+                    <div class="flex-1 h-1.5 rounded-full" style="background:linear-gradient(to right,hsl(120,88%,52%),hsl(60,88%,52%),hsl(0,88%,52%))"></div>
+                    <span id="stats-color-legend-max" class="text-[9px] text-red-400 font-mono whitespace-nowrap"></span>
+                </div>
             </div>
 
             <div class="stats-secondary-grid">

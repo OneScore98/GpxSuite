@@ -37,7 +37,7 @@ import {
 } from './state.js';
 
 import { renderGisTree, showToast, isGisTreeVisible, setSegmentActive, setTrackActive } from './ui.js';
-import { updateStatsAndProfile } from './stats.js';
+import { updateStatsAndProfile, haversineDistance } from './stats.js';
 import { setupWaypointLayers, updateWaypointsOnMap, bindWaypointInteractions, refreshPinImages } from './waypoints.js';
 import { schedulePersistAppSession, schedulePersistTracks } from './storage.js';
 import { loadScriptOnce, loadStylesheetOnce } from './utils.js';
@@ -138,6 +138,7 @@ let _mapillaryCurrentBearing = 0;
 let _mapillaryCurrentFov = 70;
 let _trackInteractionsBound = false;
 let _lodInteractionsBound = false;
+let _coloredTrackMode = null; // null | 'altitude' | 'speed' | 'slope' | 'tilt' | 'vibration'
 let _styleReloadSerial = 0;
 let _elevationHydrationTimer = null;
 let _elevationHydrationRunning = false;
@@ -148,6 +149,7 @@ const APPLICATION_LAYER_ORDER = [
     'mapillary-sequences-layer',
     'mapillary-images-layer',
     'gpx-lines-layer',
+    'gpx-lines-colored-layer',
     'box-delete-preview-fill',
     'box-delete-preview-line',
     'gpx-waypoints-cluster-halo-layer',
@@ -1565,6 +1567,195 @@ function ensureApplicationLayersAboveMap() {
     }
 }
 
+// ── Colorazione traccia per metrica ───────────────────────────────────────────
+
+// Mappa t ∈ [0,1] → colore HSL (verde→giallo→rosso)
+function metricToHsl(t) {
+    const clamped = Math.min(1, Math.max(0, t));
+    const hue = Math.round((1 - clamped) * 120); // 120=verde, 0=rosso
+    return `hsl(${hue},88%,52%)`;
+}
+
+// Legge il tempo di un punto in ms (compatibile con formato ISO e numerico)
+function _readPointTimeMs(point) {
+    const raw = point?.time;
+    if (raw === null || raw === undefined || raw === '') return null;
+    if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
+    const parsed = Date.parse(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+// Costruisce GeoJSON di segmenti (2 punti ciascuno) colorati per metrica.
+// Ogni edge ha: { color, width }
+function buildColoredTrackGeoJSON(metric) {
+    const edges = [];
+
+    for (let ti = 0; ti < tracks.length; ti++) {
+        const track = tracks[ti];
+        if (track.visible === false) continue;
+        const width = (track.width || 3) + 1; // leggermente più spessa per visibilità
+        for (let si = 0; si < track.segments.length; si++) {
+            const seg = track.segments[si];
+            if (seg.visible === false) continue;
+            const pts = seg.points;
+            if (pts.length < 2) continue;
+
+            let prevPt = null, prevTimeMs = null;
+            for (let i = 0; i < pts.length; i++) {
+                const pt = pts[i];
+                const ele = Number(pt.ele) || 0;
+                const timeMs = _readPointTimeMs(pt);
+
+                if (prevPt !== null) {
+                    let value = null;
+                    const d = haversineDistance(prevPt.lon, prevPt.lat, pt.lon, pt.lat);
+                    const distM = d * 1000;
+
+                    switch (metric) {
+                        case 'altitude':
+                            value = (ele + (Number(prevPt.ele) || 0)) / 2;
+                            break;
+                        case 'speed':
+                            if (timeMs !== null && prevTimeMs !== null) {
+                                const dtMs = timeMs - prevTimeMs;
+                                if (dtMs > 0) {
+                                    const spd = d / (dtMs / 3600000);
+                                    if (spd >= 0 && spd <= 250) value = spd;
+                                }
+                            }
+                            break;
+                        case 'slope':
+                            if (distM > 15) {
+                                value = ((ele - (Number(prevPt.ele) || 0)) / distM) * 100;
+                            }
+                            break;
+                        case 'tilt':
+                            if (Number.isFinite(pt.tilt)) value = Math.abs(pt.tilt);
+                            break;
+                        case 'vibration':
+                            if (Number.isFinite(pt.vibrationLevel)) value = pt.vibrationLevel;
+                            break;
+                    }
+
+                    edges.push({
+                        lon1: prevPt.lon, lat1: prevPt.lat,
+                        lon2: pt.lon, lat2: pt.lat,
+                        value, width
+                    });
+                }
+                prevPt = pt;
+                prevTimeMs = timeMs;
+            }
+        }
+    }
+
+    if (edges.length === 0) return { type: 'FeatureCollection', features: [] };
+
+    // Calcola range globale per normalizzazione
+    let vMin = Infinity, vMax = -Infinity;
+    for (let i = 0; i < edges.length; i++) {
+        const v = edges[i].value;
+        if (v !== null && Number.isFinite(v)) {
+            if (v < vMin) vMin = v;
+            if (v > vMax) vMax = v;
+        }
+    }
+    const range = (vMax > vMin) ? (vMax - vMin) : 1;
+
+    // Aggiorna DOM legenda
+    const legendMin = document.getElementById('stats-color-legend-min');
+    const legendMax = document.getElementById('stats-color-legend-max');
+    const legendLabel = document.getElementById('stats-color-legend-label');
+    const metricLabels = {
+        altitude: 'm', speed: 'km/h', slope: '%', tilt: '°', vibration: ''
+    };
+    const unit = metricLabels[metric] || '';
+    if (legendMin) legendMin.textContent = Number.isFinite(vMin) ? `${Math.round(vMin * 10) / 10}${unit}` : '—';
+    if (legendMax) legendMax.textContent = Number.isFinite(vMax) ? `${Math.round(vMax * 10) / 10}${unit}` : '—';
+    if (legendLabel) {
+        const names = { altitude: 'Altitudine', speed: 'Velocità', slope: 'Pendenza', tilt: 'Inclinazione', vibration: 'Vibrazioni' };
+        legendLabel.textContent = names[metric] || metric;
+    }
+
+    const features = [];
+    for (let i = 0; i < edges.length; i++) {
+        const edge = edges[i];
+        const color = (edge.value !== null && Number.isFinite(edge.value))
+            ? metricToHsl((edge.value - vMin) / range)
+            : '#6b7280'; // grigio per dati mancanti
+        features.push({
+            type: 'Feature',
+            properties: { color, width: edge.width },
+            geometry: {
+                type: 'LineString',
+                coordinates: [[edge.lon1, edge.lat1], [edge.lon2, edge.lat2]]
+            }
+        });
+    }
+
+    return { type: 'FeatureCollection', features };
+}
+
+// Inizializza sorgente e layer per la traccia colorata (chiamato da setupLayers)
+function initColoredTrackLayers() {
+    if (!map.getSource('gpx-lines-colored')) {
+        map.addSource('gpx-lines-colored', {
+            type: 'geojson',
+            data: { type: 'FeatureCollection', features: [] },
+            buffer: 4
+        });
+    }
+    if (!map.getLayer('gpx-lines-colored-layer')) {
+        map.addLayer({
+            id: 'gpx-lines-colored-layer',
+            type: 'line',
+            source: 'gpx-lines-colored',
+            layout: { 'line-join': 'round', 'line-cap': 'round', 'visibility': 'none' },
+            paint: {
+                'line-color': ['get', 'color'],
+                'line-width': ['get', 'width'],
+                'line-opacity': 1.0
+            }
+        });
+    }
+}
+
+// Aggiorna il layer colorato e gestisce visibilità/swap con il layer standard
+function refreshColoredTrackLayer() {
+    if (!mapLoaded) return;
+    const src = map.getSource('gpx-lines-colored');
+    if (!src) return;
+
+    if (_coloredTrackMode) {
+        const data = buildColoredTrackGeoJSON(_coloredTrackMode);
+        src.setData(data);
+        if (map.getLayer('gpx-lines-colored-layer')) {
+            map.setLayoutProperty('gpx-lines-colored-layer', 'visibility', 'visible');
+        }
+        // Nasconde il layer LOD standard
+        if (map.getLayer('gpx-lines-layer')) {
+            map.setPaintProperty('gpx-lines-layer', 'line-opacity', 0);
+        }
+    } else {
+        src.setData({ type: 'FeatureCollection', features: [] });
+        if (map.getLayer('gpx-lines-colored-layer')) {
+            map.setLayoutProperty('gpx-lines-colored-layer', 'visibility', 'none');
+        }
+        // Ripristina opacità layer LOD standard
+        if (map.getLayer('gpx-lines-layer')) {
+            map.setPaintProperty('gpx-lines-layer', 'line-opacity', 0.85);
+        }
+    }
+}
+
+// Ascolta eventi di cambio modalità colore da stats.js
+window.addEventListener('gpxsuite:colormode-changed', (e) => {
+    _coloredTrackMode = e.detail?.mode || null;
+    refreshColoredTrackLayer();
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+
 function buildLodFeatures(lodIndex) {
     const tol = LOD_LEVELS[lodIndex].tol;
     const features = [];
@@ -1891,6 +2082,10 @@ function _doUpdateMapData() {
     if (!isDrawing) {
         updateWaypointsOnMap();
     }
+    // Aggiorna layer colorato se attivo
+    if (_coloredTrackMode) {
+        refreshColoredTrackLayer();
+    }
 }
 
 export function setupLayers() {
@@ -2004,6 +2199,7 @@ export function setupLayers() {
     setupWaypointLayers();
     bindWaypointInteractions();
     setupMapillaryLayers();
+    initColoredTrackLayers();
 
     if (!map.getSource('box-delete-preview')) {
         map.addSource('box-delete-preview', {

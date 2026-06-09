@@ -17,6 +17,14 @@ let _chartLoadPromise = null;
 let _statsControlsBound = false;
 let _chartPluginRegistered = false;
 
+// Crosshair: pixel X del mouse sul canvas chart
+let _chartCrosshairPx = null;
+let _chartCrosshairRaf = null;
+
+// Modalità colorazione traccia: null | 'altitude' | 'speed' | 'slope' | 'tilt' | 'vibration'
+let _trackColorMode = null;
+export function getTrackColorMode() { return _trackColorMode; }
+
 const CHART_METRICS = {
     altitude: {
         label: 'Altitudine (m)',
@@ -75,6 +83,27 @@ let _chartXAxis = 'distance';
 
 // Lookup geografico per il marker di hover sul grafico: {x, lat, lon}[]
 let _chartPointsGeo = [];
+
+// Plugin Chart.js: crosshair verticale tratteggiato alla posizione del mouse
+const crosshairPlugin = {
+    id: 'gpxsuiteCrosshair',
+    afterDraw(chartInstance) {
+        const px = _chartCrosshairPx;
+        if (!Number.isFinite(px)) return;
+        const { ctx, chartArea } = chartInstance;
+        if (!ctx || !chartArea || px < chartArea.left || px > chartArea.right) return;
+        ctx.save();
+        ctx.beginPath();
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.moveTo(px, chartArea.top);
+        ctx.lineTo(px, chartArea.bottom);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+    }
+};
 
 const surfaceBandsPlugin = {
     id: 'gpxsuiteSurfaceBands',
@@ -166,6 +195,7 @@ function createChart() {
     if (!window.Chart) throw new Error('Chart.js non disponibile');
     if (!_chartPluginRegistered) {
         window.Chart.register(surfaceBandsPlugin);
+        window.Chart.register(crosshairPlugin);
         _chartPluginRegistered = true;
     }
 
@@ -195,11 +225,26 @@ function createChart() {
             parsing: false,             // Chart.js skip parsing — i dati arrivano già in formato {x,y}
             normalized: true,           // i dati sono ordinati: skip ulteriori ordinamenti interni
             onHover: (event, _elements, chartInstance) => {
-                if (!event?.native || !_chartPointsGeo.length) return;
-                const xScale = chartInstance.scales?.x;
-                if (!xScale) return;
+                if (!event?.native) return;
                 const rect = chartInstance.canvas.getBoundingClientRect();
                 const xPx = event.native.clientX - rect.left;
+                const { chartArea } = chartInstance;
+                if (chartArea && xPx >= chartArea.left && xPx <= chartArea.right) {
+                    _chartCrosshairPx = xPx;
+                } else {
+                    _chartCrosshairPx = null;
+                }
+                // Ridisegna con crosshair tramite RAF (al massimo un frame per movimento)
+                if (!_chartCrosshairRaf) {
+                    _chartCrosshairRaf = requestAnimationFrame(() => {
+                        _chartCrosshairRaf = null;
+                        chartInstance.draw();
+                    });
+                }
+                // Dispatch hover marker sulla mappa
+                if (!_chartPointsGeo.length) return;
+                const xScale = chartInstance.scales?.x;
+                if (!xScale) return;
                 const xValue = xScale.getValueForPixel(xPx);
                 if (!Number.isFinite(xValue)) return;
                 _dispatchChartHover(_findNearestGeoPoint(xValue));
@@ -236,8 +281,12 @@ function createChart() {
     });
     setChart(newChart);
 
-    // Rimuovi il marker quando il mouse esce dal grafico
-    ctx.canvas.addEventListener('mouseleave', _dispatchChartHoverClear);
+    // Rimuovi crosshair e marker quando il mouse esce dal grafico
+    ctx.canvas.addEventListener('mouseleave', () => {
+        _chartCrosshairPx = null;
+        newChart.draw();
+        _dispatchChartHoverClear();
+    });
 
     return newChart;
 }
@@ -266,7 +315,32 @@ function bindStatsControls() {
         });
     });
 
+    document.querySelectorAll('[data-stats-colorby]').forEach(button => {
+        button.addEventListener('click', () => {
+            const mode = button.dataset.statsColorby;
+            const newMode = (mode === 'none' || mode === _trackColorMode) ? null : mode;
+            _trackColorMode = newMode;
+            syncColorControls();
+            // Notifica map.js del cambio modalità colore
+            window.dispatchEvent(new CustomEvent('gpxsuite:colormode-changed', {
+                detail: { mode: _trackColorMode }
+            }));
+        });
+    });
+
     syncStatsControls();
+    syncColorControls();
+}
+
+function syncColorControls() {
+    document.querySelectorAll('[data-stats-colorby]').forEach(button => {
+        const mode = button.dataset.statsColorby;
+        const isActive = (mode === 'none' && _trackColorMode === null) || mode === _trackColorMode;
+        button.dataset.active = isActive ? 'true' : 'false';
+    });
+    // Mostra/nascondi legenda colore
+    const legend = document.getElementById('stats-color-legend');
+    if (legend) legend.style.display = _trackColorMode ? 'flex' : 'none';
 }
 
 function syncStatsControls() {
@@ -390,6 +464,62 @@ function pushSurfaceBand(bands, surface, start, end) {
         return;
     }
     bands.push({ surface: normalizedSurface, start, end });
+}
+
+// Scale Y di riferimento per metrica: evita che valori bassi occupino tutto il grafico.
+// Usa suggestedMin/suggestedMax (morbidi) o min/max (duri) a seconda del tipo.
+function computeYAxisBounds(metric, chartData) {
+    const result = { min: undefined, max: undefined, suggestedMin: undefined, suggestedMax: undefined };
+    let dataMin = Infinity, dataMax = -Infinity;
+    for (let i = 0; i < chartData.length; i++) {
+        const v = chartData[i]?.y;
+        if (Number.isFinite(v)) {
+            if (v < dataMin) dataMin = v;
+            if (v > dataMax) dataMax = v;
+        }
+    }
+    if (!Number.isFinite(dataMin)) return result;
+
+    switch (metric) {
+        case 'altitude': {
+            // Auto-scala ma con range minimo 50 m e padding 12%
+            const range = Math.max(50, dataMax - dataMin);
+            const pad = range * 0.12;
+            result.suggestedMin = Math.max(0, Math.floor(dataMin - pad));
+            result.suggestedMax = Math.ceil(dataMax + pad);
+            break;
+        }
+        case 'speed': {
+            // Asse fisso dal basso a 0; ceiling contestuale in base alla velocità max reale
+            result.min = 0;
+            result.suggestedMax = dataMax <= 10 ? 30
+                : dataMax <= 25 ? 50
+                : dataMax <= 60 ? 90
+                : dataMax <= 100 ? 130
+                : 200;
+            break;
+        }
+        case 'slope': {
+            // Simmetrico intorno allo zero, almeno ±20%
+            const ext = Math.max(20, Math.ceil(Math.max(Math.abs(dataMin), Math.abs(dataMax)) * 1.25));
+            result.suggestedMin = -ext;
+            result.suggestedMax = ext;
+            break;
+        }
+        case 'tilt': {
+            // Simmetrico, almeno ±30°
+            const ext = Math.max(30, Math.ceil(Math.max(Math.abs(dataMin), Math.abs(dataMax)) * 1.25));
+            result.suggestedMin = -ext;
+            result.suggestedMax = ext;
+            break;
+        }
+        case 'vibration':
+            // Scala fissa 0-10 (la scala assoluta ha senso sempre)
+            result.min = 0;
+            result.max = 10;
+            break;
+    }
+    return result;
 }
 
 function updateChartAppearance(currentChart) {
@@ -702,6 +832,7 @@ function _doUpdateStats() {
         currentChart.data.labels = [];
         currentChart.data.datasets[0].data = chartData;
 
+        // Scala X
         if (axisMax > 0) {
             currentChart.options.scales.x.min = 0;
             currentChart.options.scales.x.max = axisMax;
@@ -709,6 +840,13 @@ function _doUpdateStats() {
             delete currentChart.options.scales.x.min;
             delete currentChart.options.scales.x.max;
         }
+
+        // Scala Y contestualizzata: valori bassi non occupano tutta l'altezza
+        const yBounds = computeYAxisBounds(_chartMetric, chartData);
+        currentChart.options.scales.y.min = yBounds.min;
+        currentChart.options.scales.y.max = yBounds.max;
+        currentChart.options.scales.y.suggestedMin = yBounds.suggestedMin;
+        currentChart.options.scales.y.suggestedMax = yBounds.suggestedMax;
 
         currentChart.resize();
         currentChart.update('none');
