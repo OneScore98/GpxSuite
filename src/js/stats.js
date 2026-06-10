@@ -21,7 +21,7 @@ let _chartPluginRegistered = false;
 let _chartCrosshairPx = null;
 let _chartCrosshairRaf = null;
 
-// Modalità colorazione traccia: null | 'altitude' | 'speed' | 'slope' | 'tilt' | 'vibration'
+// Modalità colorazione traccia: null | 'altitude' | 'speed' | 'slope' | 'tilt' | 'pitch' | 'vibration'
 let _trackColorMode = null;
 export function getTrackColorMode() { return _trackColorMode; }
 

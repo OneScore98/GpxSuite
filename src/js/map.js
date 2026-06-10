@@ -138,7 +138,7 @@ let _mapillaryCurrentBearing = 0;
 let _mapillaryCurrentFov = 70;
 let _trackInteractionsBound = false;
 let _lodInteractionsBound = false;
-let _coloredTrackMode = null; // null | 'altitude' | 'speed' | 'slope' | 'tilt' | 'vibration'
+let _coloredTrackMode = null; // null | 'altitude' | 'speed' | 'slope' | 'tilt' | 'pitch' | 'vibration'
 let _styleReloadSerial = 0;
 let _elevationHydrationTimer = null;
 let _elevationHydrationRunning = false;
@@ -1632,6 +1632,9 @@ function buildColoredTrackGeoJSON(metric) {
                         case 'tilt':
                             if (Number.isFinite(pt.tilt)) value = Math.abs(pt.tilt);
                             break;
+                        case 'pitch':
+                            if (Number.isFinite(pt.pitch)) value = Math.abs(pt.pitch);
+                            break;
                         case 'vibration':
                             if (Number.isFinite(pt.vibrationLevel)) value = pt.vibrationLevel;
                             break;
@@ -1667,13 +1670,13 @@ function buildColoredTrackGeoJSON(metric) {
     const legendMax = document.getElementById('stats-color-legend-max');
     const legendLabel = document.getElementById('stats-color-legend-label');
     const metricLabels = {
-        altitude: 'm', speed: 'km/h', slope: '%', tilt: '°', vibration: ''
+        altitude: 'm', speed: 'km/h', slope: '%', tilt: '°', pitch: '°', vibration: ''
     };
     const unit = metricLabels[metric] || '';
     if (legendMin) legendMin.textContent = Number.isFinite(vMin) ? `${Math.round(vMin * 10) / 10}${unit}` : '—';
     if (legendMax) legendMax.textContent = Number.isFinite(vMax) ? `${Math.round(vMax * 10) / 10}${unit}` : '—';
     if (legendLabel) {
-        const names = { altitude: 'Altitudine', speed: 'Velocità', slope: 'Pendenza', tilt: 'Inclinazione', vibration: 'Vibrazioni' };
+        const names = { altitude: 'Altitudine', speed: 'Velocità', slope: 'Pendenza', tilt: 'Inclinazione', pitch: 'Beccheggio', vibration: 'Vibrazioni' };
         legendLabel.textContent = names[metric] || metric;
     }
 

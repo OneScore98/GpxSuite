@@ -2931,13 +2931,27 @@ label {
     #panel-bottom-stats .stats-chart-controls {
         width: 100%;
         display: grid;
-        grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) 1.8rem;
+        grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
         gap: 0.28rem;
     }
 
     #panel-bottom-stats .stats-control-group {
         flex: 1 1 8rem;
         grid-auto-columns: minmax(0, 1fr);
+    }
+
+    /* Il gruppo colorazione occupa una riga intera e scorre lateralmente se serve */
+    #panel-bottom-stats .stats-control-group[aria-label="Colora traccia per"] {
+        grid-column: 1 / -1;
+        grid-auto-columns: max-content;
+        justify-content: start;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+
+    #panel-bottom-stats .stats-control-group[aria-label="Colora traccia per"]::-webkit-scrollbar {
+        display: none;
     }
 
     #panel-bottom-stats .stats-segment-button {
