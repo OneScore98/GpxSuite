@@ -50,6 +50,7 @@ const ORIENTATION_STATUS_MIN_DELTA_DEG = 0.5;
 // Throttle per aggiornamento marker orientamento: evita setData() a 60Hz sulla sorgente MapLibre.
 // 100ms = ~10fps per la freccetta di heading, percettivamente fluido e molto meno dispendioso.
 const ORIENTATION_MARKER_MIN_INTERVAL_MS = 100;
+const MOVEMENT_HEADING_MIN_DISTANCE_M = 2;
 
 const DEFAULT_RECORDING_SETTINGS = {
     minDistanceM: 5,
@@ -87,6 +88,7 @@ let _watchId = null;
 let _watchMode = 'idle';
 let _lastFix = null;
 let _lastHeading = null;
+let _movementHeading = null;
 let _orientationHeading = null;
 let _currentHeading = null;
 let _orientationListening = false;
@@ -375,6 +377,35 @@ export function toggleDeviceLocation() {
     return startDeviceLocation();
 }
 
+export function orientMapToMovementHeading() {
+    if (!mapLoaded || !map || !_lastFix) {
+        notify("Posizione GPS non disponibile", "info");
+        return false;
+    }
+
+    const heading = resolveMovementHeadingForCamera();
+    if (!Number.isFinite(heading)) {
+        notify("Direzione di movimento non disponibile", "info");
+        return false;
+    }
+
+    _userExploringUntil = 0;
+    _lastFollowAt = 0;
+    _recentCenteredUntil = Date.now() + RECENTERED_CONTROL_GRACE_MS;
+    _focusAnimationUntil = Date.now() + MANUAL_RECENTER_DURATION_MS;
+    map.easeTo({
+        center: [_lastFix.lon, _lastFix.lat],
+        bearing: heading,
+        pitch: 0,
+        duration: MANUAL_RECENTER_DURATION_MS,
+        easing: smoothCameraEasing,
+        essential: true
+    });
+    notify("Mappa orientata verso la direzione di marcia", "info");
+    emitStatus({ centered: true });
+    return true;
+}
+
 export function requestDeviceLocationPermission() {
     if (_watchId !== null) {
         notify("Permesso localizzazione gia attivo", "info");
@@ -455,6 +486,7 @@ export function startDeviceLocation() {
     _isMoving = false;
     _lastFix = null;
     _lastHeading = null;
+    _movementHeading = null;
     _currentHeading = null;
     _lastOrientationStatusAt = 0;
     _lastOrientationStatusHeading = null;
@@ -507,6 +539,7 @@ export function stopDeviceLocation(reason = 'programmatic') {
     _isMoving = false;
     _lastFix = null;
     _lastHeading = null;
+    _movementHeading = null;
     _currentHeading = null;
     _lastOrientationStatusAt = 0;
     _lastOrientationStatusHeading = null;
@@ -737,6 +770,7 @@ function startSimulatedDeviceLocation() {
     _isMoving = false;
     _lastFix = null;
     _lastHeading = null;
+    _movementHeading = null;
     _currentHeading = null;
     _lastOrientationStatusAt = 0;
     _lastOrientationStatusHeading = null;
@@ -1362,14 +1396,10 @@ function purgeLegacyDomLocationMarkers() {
 }
 
 function resolveHeading(fix, previousFix, distance, moving) {
-    const courseHeading = previousFix && distance >= 2 ? bearingDegrees(previousFix, fix) : null;
-    let heading = moving && courseHeading !== null ? courseHeading : null;
+    const movementHeading = resolveMovementHeading(fix, previousFix, distance, moving);
+    let heading = movementHeading;
 
-    if (heading === null && Number.isFinite(fix.heading)) {
-        heading = fix.heading;
-    }
-
-    if (heading === null && Number.isFinite(_orientationHeading)) {
+    if (heading === null && !shouldPreferMovementHeading() && Number.isFinite(_orientationHeading)) {
         heading = _orientationHeading;
     }
 
@@ -1382,6 +1412,28 @@ function resolveHeading(fix, previousFix, distance, moving) {
     }
 
     return heading;
+}
+
+function resolveMovementHeading(fix, previousFix, distance, moving) {
+    if (!moving) return null;
+
+    const courseHeading = previousFix && distance >= MOVEMENT_HEADING_MIN_DISTANCE_M ?
+        bearingDegrees(previousFix, fix) :
+        null;
+    const heading = Number.isFinite(courseHeading) ?
+        courseHeading :
+        normalizeHeading(fix.heading);
+
+    if (Number.isFinite(heading)) {
+        _movementHeading = heading;
+        return heading;
+    }
+
+    return null;
+}
+
+function shouldPreferMovementHeading() {
+    return Number.isFinite(_movementHeading) && (_isMoving || _recording.state === 'recording');
 }
 
 async function startOrientationTracking() {
@@ -1454,9 +1506,11 @@ function handleDeviceOrientation(event) {
     if (!Number.isFinite(heading)) return;
 
     _orientationHeading = heading;
-    _currentHeading = heading;
+    if (!shouldPreferMovementHeading()) {
+        _currentHeading = heading;
+    }
     if (isPageHidden()) return;
-    if ((_isMoving || _recording.state === 'recording') && _lastFix) {
+    if (!shouldPreferMovementHeading() && (_isMoving || _recording.state === 'recording') && _lastFix) {
         _lastHeading = heading;
         // Throttle: evita setData() sulla sorgente MapLibre a 60Hz.
         // deviceorientation può sparare a 60fps; aggiorniamo il marker a ~10fps,
@@ -1495,7 +1549,13 @@ function buildStatusFix() {
 }
 
 function resolveStatusHeading() {
-    const candidates = [_currentHeading, _lastHeading, _orientationHeading, _lastFix?.heading];
+    const candidates = [
+        shouldPreferMovementHeading() ? _movementHeading : null,
+        _currentHeading,
+        _lastHeading,
+        _orientationHeading,
+        _lastFix?.heading
+    ];
     for (let i = 0; i < candidates.length; i++) {
         const heading = normalizeHeading(candidates[i]);
         if (Number.isFinite(heading)) return heading;
@@ -1517,6 +1577,7 @@ function emitStatus(extra = {}) {
         altitude: fix?.ele ?? null,
         accuracy: fix?.accuracy ?? null,
         speed: fix?.speed ?? null,
+        movementHeading: Number.isFinite(_movementHeading) ? _movementHeading : null,
         orientationHeading: Number.isFinite(_orientationHeading) ? _orientationHeading : null,
         orientationPermission: getOrientationPermissionStatus(),
         updatedAt: fix?.timestamp ?? null,
@@ -1860,6 +1921,31 @@ function createEmptyRecording() {
 
 function chooseRecordedPointsForSave(recording) {
     return recording.points;
+}
+
+function resolveMovementHeadingForCamera() {
+    if (Number.isFinite(_movementHeading)) return _movementHeading;
+
+    if (_recording.state !== 'idle') {
+        const recordingHeading = movementHeadingFromRecordingPoints(_recording.points);
+        if (Number.isFinite(recordingHeading)) return recordingHeading;
+    }
+
+    if (_isMoving && Number.isFinite(_lastFix?.heading)) return normalizeHeading(_lastFix.heading);
+    return null;
+}
+
+function movementHeadingFromRecordingPoints(points) {
+    if (!Array.isArray(points) || points.length < 2) return null;
+    const latest = points[points.length - 1];
+    for (let i = points.length - 2; i >= 0; i--) {
+        const previous = points[i];
+        if (!previous) continue;
+        if (distanceMeters(previous, latest) >= MOVEMENT_HEADING_MIN_DISTANCE_M) {
+            return bearingDegrees(previous, latest);
+        }
+    }
+    return null;
 }
 
 function sanitizeRecordingName(name) {

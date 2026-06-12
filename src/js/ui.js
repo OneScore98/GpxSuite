@@ -60,6 +60,7 @@ let _setPrintPlanningOrientation = null;
 let _generateHighResPrintPreview = null;
 let _syncPrintOutputFromPreview = null;
 let _toggleDeviceLocation = null;
+let _orientMapToMovementHeading = null;
 let _stopDeviceLocation = null;
 let _requestDeviceLocationPermission = null;
 let _requestDeviceOrientationPermission = null;
@@ -696,6 +697,24 @@ function clearDeviceDashboardTiltHold(card) {
 }
 
 function bindDeviceDashboardCardInteractions() {
+    const compassCard = document.querySelector('[data-dashboard-field-card="compass"]');
+    if (compassCard && compassCard.dataset.bound !== 'true') {
+        compassCard.dataset.bound = 'true';
+        const orientToMovement = event => {
+            event.preventDefault();
+            if (_orientMapToMovementHeading) {
+                _orientMapToMovementHeading();
+                return;
+            }
+            showToast("Direzione di movimento non disponibile", "info");
+        };
+        compassCard.addEventListener('click', orientToMovement);
+        compassCard.addEventListener('keydown', event => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            orientToMovement(event);
+        });
+    }
+
     const tiltCard = document.querySelector('[data-dashboard-field-card="tilt"]');
     if (!tiltCard || tiltCard.dataset.bound === 'true') return;
     tiltCard.dataset.bound = 'true';
@@ -1062,10 +1081,13 @@ function renderDeviceDashboardCard(field, status, prebuiltMetric = null) {
     const fieldSettings = _deviceDashboardSettings.fields[field.id] || {};
     const size = DEVICE_DASHBOARD_SIZES.includes(fieldSettings.size) ? fieldSettings.size : DEFAULT_DEVICE_DASHBOARD_SIZE;
     const style = normalizeDeviceDashboardStyle(fieldSettings.style);
-    const title = field.id === 'tilt' ? 'Tieni premuto per impostare lo zero' : safeHtml(metric.meta || field.label);
+    const title = field.id === 'tilt' ?
+        'Tieni premuto per impostare lo zero' :
+        (field.id === 'compass' ? 'Orienta mappa verso direzione di marcia' : safeHtml(metric.meta || field.label));
     const titleAttr = title ? ` title="${safeHtml(title)}"` : '';
+    const interactionAttrs = field.id === 'compass' ? ' role="button" tabindex="0"' : '';
     return `
-        <div class="device-dashboard-card device-dashboard-card--${safeHtml(field.id)}" data-dashboard-field-card="${safeHtml(field.id)}" data-dashboard-size="${safeHtml(size)}" data-dashboard-style="${safeHtml(style)}"${titleAttr}${headingStyle}>
+        <div class="device-dashboard-card device-dashboard-card--${safeHtml(field.id)}" data-dashboard-field-card="${safeHtml(field.id)}" data-dashboard-size="${safeHtml(size)}" data-dashboard-style="${safeHtml(style)}"${titleAttr}${headingStyle}${interactionAttrs}>
             <div class="device-dashboard-icon">
                 <i data-lucide="${safeHtml(field.icon)}" class="w-4 h-4"></i>
             </div>
@@ -1598,6 +1620,7 @@ export function injectDeps(deps) {
     _generateHighResPrintPreview = deps.generateHighResPrintPreview;
     _syncPrintOutputFromPreview = deps.syncPrintOutputFromPreview;
     _toggleDeviceLocation = deps.toggleDeviceLocation;
+    _orientMapToMovementHeading = deps.orientMapToMovementHeading;
     _stopDeviceLocation = deps.stopDeviceLocation;
     _requestDeviceLocationPermission = deps.requestDeviceLocationPermission;
     _requestDeviceOrientationPermission = deps.requestDeviceOrientationPermission;

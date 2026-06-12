@@ -23,6 +23,7 @@ import {
     initDeviceLocation,
     setDeviceLocationStatusHandler,
     toggleDeviceLocation,
+    orientMapToMovementHeading,
     stopDeviceLocation,
     requestDeviceLocationPermission,
     requestDeviceOrientationPermission,
@@ -37,7 +38,7 @@ import {
     updateRecordingSettings,
     getDefaultRecordingName,
     restoreDeviceOverlays
-} from './location.js?v=dashboard-settings-collapse-20260605';
+} from './location.js?v=movement-heading-compass-20260613';
 import {
     togglePrintPlanning,
     disablePrintPlanning,
@@ -153,6 +154,7 @@ injectDeps({
     generateHighResPrintPreview,
     syncPrintOutputFromPreview,
     toggleDeviceLocation,
+    orientMapToMovementHeading,
     stopDeviceLocation,
     requestDeviceLocationPermission,
     requestDeviceOrientationPermission,

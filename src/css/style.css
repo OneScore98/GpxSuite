@@ -1694,6 +1694,10 @@ body.stats-panel-open #recording-status-chip {
     border-color: rgba(96, 165, 250, 0.3);
 }
 
+.device-dashboard-card--compass {
+    cursor: pointer;
+}
+
 .device-dashboard-card--altitude .device-dashboard-icon,
 .device-dashboard-card--speed .device-dashboard-icon {
     display: none;
