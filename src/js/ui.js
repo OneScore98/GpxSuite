@@ -21,6 +21,7 @@ import {
 import { escapeXml, generateDistinctTrackColor, refreshLucideIcons } from './utils.js';
 import { forceUpdateStats, haversineDistance } from './stats.js';
 import { trackAnalyticsEvent } from './auth.js';
+import { trovaTipoWaypoint } from './waypointTypes.js';
 import {
     listStoredTracks,
     loadStoredTrack,
@@ -59,8 +60,10 @@ let _setPrintPlanningOrientation = null;
 let _generateHighResPrintPreview = null;
 let _syncPrintOutputFromPreview = null;
 let _toggleDeviceLocation = null;
+let _stopDeviceLocation = null;
 let _requestDeviceLocationPermission = null;
 let _requestDeviceOrientationPermission = null;
+let _setDeviceOrientationEnabled = null;
 let _setDeviceLocationStatusHandler = null;
 let _setDeviceRecordingStatusHandler = null;
 let _startDeviceRecording = null;
@@ -93,8 +96,10 @@ const TOOL_CURSORS = {
     waypoint: createSvgCursor('<path d="M12 22s7-6.2 7-12a7 7 0 10-14 0c0 5.8 7 12 7 12z" fill="#2563eb" stroke="#f8fafc" stroke-width="2"/><circle cx="12" cy="10" r="2.5" fill="#f8fafc"/>', 12, 22)
 };
 const DEVICE_DASHBOARD_STORAGE_KEY = 'gpxsuite-device-dashboard-v1';
+const DEVICE_LOCATION_ENABLED_KEY = 'gpxsuite-location-enabled-v1';
 const DEVICE_DASHBOARD_TILT_ZERO_KEY = 'gpxsuite-device-tilt-zero-v1';
 const DEVICE_DASHBOARD_MOTION_PERMISSION_KEY = 'gpxsuite-motion-permission-v1';
+const DEVICE_DASHBOARD_MOTION_ENABLED_KEY = 'gpxsuite-motion-sensor-enabled-v1';
 const DEVICE_DASHBOARD_SETTINGS_VERSION = 3;
 const DEVICE_DASHBOARD_POSITIONS = ['top-right', 'top-left', 'bottom-center', 'bottom-right', 'bottom-left'];
 const DEVICE_DASHBOARD_SIZES = ['compact', 'medium', 'large'];
@@ -104,6 +109,10 @@ const DEFAULT_DEVICE_DASHBOARD_STYLE = 'map';
 // Ridotto da 120ms a 250ms: il dashboard sensori non necessita di 8fps,
 // 4fps è sufficiente per display numerici (velocità, altitudine, bussola).
 const DEVICE_DASHBOARD_SENSOR_RENDER_MS = 250;
+// Campionamento massimo dell'orientamento (~15Hz): gli eventi arrivano fino a
+// 60Hz ma per inclinometro e registrazione bastano 15 campioni/s, con un
+// quarto del lavoro CPU per la normalizzazione/smoothing.
+const DEVICE_DASHBOARD_ORIENTATION_SAMPLE_MS = 66;
 const DEVICE_DASHBOARD_TILT_MAX_DEG = 35;
 const DEVICE_DASHBOARD_ZERO_HOLD_MS = 620;
 const DEVICE_DASHBOARD_SENSOR_STALE_MS = 4500;
@@ -143,6 +152,7 @@ const DEVICE_DASHBOARD_FIELDS = [{
         defaultEnabled: false
     }
 ];
+let _deviceLocationPermissionEnabled = readPersistedDeviceLocationEnabled();
 let _deviceDashboardSettings = readDeviceDashboardSettings();
 let _deviceDashboardSensorListeners = { orientation: false, motion: false };
 let _deviceDashboardSensorRenderTimer = null;
@@ -165,6 +175,14 @@ let _deviceDashboardMotionState = {
 let _deviceDashboardTiltHoldTimer = null;
 let _deviceDashboardTiltPermissionPrompted = false;
 let _deviceDashboardMotionPermissionGranted = readPersistedDashboardMotionGrant();
+let _deviceDashboardMotionEnabled = readPersistedDashboardMotionEnabled();
+// Dedup stream orientamento: se arriva 'deviceorientationabsolute' ignoriamo
+// gli eventi 'deviceorientation' duplicati (doppio lavoro a 60Hz su alcuni browser).
+let _dashboardSawAbsoluteOrientation = false;
+let _lastDashboardOrientationProcessedAt = 0;
+// Ultimo stato registrazione noto: usato per attivare i sensori solo quando servono.
+let _lastRecordingSensorStatus = null;
+let _dashboardSensorVisibilityBound = false;
 
 function easeInOutCubic(t) {
     return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -227,6 +245,28 @@ function normalizeDeviceDashboardSettings(settings) {
         version: DEVICE_DASHBOARD_SETTINGS_VERSION,
         fields
     };
+}
+
+function readPersistedDeviceLocationEnabled() {
+    if (typeof localStorage === 'undefined') return true;
+    try {
+        const value = localStorage.getItem(DEVICE_LOCATION_ENABLED_KEY);
+        return value === null ? true : value === 'enabled';
+    } catch (err) {
+        return true;
+    }
+}
+
+function persistDeviceLocationEnabled(enabled) {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        localStorage.setItem(DEVICE_LOCATION_ENABLED_KEY, enabled ? 'enabled' : 'disabled');
+    } catch (err) {}
+}
+
+function setDeviceLocationPermissionEnabled(enabled) {
+    _deviceLocationPermissionEnabled = enabled === true;
+    persistDeviceLocationEnabled(_deviceLocationPermissionEnabled);
 }
 
 function readDeviceDashboardSettings() {
@@ -295,6 +335,23 @@ function persistDashboardMotionGrant(granted) {
     } catch (err) {}
 }
 
+function readPersistedDashboardMotionEnabled() {
+    if (typeof localStorage === 'undefined') return true;
+    try {
+        const value = localStorage.getItem(DEVICE_DASHBOARD_MOTION_ENABLED_KEY);
+        return value === null ? true : value === 'enabled';
+    } catch (err) {
+        return true;
+    }
+}
+
+function persistDashboardMotionEnabled(enabled) {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        localStorage.setItem(DEVICE_DASHBOARD_MOTION_ENABLED_KEY, enabled ? 'enabled' : 'disabled');
+    } catch (err) {}
+}
+
 function getEnabledDeviceDashboardFields() {
     return DEVICE_DASHBOARD_FIELDS.filter(field => _deviceDashboardSettings.fields[field.id]?.enabled === true);
 }
@@ -305,6 +362,32 @@ function isDeviceDashboardFieldEnabled(fieldId) {
 
 function isDeviceDashboardSensorFresh(updatedAt) {
     return Number.isFinite(updatedAt) && updatedAt > 0 && Date.now() - updatedAt <= DEVICE_DASHBOARD_SENSOR_STALE_MS;
+}
+
+function isDashboardOrientationEnabled() {
+    return _lastDeviceLocationStatus.orientationPermission !== 'disabled';
+}
+
+function setDashboardMotionEnabled(enabled) {
+    const nextEnabled = enabled === true;
+    if (_deviceDashboardMotionEnabled === nextEnabled) return _deviceDashboardMotionEnabled;
+
+    _deviceDashboardMotionEnabled = nextEnabled;
+    persistDashboardMotionEnabled(nextEnabled);
+    if (!nextEnabled) {
+        _deviceDashboardMotionState = { magnitude: null, lastMagnitude: null, vibration: null, level: null, updatedAt: 0 };
+    }
+    syncDeviceDashboardSensors();
+    scheduleDeviceDashboardSensorRender();
+    return _deviceDashboardMotionEnabled;
+}
+
+function disableDeviceSensorPermissions() {
+    _setDeviceOrientationEnabled?.(false);
+    setDashboardMotionEnabled(false);
+    syncDeviceDashboardSensors();
+    renderDeviceDashboard();
+    scheduleDevicePermissionRefresh(true);
 }
 
 function clampDeviceDashboardValue(value, min, max) {
@@ -341,21 +424,30 @@ async function requestDashboardMotionPermission() {
         showToast("Sensore vibrazioni non supportato da questo browser", "error");
         return false;
     }
-    if (_deviceDashboardMotionPermissionGranted) return true;
+    setDashboardMotionEnabled(true);
+    if (_deviceDashboardMotionPermissionGranted) {
+        syncDeviceDashboardSensors();
+        scheduleDeviceDashboardSensorRender();
+        return true;
+    }
     try {
         const MotionEvent = window.DeviceMotionEvent;
         if (typeof MotionEvent.requestPermission === 'function') {
             const permission = await MotionEvent.requestPermission();
             if (permission !== 'granted') {
+                setDashboardMotionEnabled(false);
                 showToast("Permesso movimento non concesso", "error");
                 return false;
             }
         }
         _deviceDashboardMotionPermissionGranted = true;
         persistDashboardMotionGrant(true);
+        syncDeviceDashboardSensors();
+        scheduleDeviceDashboardSensorRender();
         return true;
     } catch (err) {
         console.warn('Movimento dispositivo non disponibile', err);
+        setDashboardMotionEnabled(false);
         showToast("Sensore vibrazioni non disponibile", "error");
         return false;
     }
@@ -366,6 +458,7 @@ async function requestDashboardOrientationPermission(options = {}) {
         showToast("Inclinometro non supportato da questo browser", "error");
         return false;
     }
+    _setDeviceOrientationEnabled?.(true);
     if (_requestDeviceOrientationPermission) {
         const granted = await _requestDeviceOrientationPermission({ forcePrompt: options.forcePrompt === true });
         if (granted) {
@@ -395,9 +488,11 @@ async function requestDashboardOrientationPermission(options = {}) {
 function requestDashboardSensorPermissionsFromGesture() {
     const requests = [];
     if (typeof window.DeviceOrientationEvent !== 'undefined') {
+        _setDeviceOrientationEnabled?.(true);
         requests.push(requestDashboardOrientationPermission({ forcePrompt: true }));
     }
     if (typeof window.DeviceMotionEvent !== 'undefined') {
+        setDashboardMotionEnabled(true);
         requests.push(requestDashboardMotionPermission());
     }
     if (requests.length === 0) return;
@@ -410,6 +505,7 @@ function requestDashboardSensorPermissionsFromGesture() {
 
 async function ensureDashboardTiltPermissionIfEnabled(fromGesture = false) {
     if (!isDeviceDashboardFieldEnabled('tilt')) return false;
+    if (!isDashboardOrientationEnabled()) return false;
     if (typeof window.DeviceOrientationEvent === 'undefined') return false;
     if (isDeviceDashboardSensorFresh(_deviceDashboardTiltState.updatedAt)) return true;
 
@@ -453,6 +549,17 @@ function scheduleDeviceDashboardSensorRender() {
 }
 
 function handleDeviceDashboardOrientation(event) {
+    // Processa un solo stream quando il browser li emette entrambi.
+    if (event.type === 'deviceorientationabsolute') {
+        _dashboardSawAbsoluteOrientation = true;
+    } else if (_dashboardSawAbsoluteOrientation) {
+        return;
+    }
+    // Sottocampionamento a ~15Hz: meno trigonometria e smoothing per evento.
+    const nowSample = Date.now();
+    if (nowSample - _lastDashboardOrientationProcessedAt < DEVICE_DASHBOARD_ORIENTATION_SAMPLE_MS) return;
+    _lastDashboardOrientationProcessedAt = nowSample;
+
     const angles = normalizeDeviceDashboardOrientation(event);
     if (!angles) return;
 
@@ -505,9 +612,30 @@ function handleDeviceDashboardMotion(event) {
     scheduleDeviceDashboardSensorRender();
 }
 
+// Indica se la registrazione attiva richiede un sensore (cattura abilitata nelle
+// impostazioni). In pausa o idle i sensori della registrazione restano spenti.
+function recordingNeedsSensor(kind) {
+    const status = _lastRecordingSensorStatus;
+    if (!status || status.state !== 'recording') return false;
+    const settings = status.settings || {};
+    if (kind === 'orientation') return settings.recordTiltPitch !== false;
+    return settings.recordVibration !== false;
+}
+
 function syncDeviceDashboardSensors() {
-    const needsOrientation = isDeviceDashboardFieldEnabled('tilt');
-    const needsMotion = isDeviceDashboardFieldEnabled('vibration');
+    // I listener sensore restano attivi solo quando servono davvero:
+    // campo dashboard abilitato oppure registrazione in corso con cattura attiva.
+    // A pagina nascosta vengono sempre staccati (risparmio batteria/CPU);
+    // il visibilitychange qui sotto li riattacca al ritorno in primo piano.
+    if (!_dashboardSensorVisibilityBound && typeof document !== 'undefined') {
+        _dashboardSensorVisibilityBound = true;
+        document.addEventListener('visibilitychange', syncDeviceDashboardSensors);
+    }
+    const pageHidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+    const needsOrientation = !pageHidden && isDashboardOrientationEnabled() &&
+        (isDeviceDashboardFieldEnabled('tilt') || recordingNeedsSensor('orientation'));
+    const needsMotion = !pageHidden && _deviceDashboardMotionEnabled &&
+        (isDeviceDashboardFieldEnabled('vibration') || recordingNeedsSensor('motion'));
 
     if (needsOrientation && !_deviceDashboardSensorListeners.orientation && typeof window.DeviceOrientationEvent !== 'undefined') {
         window.addEventListener('deviceorientationabsolute', handleDeviceDashboardOrientation, true);
@@ -517,6 +645,7 @@ function syncDeviceDashboardSensors() {
         window.removeEventListener('deviceorientationabsolute', handleDeviceDashboardOrientation, true);
         window.removeEventListener('deviceorientation', handleDeviceDashboardOrientation, true);
         _deviceDashboardSensorListeners.orientation = false;
+        _dashboardSawAbsoluteOrientation = false;
         _deviceDashboardTiltState = { rawTilt: null, rawPitch: null, tilt: null, pitch: null, updatedAt: 0 };
     }
 
@@ -536,9 +665,9 @@ export function getCurrentRecordingSensorData() {
     const tiltFresh = isDeviceDashboardSensorFresh(_deviceDashboardTiltState.updatedAt);
     const motionFresh = isDeviceDashboardSensorFresh(_deviceDashboardMotionState.updatedAt);
     return {
-        tilt: tiltFresh && Number.isFinite(_deviceDashboardTiltState.tilt) ? _deviceDashboardTiltState.tilt : null,
-        pitch: tiltFresh && Number.isFinite(_deviceDashboardTiltState.pitch) ? _deviceDashboardTiltState.pitch : null,
-        vibrationLevel: motionFresh && Number.isFinite(_deviceDashboardMotionState.level) ? _deviceDashboardMotionState.level : null
+        tilt: isDashboardOrientationEnabled() && tiltFresh && Number.isFinite(_deviceDashboardTiltState.tilt) ? _deviceDashboardTiltState.tilt : null,
+        pitch: isDashboardOrientationEnabled() && tiltFresh && Number.isFinite(_deviceDashboardTiltState.pitch) ? _deviceDashboardTiltState.pitch : null,
+        vibrationLevel: _deviceDashboardMotionEnabled && motionFresh && Number.isFinite(_deviceDashboardMotionState.level) ? _deviceDashboardMotionState.level : null
     };
 }
 
@@ -783,6 +912,14 @@ function getLocationUnavailableMeta(status) {
 }
 
 function buildDeviceDashboardTiltMetric() {
+    if (!isDashboardOrientationEnabled()) {
+        return {
+            available: false,
+            value: '--° --°',
+            valueClass: 'device-dashboard-value--tilt',
+            meta: 'Orientamento disattivato'
+        };
+    }
     const fresh = isDeviceDashboardSensorFresh(_deviceDashboardTiltState.updatedAt);
     const tilt = fresh ? _deviceDashboardTiltState.tilt : null;
     const pitch = fresh ? _deviceDashboardTiltState.pitch : null;
@@ -793,6 +930,7 @@ function buildDeviceDashboardTiltMetric() {
     const statusLabel = fresh ? (zeroActive ? 'ZERO' : 'LIVE') : 'N/D';
 
     return {
+        available: fresh,
         value: fresh ? `${formatDeviceDashboardSignedDegree(tilt)} ${formatDeviceDashboardSignedDegree(pitch)}` : '--° --°',
         valueClass: 'device-dashboard-value--tilt',
         meta: fresh ? 'Inclinometro dispositivo' : 'Sensore non disponibile',
@@ -828,12 +966,21 @@ function renderDeviceDashboardVibrationBars(level) {
 }
 
 function buildDeviceDashboardVibrationMetric() {
+    if (!_deviceDashboardMotionEnabled) {
+        return {
+            available: false,
+            value: '--/10',
+            valueClass: 'device-dashboard-value--vibration',
+            meta: 'Vibrazioni disattivate'
+        };
+    }
     const fresh = isDeviceDashboardSensorFresh(_deviceDashboardMotionState.updatedAt);
     const level = fresh ? _deviceDashboardMotionState.level : null;
     const vibration = fresh ? _deviceDashboardMotionState.vibration : null;
     const fill = level !== null ? `${level * 10}%` : '0%';
 
     return {
+        available: fresh,
         value: level !== null ? `${level}/10` : '--/10',
         valueClass: 'device-dashboard-value--vibration',
         meta: fresh ? 'Vibrazione dispositivo' : 'Sensore non disponibile',
@@ -859,12 +1006,14 @@ function buildDeviceDashboardMetric(field, status) {
         if (active && heading !== null) {
             const degrees = Math.round(heading);
             return {
+                available: true,
                 value: `${degrees}°`,
                 meta: cardinalDirectionFromHeading(degrees),
                 heading: degrees
             };
         }
         return {
+            available: false,
             value: '--°',
             meta: getLocationUnavailableMeta(status),
             heading: 0
@@ -874,6 +1023,7 @@ function buildDeviceDashboardMetric(field, status) {
     if (field.id === 'altitude') {
         const altitude = active ? formatDeviceDashboardNumber(fix.ele, 0) : null;
         return {
+            available: altitude !== null,
             value: altitude !== null ? `${altitude} m` : '-- m',
             meta: altitude !== null ? 'Quota dispositivo' : getLocationUnavailableMeta(status)
         };
@@ -883,6 +1033,7 @@ function buildDeviceDashboardMetric(field, status) {
         const speedMps = parseDeviceDashboardNumber(fix.speed);
         const speedKmh = active && speedMps !== null ? formatDeviceDashboardNumber(speedMps * 3.6, 1) : null;
         return {
+            available: speedKmh !== null,
             value: speedKmh !== null ? `${speedKmh} km/h` : '-- km/h',
             meta: speedKmh !== null ? (status.moving ? 'In movimento' : 'Fermo') : getLocationUnavailableMeta(status)
         };
@@ -897,13 +1048,14 @@ function buildDeviceDashboardMetric(field, status) {
     }
 
     return {
+        available: false,
         value: '--',
         meta: ''
     };
 }
 
-function renderDeviceDashboardCard(field, status) {
-    const metric = buildDeviceDashboardMetric(field, status);
+function renderDeviceDashboardCard(field, status, prebuiltMetric = null) {
+    const metric = prebuiltMetric || buildDeviceDashboardMetric(field, status);
     const metricHeading = parseDeviceDashboardNumber(metric.heading);
     const headingStyle = metricHeading !== null ? ` style="--device-dashboard-heading:${metricHeading}deg"` : '';
     const valueHtml = metric.valueHtml || safeHtml(metric.value);
@@ -952,15 +1104,19 @@ function renderDeviceDashboard() {
     if (enabledFields.length === 0) return;
 
     enabledFields.forEach(field => {
+        // Mostra il widget solo quando ci sono dati reali dal sensore/GPS:
+        // su desktop (o senza permessi) le card "N/D" sono solo rumore visivo.
+        const metric = buildDeviceDashboardMetric(field, _lastDeviceLocationStatus);
+        if (metric.available === false) return;
         const position = _deviceDashboardSettings.fields[field.id]?.position || field.defaultPosition;
         const zone = zoneEls[position] || zoneEls[field.defaultPosition];
-        if (zone) zone.insertAdjacentHTML('beforeend', renderDeviceDashboardCard(field, _lastDeviceLocationStatus));
+        if (zone) zone.insertAdjacentHTML('beforeend', renderDeviceDashboardCard(field, _lastDeviceLocationStatus, metric));
     });
     refreshLucideIcons();
     bindDeviceDashboardCardInteractions();
 }
 
-function updateMapToolCursor() {
+export function updateMapToolCursor() {
     if (!map) return;
     const canvas = map.getCanvas();
     if (!canvas) return;
@@ -976,7 +1132,7 @@ function setToolButtonState(buttonId, active) {
     document.getElementById(buttonId)?.classList.toggle('text-white', active);
 }
 
-function updateToolButtons() {
+export function updateToolButtons() {
     setToolButtonState('btn-draw-track', isDrawing);
     setToolButtonState('btn-cut-track', isCutting);
     setToolButtonState('btn-box-delete', isBoxDeleting);
@@ -1054,6 +1210,13 @@ function formatRecordingElapsed(ms = 0) {
 }
 
 function updateDeviceRecordingUi(status = {}) {
+    // Tiene aggiornato lo stato usato per attivare/disattivare i sensori:
+    // i listener tilt/vibrazioni partono solo a registrazione in corso
+    // (se la cattura è abilitata) e si fermano in pausa/stop.
+    const previousState = _lastRecordingSensorStatus?.state || 'idle';
+    _lastRecordingSensorStatus = status;
+    if (status.state !== previousState) syncDeviceDashboardSensors();
+
     const btn = document.getElementById('btn-device-recording');
     const chip = document.getElementById('recording-status-chip');
     const chipText = document.getElementById('recording-status-text');
@@ -1118,6 +1281,11 @@ function permissionMeta(state) {
                 label: 'Non supportato',
                 classes: 'bg-gray-950 text-gray-500 border-gray-800'
             };
+        case 'disabled':
+            return {
+                label: 'Disattivato',
+                classes: 'bg-gray-950 text-gray-400 border-gray-800'
+            };
         default:
             return {
                 label: 'Non verificato',
@@ -1156,6 +1324,7 @@ function getOrientationPermissionState() {
 
 function getDashboardMotionPermissionState() {
     if (typeof window.DeviceMotionEvent === 'undefined') return 'unsupported';
+    if (!_deviceDashboardMotionEnabled) return 'disabled';
     if (_deviceDashboardMotionPermissionGranted) return 'granted';
     const MotionEvent = window.DeviceMotionEvent;
     if (typeof MotionEvent.requestPermission === 'function') return 'prompt';
@@ -1170,7 +1339,8 @@ async function refreshDevicePermissionUi(force = false) {
     const geoState = _lastDeviceLocationStatus.error === 'permission-denied' ?
         'denied' :
             (_lastDeviceLocationStatus.waiting ? 'requesting' :
-                (_lastDeviceLocationStatus.active ? 'granted' : await queryBrowserPermission('geolocation')));
+                (_lastDeviceLocationStatus.active ? 'granted' :
+                    (!_deviceLocationPermissionEnabled ? 'disabled' : await queryBrowserPermission('geolocation'))));
     const orientationState = _lastDeviceLocationStatus.orientationPermission || getOrientationPermissionState();
     const motionState = getDashboardMotionPermissionState();
 
@@ -1182,8 +1352,10 @@ async function refreshDevicePermissionUi(force = false) {
     if (overall) {
         const states = [geoState, orientationState, motionState];
         const overallState = states.includes('denied') ? 'denied' :
-            (states.includes('prompt') || states.includes('requesting') ? 'prompt' :
-                (states.includes('unsupported') ? 'unsupported' : 'granted'));
+            (states.includes('requesting') ? 'requesting' :
+                (states.includes('prompt') ? 'prompt' :
+                    (states.includes('disabled') ? 'disabled' :
+                        (states.includes('granted') ? 'granted' : 'unsupported'))));
         const meta = permissionMeta(overallState);
         overall.textContent = overallState === 'granted' ? 'OK' :
             (overallState === 'prompt' ? 'Da autorizzare' : meta.label);
@@ -1288,6 +1460,8 @@ function syncRecordingSettingsForm() {
     setChecked('recording-save-elevation', settings.saveElevation);
     setChecked('recording-keep-screen-on', settings.keepScreenOn);
     setChecked('recording-high-accuracy-gps', settings.highAccuracyGps !== false);
+    setChecked('recording-capture-tilt', settings.recordTiltPitch !== false);
+    setChecked('recording-capture-vibration', settings.recordVibration !== false);
 }
 
 function bindRecordingSettingsForm() {
@@ -1326,9 +1500,46 @@ function bindRecordingSettingsForm() {
     if (gpsAccuracyToggle) {
         gpsAccuracyToggle.onchange = () => _updateRecordingSettings?.({ highAccuracyGps: gpsAccuracyToggle.checked });
     }
+    const tiltCaptureToggle = document.getElementById('recording-capture-tilt');
+    if (tiltCaptureToggle) {
+        tiltCaptureToggle.onchange = () => {
+            _updateRecordingSettings?.({ recordTiltPitch: tiltCaptureToggle.checked });
+            // Applica subito: stacca/attacca i listener sensore anche a registrazione in corso.
+            syncDeviceDashboardSensors();
+        };
+    }
+    const vibrationCaptureToggle = document.getElementById('recording-capture-vibration');
+    if (vibrationCaptureToggle) {
+        vibrationCaptureToggle.onchange = () => {
+            _updateRecordingSettings?.({ recordVibration: vibrationCaptureToggle.checked });
+            syncDeviceDashboardSensors();
+        };
+    }
     const colorInput = document.getElementById('recording-track-color');
     if (colorInput) {
         colorInput.onchange = () => _updateRecordingSettings?.({ trackColor: colorInput.value });
+    }
+}
+
+// Su iOS i sensori richiedono un permesso da gesto utente: l'avvio registrazione
+// è il momento giusto per richiederlo, ma solo se la cattura è abilitata
+// (sensori disattivati = nessuna richiesta e nessun consumo).
+function requestRecordingSensorPermissionsIfNeeded() {
+    const settings = _getRecordingSettings ? _getRecordingSettings() : null;
+    if (!settings) return;
+    if (settings.recordTiltPitch !== false &&
+        isDashboardOrientationEnabled() &&
+        typeof window.DeviceOrientationEvent !== 'undefined' &&
+        typeof window.DeviceOrientationEvent.requestPermission === 'function' &&
+        (_lastDeviceLocationStatus.orientationPermission || 'prompt') !== 'granted') {
+        requestDashboardOrientationPermission({ forcePrompt: false }).catch(() => {});
+    }
+    if (settings.recordVibration !== false &&
+        _deviceDashboardMotionEnabled &&
+        typeof window.DeviceMotionEvent !== 'undefined' &&
+        typeof window.DeviceMotionEvent.requestPermission === 'function' &&
+        !_deviceDashboardMotionPermissionGranted) {
+        requestDashboardMotionPermission().catch(() => {});
     }
 }
 
@@ -1347,6 +1558,7 @@ function handleDeviceRecordingButtonClick(source = 'toolbar') {
         return;
     }
     if (source !== 'chip') {
+        requestRecordingSensorPermissionsIfNeeded();
         _startDeviceRecording?.();
     }
 }
@@ -1386,8 +1598,10 @@ export function injectDeps(deps) {
     _generateHighResPrintPreview = deps.generateHighResPrintPreview;
     _syncPrintOutputFromPreview = deps.syncPrintOutputFromPreview;
     _toggleDeviceLocation = deps.toggleDeviceLocation;
+    _stopDeviceLocation = deps.stopDeviceLocation;
     _requestDeviceLocationPermission = deps.requestDeviceLocationPermission;
     _requestDeviceOrientationPermission = deps.requestDeviceOrientationPermission;
+    _setDeviceOrientationEnabled = deps.setDeviceOrientationEnabled;
     _setDeviceLocationStatusHandler = deps.setDeviceLocationStatusHandler;
     _setDeviceRecordingStatusHandler = deps.setDeviceRecordingStatusHandler;
     _startDeviceRecording = deps.startDeviceRecording;
@@ -2509,6 +2723,103 @@ function getAnalyzableSegments(sourceTrack) {
         .filter(segment => Array.isArray(segment.points) && segment.points.length >= 2);
 }
 
+// === Job di analisi offroad in corso: placeholder "in caricamento" nel GIS tree ===
+const _offroadJobs = new Map();
+let _offroadJobSeq = 0;
+
+// Cede il controllo al browser per permettere il repaint (spinner, barra, mappa)
+// durante i loop pesanti di classificazione superfici.
+function yieldToUi() {
+    return new Promise(resolve => setTimeout(resolve, 0));
+}
+
+function createOffroadCancelledError() {
+    const error = new Error('Analisi offroad annullata');
+    error.offroadCancelled = true;
+    return error;
+}
+
+function getOffroadJobStatusText(job) {
+    if (job.cancelled) return 'Annullamento in corso…';
+    const current = Math.min(job.doneChunks + 1, job.totalChunks);
+    if (job.phase === 'fetch') {
+        return `Scarico dati stradali OSM… blocco ${current}/${job.totalChunks}`;
+    }
+    return `Analisi tratti non asfaltati… blocco ${current}/${job.totalChunks}`;
+}
+
+function getOffroadJobPercent(job) {
+    if (!job.totalChunks) return 0;
+    return Math.round((job.doneChunks / job.totalChunks) * 100);
+}
+
+function updateOffroadJobUi(job) {
+    const statusEl = document.getElementById(`offroad-job-status-${job.id}`);
+    if (statusEl) statusEl.textContent = getOffroadJobStatusText(job);
+    const barEl = document.getElementById(`offroad-job-bar-${job.id}`);
+    if (barEl) barEl.style.width = `${getOffroadJobPercent(job)}%`;
+}
+
+function startOffroadJob(label, totalChunks) {
+    const job = {
+        id: `job_${Date.now()}_${++_offroadJobSeq}`,
+        label: label || 'Traccia',
+        totalChunks: Math.max(totalChunks, 1),
+        doneChunks: 0,
+        cancelled: false
+    };
+    _offroadJobs.set(job.id, job);
+    renderGisTree();
+    flushGisTreeIfDirty();
+    return job;
+}
+
+function finishOffroadJob(job) {
+    if (!job) return;
+    _offroadJobs.delete(job.id);
+    renderGisTree();
+    flushGisTreeIfDirty();
+}
+
+export function cancelOffroadAnalysis(jobId) {
+    const job = _offroadJobs.get(jobId);
+    if (!job || job.cancelled) return;
+    job.cancelled = true;
+    updateOffroadJobUi(job);
+    showToast('Annullamento analisi offroad…', 'info');
+}
+
+function renderOffroadJobsHtml() {
+    if (_offroadJobs.size === 0) return '';
+    let html = '';
+    _offroadJobs.forEach(job => {
+        html += `
+        <div class="gis-track-card bg-gray-900/95 border border-amber-700/60 rounded-xl overflow-hidden shadow-lg" id="offroad-job-${job.id}">
+          <div class="flex items-stretch">
+            <div class="w-1.5 bg-amber-500/80 animate-pulse"></div>
+            <div class="flex-1 min-w-0 p-2.5 space-y-1.5">
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-1.5 min-w-0">
+                  <i data-lucide="loader-2" class="w-3.5 h-3.5 text-amber-300 animate-spin shrink-0"></i>
+                  <span class="text-xs font-bold text-amber-100 truncate">Offroad - ${escapeXml(job.label)}</span>
+                </div>
+                <button onclick="cancelOffroadAnalysis('${job.id}')" class="text-[10px] font-semibold text-gray-400 hover:text-red-300 border border-gray-700 hover:border-red-800 rounded px-1.5 py-0.5 shrink-0" title="Annulla l'analisi offroad in corso">Annulla</button>
+              </div>
+              <div id="offroad-job-status-${job.id}" class="text-[10px] text-gray-400 pl-5">${getOffroadJobStatusText(job)}</div>
+              <div class="ml-5 h-1 rounded-full bg-gray-800 overflow-hidden">
+                <div id="offroad-job-bar-${job.id}" class="h-full bg-amber-400/80 transition-all duration-300" style="width:${getOffroadJobPercent(job)}%"></div>
+              </div>
+            </div>
+          </div>
+        </div>`;
+    });
+    return `<div class="space-y-2 mb-3">
+      <span class="text-[10px] text-amber-300/90 font-bold uppercase tracking-wider flex items-center gap-1">
+        <i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i> Analisi in corso (${_offroadJobs.size})
+      </span>${html}
+    </div>`;
+}
+
 function countOffroadAnalysisChunks(sourceSegments) {
     let total = 0;
     for (let i = 0; i < sourceSegments.length; i++) {
@@ -2517,7 +2828,7 @@ function countOffroadAnalysisChunks(sourceSegments) {
     return total;
 }
 
-async function analyzeOffroadSegment(sourceSegment) {
+async function analyzeOffroadSegment(sourceSegment, job = null) {
     const points = sourceSegment.points || [];
     const chunks = splitOffroadAnalysisChunks(points);
     const offroad = new Array(points.length).fill(false);
@@ -2529,16 +2840,35 @@ async function analyzeOffroadSegment(sourceSegment) {
     let matchedWayCount = 0;
 
     for (let c = 0; c < chunks.length; c += OVERPASS_MAX_CHUNKS_PER_REQUEST) {
+        if (job?.cancelled) throw createOffroadCancelledError();
         const endChunkIndex = Math.min(chunks.length - 1, c + OVERPASS_MAX_CHUNKS_PER_REQUEST - 1);
+        if (job) {
+            job.phase = 'fetch';
+            updateOffroadJobUi(job);
+        }
         const osmWays = await fetchOsmWaysForChunkBatchWithRetry(points, chunks, c, endChunkIndex);
+        if (job?.cancelled) throw createOffroadCancelledError();
+        if (job) {
+            job.phase = 'classify';
+            updateOffroadJobUi(job);
+        }
         for (let w = 0; w < osmWays.length; w++) {
             seenOsmWayIds.add(osmWays[w].id);
         }
 
         const osmSegments = buildOsmWaySegments(osmWays);
         for (let chunkIndex = c; chunkIndex <= endChunkIndex; chunkIndex++) {
+            if (job) {
+                if (job.cancelled) throw createOffroadCancelledError();
+                // Repaint del browser tra un blocco e l'altro: senza questo yield
+                // la classificazione blocca il main thread e l'interfaccia si congela.
+                await yieldToUi();
+            }
             const chunk = chunks[chunkIndex];
             for (let i = chunk.startIndex + 1; i <= chunk.endIndex; i++) {
+                // Yield periodico anche dentro il blocco: con dati OSM urbani densi
+                // la classificazione di un singolo blocco può richiedere secondi.
+                if (job && ((i - chunk.startIndex) % 64) === 0) await yieldToUi();
                 const classification = classifyTrackLegAsOffroad(points, i, osmSegments);
                 if (classification.offroad) {
                     offroad[i - 1] = true;
@@ -2557,6 +2887,10 @@ async function analyzeOffroadSegment(sourceSegment) {
                         unknownRoadLegCount++;
                     }
                 }
+            }
+            if (job) {
+                job.doneChunks = Math.min(job.totalChunks, job.doneChunks + 1);
+                updateOffroadJobUi(job);
             }
         }
     }
@@ -2719,6 +3053,9 @@ async function extractOffroadFromSources(sourceTrack, sourceSegments, nameBase) 
     const totalChunks = countOffroadAnalysisChunks(sourceSegments);
     showToast(`Analisi superfici OSM: ${sourceSegments.length} segmenti, ${totalChunks} blocchi...`, "info");
 
+    // Placeholder "in caricamento" subito visibile nel GIS tree
+    const job = startOffroadJob(nameBase, totalChunks);
+
     try {
         const extractedRanges = [];
         const summary = {
@@ -2732,8 +3069,9 @@ async function extractOffroadFromSources(sourceTrack, sourceSegments, nameBase) 
         };
 
         for (let i = 0; i < sourceSegments.length; i++) {
+            if (job.cancelled) throw createOffroadCancelledError();
             const sourceSegment = sourceSegments[i];
-            const result = await analyzeOffroadSegment(sourceSegment);
+            const result = await analyzeOffroadSegment(sourceSegment, job);
             summary.osmWayCount += result.osmWayCount;
             summary.osmChunkCount += result.osmChunkCount;
             summary.matchedWayCount += result.matchedWayCount;
@@ -2765,8 +3103,16 @@ async function extractOffroadFromSources(sourceTrack, sourceSegments, nameBase) 
         schedulePersistAppSession();
         showToast(`Creata ${newTrack.name}: ${extractedRanges.length} tratti non asfaltati`, "success");
     } catch (err) {
-        console.error(err);
-        showToast(getOffroadAnalysisErrorMessage(err), "error");
+        if (err?.offroadCancelled) {
+            showToast("Analisi offroad annullata", "info");
+        } else {
+            console.error(err);
+            showToast(getOffroadAnalysisErrorMessage(err), "error");
+        }
+    } finally {
+        // Rimuove sempre il placeholder dal GIS tree (successo, errore,
+        // annullamento o nessun tratto trovato).
+        finishOffroadJob(job);
     }
 }
 
@@ -3272,7 +3618,8 @@ function _doRenderGisTree() {
     const container = document.getElementById('gis-file-tree');
     normalizeTreeSelection();
     pruneCollapsedActiveTracks();
-    if (tracks.length === 0) {
+    const offroadJobsHtml = renderOffroadJobsHtml();
+    if (tracks.length === 0 && !offroadJobsHtml) {
         container.innerHTML = `
           <div class="text-center py-6 text-gray-500 text-xs italic">
             Nessuna traccia o waypoint caricati in memoria.
@@ -3280,7 +3627,7 @@ function _doRenderGisTree() {
         return;
     }
 
-    let html = '';
+    let html = offroadJobsHtml;
 
     if (tracks.length > 0) {
         html += `<div class="space-y-2">
@@ -3310,7 +3657,7 @@ function _doRenderGisTree() {
                 <div class="gis-track-color-strip w-1.5" style="background-color: ${track.color || '#3b82f6'}"></div>
                 <div class="gis-track-body flex-1 min-w-0 p-2.5 space-y-2">
                   <div class="gis-track-header flex items-start justify-between gap-2">
-                    <div class="flex items-start gap-2 min-w-0">
+                    <div class="flex items-start gap-2 min-w-0 flex-1">
                       <button draggable="true"
                               ondragstart="handleGisDragStart(event, 'track', '${track.id}')"
                               ondragend="handleGisDragEnd(event)"
@@ -3318,12 +3665,12 @@ function _doRenderGisTree() {
                               title="Trascina per riordinare questo file GPX">
                         <i data-lucide="grip-vertical" class="w-4 h-4"></i>
                       </button>
-                      <div class="gis-track-title-block min-w-0 cursor-pointer">
+                      <div class="gis-track-title-block flex-1 min-w-0 cursor-pointer">
                         <div class="flex items-center gap-1.5 min-w-0">
                           <i data-lucide="${isExpanded ? 'chevron-down' : 'chevron-right'}" class="w-3 h-3 ${isActive ? 'text-blue-300' : 'text-gray-500'} shrink-0"></i>
                           <i data-lucide="file-map" class="w-3.5 h-3.5 ${isActive ? 'text-blue-300' : 'text-gray-500'} shrink-0"></i>
                           <span id="track-name-${track.id}" data-track-name-id="${track.id}" role="button" tabindex="0" contenteditable="false"
-                                class="track-name-label block text-xs font-bold ${track.visible === false ? 'text-gray-500 line-through' : 'text-white'} border-b border-transparent focus:border-blue-500 focus:outline-none min-w-0 w-36 truncate cursor-pointer select-none">${escapeXml(track.name)}</span>
+                                class="track-name-label block text-xs font-bold ${track.visible === false ? 'text-gray-500 line-through' : 'text-white'} border-b border-transparent focus:border-blue-500 focus:outline-none min-w-0 flex-1 truncate cursor-pointer select-none">${escapeXml(track.name)}</span>
                         </div>
                         <div class="gis-track-meta text-[10px] text-gray-500 mt-0.5 pl-5">
                           File ${trackIndex + 1} · ${segmentCount} segmenti · ${pointCount} pt · ${track.waypoints.length} wp · ${track.width || 3}px
@@ -3365,7 +3712,7 @@ function _doRenderGisTree() {
                              onpointerleave="clearTrackLongPress()"
                              ondragover="handleGisDragOver(event)"
                              ondrop="handleGisDrop(event, 'segment', '${track.id}', '${seg.id}')">
-                          <div class="flex items-center gap-1.5 min-w-0 cursor-pointer">
+                          <div class="flex items-center gap-1.5 min-w-0 flex-1 cursor-pointer">
                             <button draggable="true"
                                     ondragstart="handleGisDragStart(event, 'segment', '${track.id}', '${seg.id}')"
                                     ondragend="handleGisDragEnd(event)"
@@ -3374,10 +3721,10 @@ function _doRenderGisTree() {
                               <i data-lucide="grip-vertical" class="w-3.5 h-3.5"></i>
                             </button>
                             <i data-lucide="milestone" class="w-3 h-3 text-gray-500 shrink-0"></i>
-                            <input id="segment-name-${seg.id}" type="text" value="${escapeXml(seg.name)}" onchange="renameSegment('${track.id}', '${seg.id}', this.value)" onclick="event.stopPropagation()" class="bg-transparent text-[11px] border-b border-transparent hover:border-gray-700 focus:border-blue-500 focus:outline-none min-w-0 w-24 ${seg.visible === false ? 'line-through' : ''}">
+                            <input id="segment-name-${seg.id}" type="text" value="${escapeXml(seg.name)}" onchange="renameSegment('${track.id}', '${seg.id}', this.value)" onclick="event.stopPropagation()" class="bg-transparent text-[11px] border-b border-transparent hover:border-gray-700 focus:border-blue-500 focus:outline-none flex-1 min-w-0 ${seg.visible === false ? 'line-through' : ''}">
                           </div>
                           <div class="flex items-center gap-1.5 shrink-0">
-                            <span class="text-[10px] text-gray-500">${segIndex + 1}/${seg.points.length} pt</span>
+                            <span class="text-[10px] text-gray-500 whitespace-nowrap">${seg.points.length.toLocaleString('it-IT')} pt</span>
                             <button onclick="toggleSegmentVisibility('${track.id}', '${seg.id}')" class="text-gray-500 hover:text-white" title="Mostra/Nascondi Segmento"><i data-lucide="${seg.visible === false ? 'eye-off' : 'eye'}" class="w-3 h-3"></i></button>
                             <button onclick="deleteSegment('${track.id}', '${seg.id}')" class="text-gray-600 hover:text-red-400" title="Elimina segmento"><i data-lucide="x" class="w-3 h-3"></i></button>
                           </div>
@@ -3401,10 +3748,12 @@ function _doRenderGisTree() {
                       <button onclick="event.stopPropagation(); toggleAllWaypointsVisibility('${track.id}')" class="text-gray-500 hover:text-white" title="Mostra/Nascondi Gruppo Waypoint"><i data-lucide="${track.waypointsVisible === false ? 'eye-off' : 'eye'}" class="w-3.5 h-3.5"></i></button>
                     </div>
                     ${areWaypointsExpanded ? `<div class="${track.waypointsVisible === false ? 'hidden' : 'space-y-1'}">
-                      ${track.waypoints.map(wp => `
+                      ${track.waypoints.map(wp => {
+                          const tipoWp = trovaTipoWaypoint(wp.symbol);
+                          return `
                           <div class="gis-waypoint-row flex items-center justify-between gap-1 text-xs hover:bg-gray-800/40 p-1 rounded transition-all ${wp.visible === false ? 'opacity-50' : ''}">
                             <div class="flex items-center gap-1.5 min-w-0">
-                              <span class="text-sm">${wp.symbol}</span>
+                              <span class="gis-waypoint-symbol" style="--wp-color: ${tipoWp.colore}" title="${escapeXml(tipoWp.etichetta)}">${escapeXml(tipoWp.sigla)}</span>
                               <span class="font-medium text-gray-200 truncate cursor-pointer" onclick="zoomToWaypoint(${wp.lon}, ${wp.lat})">${escapeXml(wp.name)}</span>
                               <span class="text-[9px] text-gray-500">${wp.ele}m</span>
                             </div>
@@ -3414,7 +3763,8 @@ function _doRenderGisTree() {
                               <button onclick="deleteWaypoint('${track.id}', '${wp.id}')" class="text-gray-500 hover:text-red-400"><i data-lucide="trash" class="w-3 h-3"></i></button>
                             </div>
                           </div>
-                      `).join('')}
+                      `;
+                      }).join('')}
                     </div>` : ''}
                   </div>
                 ` : '') : ''}
@@ -3778,7 +4128,9 @@ export function showToast(message, type = 'info') {
     if (type === 'error') accent = 'bg-red-400';
     if (type === 'info') accent = 'bg-sky-400';
 
-    toast.className = `bg-gray-950/88 border border-gray-800 text-gray-300 px-2.5 py-1.5 rounded-md shadow-lg text-[11px] font-medium flex items-center gap-2 transform -translate-x-2 opacity-0 transition-all duration-200`;
+    // NB: usare solo opacità Tailwind valide (multipli di 5): /88 non esiste e
+    // renderebbe il toast trasparente e illeggibile sulla mappa chiara.
+    toast.className = `bg-gray-950/90 border border-gray-800 text-gray-300 px-2.5 py-1.5 rounded-md shadow-lg text-[11px] font-medium flex items-center gap-2 transform -translate-x-2 opacity-0 transition-all duration-200`;
     toast.innerHTML = `
         <div class="w-1 h-1 rounded-full ${accent} shrink-0"></div>
         <span class="leading-snug">${message}</span>
@@ -3790,12 +4142,15 @@ export function showToast(message, type = 'info') {
         toast.className = toast.className.replace('-translate-x-2 opacity-0', 'translate-x-0 opacity-100');
     }, 50);
 
+    // Esiti importanti (successo/errore) restano visibili più a lungo: spesso
+    // arrivano al termine di operazioni lunghe e l'utente non guarda il toast.
+    const duration = (type === 'success' || type === 'error') ? 5500 : 2800;
     setTimeout(() => {
         toast.className = toast.className.replace('translate-x-0 opacity-100', '-translate-x-2 opacity-0');
         setTimeout(() => {
             toast.remove();
         }, 220);
-    }, 2800);
+    }, duration);
 }
 
 export function setupEvents() {
@@ -3967,9 +4322,17 @@ export function setupEvents() {
         const btnDeviceLocation = document.getElementById(id);
         if (!btnDeviceLocation) return;
         btnDeviceLocation.onclick = () => {
+            const wasActive = Boolean(_lastDeviceLocationStatus.active || _lastDeviceLocationStatus.waiting);
             const willActivateLocation = !_lastDeviceLocationStatus.active && !_lastDeviceLocationStatus.waiting;
-            if (willActivateLocation) requestDashboardSensorPermissionsFromGesture();
+            if (willActivateLocation) {
+                setDeviceLocationPermissionEnabled(true);
+                requestDashboardSensorPermissionsFromGesture();
+            }
             const active = _toggleDeviceLocation ? _toggleDeviceLocation() : false;
+            if (wasActive && !active) {
+                setDeviceLocationPermissionEnabled(false);
+                disableDeviceSensorPermissions();
+            }
             if (active && isCompactLayout()) {
                 closeMobileToolbar();
                 syncMobileBackdrop();
@@ -3981,16 +4344,43 @@ export function setupEvents() {
     }
     updateDeviceLocationToolbarButton();
     document.getElementById('btn-location-permission')?.addEventListener('click', () => {
+        const locationActive = Boolean(_lastDeviceLocationStatus.active || _lastDeviceLocationStatus.waiting);
+        if (locationActive) {
+            if (_stopDeviceLocation) _stopDeviceLocation('manual');
+            else _toggleDeviceLocation?.();
+            setDeviceLocationPermissionEnabled(false);
+            disableDeviceSensorPermissions();
+            scheduleDevicePermissionRefresh(true);
+            setTimeout(() => scheduleDevicePermissionRefresh(true), 1200);
+            return;
+        }
+        setDeviceLocationPermissionEnabled(true);
         requestDashboardSensorPermissionsFromGesture();
         _requestDeviceLocationPermission?.();
         scheduleDevicePermissionRefresh(true);
         setTimeout(() => scheduleDevicePermissionRefresh(true), 1200);
     });
     document.getElementById('btn-orientation-permission')?.addEventListener('click', async() => {
+        const orientationState = _lastDeviceLocationStatus.orientationPermission || getOrientationPermissionState();
+        if (orientationState === 'granted') {
+            _setDeviceOrientationEnabled?.(false);
+            syncDeviceDashboardSensors();
+            renderDeviceDashboard();
+            showToast("Orientamento disattivato", "info");
+            scheduleDevicePermissionRefresh(true);
+            return;
+        }
         await requestDashboardOrientationPermission({ forcePrompt: true });
         scheduleDevicePermissionRefresh(true);
     });
     document.getElementById('btn-motion-permission')?.addEventListener('click', async() => {
+        const motionState = getDashboardMotionPermissionState();
+        if (motionState === 'granted') {
+            setDashboardMotionEnabled(false);
+            showToast("Vibrazioni disattivate", "info");
+            scheduleDevicePermissionRefresh(true);
+            return;
+        }
         await requestDashboardMotionPermission();
         scheduleDevicePermissionRefresh(true);
     });

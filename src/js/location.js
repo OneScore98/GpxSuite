@@ -4,6 +4,7 @@ import {
     map,
     mapLoaded,
     tracks,
+    activeTrackId,
     setActiveTrackId,
     setActiveSegmentId
 } from './state.js';
@@ -32,11 +33,18 @@ const SIMULATED_WATCH_ID = '__gpxsuite_simulated_location__';
 
 const RECORDING_OUTLIER_MAX_SPEED_MPS = 45;
 const RECORDING_STILL_MIN_DISTANCE_M = 8;
+// Heartbeat stazionario: da fermi (spostamento sotto soglia) registriamo comunque
+// un punto ogni 30s, invece che a ogni intervallo minimo. Evita nuvole di jitter
+// GPS durante le soste e riduce drasticamente punti, snapshot e consumo batteria.
+const RECORDING_STILL_HEARTBEAT_MS = 30000;
 // Persistenza locale: snapshot della sessione corrente per recovery da crash.
 const RECORDING_PERSIST_KEY = 'gpxsuite-recording-snapshot-v1';
 const RECORDING_PERSIST_DEBOUNCE_MS = 5000;
+// Impostazioni registrazione persistite fra sessioni (incluse quelle di risparmio energetico).
+const RECORDING_SETTINGS_KEY = 'gpxsuite-recording-settings-v1';
 const RECORDING_SNAPSHOT_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const ORIENTATION_PERMISSION_KEY = 'gpxsuite-orientation-permission-v1';
+const ORIENTATION_SENSOR_ENABLED_KEY = 'gpxsuite-orientation-sensor-enabled-v1';
 const ORIENTATION_STATUS_MIN_INTERVAL_MS = 180;
 const ORIENTATION_STATUS_MIN_DELTA_DEG = 0.5;
 // Throttle per aggiornamento marker orientamento: evita setData() a 60Hz sulla sorgente MapLibre.
@@ -54,6 +62,11 @@ const DEFAULT_RECORDING_SETTINGS = {
     // true = chip GPS ad alta precisione (default per attività sportive);
     // false = profilo risparmio energetico: meno calore, meno batteria, accuratezza leggermente inferiore.
     highAccuracyGps: true,
+    // Cattura dati sensore nei punti registrati. Disattivarli evita di tenere
+    // attivi i listener deviceorientation/devicemotion durante la registrazione,
+    // riducendo il consumo di batteria e CPU del telefono.
+    recordTiltPitch: true,
+    recordVibration: true,
     trackColor: '#ef4444',
     trackWidth: 4
 };
@@ -78,12 +91,16 @@ let _orientationHeading = null;
 let _currentHeading = null;
 let _orientationListening = false;
 let _orientationPermissionGranted = readPersistedOrientationGrant();
+let _orientationSensorEnabled = readPersistedOrientationSensorEnabled();
 let _orientationPermissionPromise = null;
 let _orientationRequestToken = 0;
 let _lastOrientationStatusAt = 0;
 let _lastOrientationStatusHeading = null;
 // Throttle separato per l'aggiornamento del marker (distinto dal throttle dello status)
 let _lastOrientationMarkerAt = 0;
+// Dedup stream orientamento: se il browser emette 'deviceorientationabsolute'
+// ignoriamo gli eventi 'deviceorientation' duplicati (evita doppio lavoro a 60Hz).
+let _absoluteOrientationSeen = false;
 let _waitingForFirstFix = false;
 let _isMoving = false;
 let _lastFollowAt = 0;
@@ -123,6 +140,10 @@ export function initDeviceLocation(options = {}) {
     // Funzione opzionale per leggere i dati sensore correnti (tilt, pitch, vibrazione)
     // iniettata da ui.js tramite main.js per arricchire i punti GPS registrati
     _getSensorData = typeof options.getSensorData === 'function' ? options.getSensorData : null;
+    // Ripristina le impostazioni di registrazione salvate (es. profilo risparmio
+    // energetico, sensori disattivati) che altrimenti si perderebbero a ogni reload.
+    const persistedSettings = readPersistedRecordingSettings();
+    if (persistedSettings) updateRecordingSettings(persistedSettings);
     bindPageVisibilityHandling();
 }
 
@@ -174,6 +195,12 @@ export function updateRecordingSettings(settings = {}) {
     if (typeof settings.highAccuracyGps === 'boolean') {
         next.highAccuracyGps = settings.highAccuracyGps;
     }
+    if (typeof settings.recordTiltPitch === 'boolean') {
+        next.recordTiltPitch = settings.recordTiltPitch;
+    }
+    if (typeof settings.recordVibration === 'boolean') {
+        next.recordVibration = settings.recordVibration;
+    }
     if (typeof settings.trackColor === 'string' && /^#[0-9a-f]{6}$/i.test(settings.trackColor)) {
         next.trackColor = settings.trackColor;
     }
@@ -181,6 +208,7 @@ export function updateRecordingSettings(settings = {}) {
         next.trackWidth = Math.max(1, Math.min(10, Number(settings.trackWidth)));
     }
     _recordingSettings = next;
+    persistRecordingSettings();
 
     if (_recording.state !== 'idle') {
         syncRecordingTrackAppearance();
@@ -263,9 +291,11 @@ export async function finishDeviceRecording(name = getDefaultRecordingName()) {
     const recording = _recording;
     const recordedPoints = chooseRecordedPointsForSave(recording);
     if (recordedPoints.length < 1) {
-        notify("Nessun punto GPS registrato", "error");
-        emitRecordingStatus();
-        return null;
+        // Senza questo abort la registrazione restava attiva per sempre
+        // (GPS ad alta precisione + wake lock = batteria drenata senza uscita).
+        abortEmptyDeviceRecording(recording);
+        notify("Nessun punto GPS registrato: registrazione annullata", "info");
+        return { track: null, pointsCount: 0, savedFile: false, aborted: true };
     }
 
     _recording = createEmptyRecording();
@@ -290,6 +320,31 @@ export async function finishDeviceRecording(name = getDefaultRecordingName()) {
     const fileResult = await saveRecordingGpx(track, `${trackName}.gpx`);
     notify(fileResult.savedFile ? "Registrazione salvata" : "Registrazione salvata in mappa", "success");
     return { track, pointsCount: recordedPoints.length, ...fileResult };
+}
+
+// Annulla una registrazione senza punti: rilascia GPS in modalità recording,
+// wake lock, timer e rimuove la traccia live vuota dalla mappa/GIS tree.
+function abortEmptyDeviceRecording(recording) {
+    _recording = createEmptyRecording();
+    stopRecordingTick();
+    releaseWakeLock();
+    clearRecordingTrackRefreshTimer();
+    syncGeolocationWatchMode();
+    clearPersistedRecordingSnapshot();
+
+    const liveTrack = getRecordingTrack(recording);
+    if (liveTrack) {
+        const index = tracks.indexOf(liveTrack);
+        if (index !== -1) tracks.splice(index, 1);
+        if (activeTrackId === liveTrack.id) {
+            setActiveTrackId(tracks[0]?.id || null);
+            setActiveSegmentId(tracks[0]?.segments?.[0]?.id || null);
+        }
+        if (_updateMapData) _updateMapData(true);
+        if (_renderGisTree) _renderGisTree();
+        if (_updateActiveTracksHeader) _updateActiveTracksHeader();
+    }
+    emitRecordingStatus();
 }
 
 export function toggleDeviceLocation() {
@@ -329,6 +384,37 @@ export function requestDeviceLocationPermission() {
     return startDeviceLocation();
 }
 
+export function setDeviceOrientationEnabled(enabled) {
+    const nextEnabled = enabled === true;
+    if (_orientationSensorEnabled === nextEnabled) {
+        emitStatus();
+        return _orientationSensorEnabled;
+    }
+
+    _orientationSensorEnabled = nextEnabled;
+    persistOrientationSensorEnabled(nextEnabled);
+
+    if (!nextEnabled) {
+        stopOrientationTracking();
+        _orientationHeading = null;
+        _currentHeading = null;
+        _lastHeading = null;
+        _lastOrientationStatusAt = 0;
+        _lastOrientationStatusHeading = null;
+        _lastOrientationMarkerAt = 0;
+        if (_lastFix) updateLocationMarker(_lastFix, _isMoving, resolveHeading(_lastFix, null, 0, _isMoving));
+    } else if (_watchId !== null && _orientationPermissionGranted) {
+        startOrientationTracking();
+    }
+
+    emitStatus({ orientationPermission: getOrientationPermissionStatus() });
+    return _orientationSensorEnabled;
+}
+
+export function isDeviceOrientationEnabled() {
+    return _orientationSensorEnabled;
+}
+
 export async function requestDeviceOrientationPermission(options = {}) {
     if (typeof window.DeviceOrientationEvent === 'undefined') {
         notify("Orientamento dispositivo non supportato", "error");
@@ -336,6 +422,7 @@ export async function requestDeviceOrientationPermission(options = {}) {
         return false;
     }
 
+    setDeviceOrientationEnabled(true);
     const granted = await requestOrientationAccess({ forcePrompt: options.forcePrompt === true });
     if (!granted) {
         notify("Permesso orientamento non concesso", "error");
@@ -833,10 +920,9 @@ function markUserExploring() {
 }
 
 function updateLiveLocationFrame(fix, moving, heading) {
+    // setData() sulla sorgente GeoJSON pianifica già un repaint MapLibre:
+    // un triggerRepaint() esplicito qui era solo lavoro GPU extra per frame.
     updateLocationMarker(fix, moving, heading);
-    if (mapLoaded && map && typeof map.triggerRepaint === 'function') {
-        map.triggerRepaint();
-    }
 }
 
 function createRecordingPoint(fix, lat = fix.lat, lon = fix.lon) {
@@ -847,11 +933,18 @@ function createRecordingPoint(fix, lat = fix.lat, lon = fix.lon) {
         time: fix.timestamp
     };
     // Arricchisce il punto con dati sensore (tilt, pitch, vibrazione) se disponibili
-    if (_getSensorData) {
+    // e se la cattura non è stata disattivata nelle impostazioni (risparmio batteria).
+    const wantsTilt = _recordingSettings.recordTiltPitch !== false;
+    const wantsVibration = _recordingSettings.recordVibration !== false;
+    if (_getSensorData && (wantsTilt || wantsVibration)) {
         const sensor = _getSensorData();
-        if (Number.isFinite(sensor?.tilt)) point.tilt = Math.round(sensor.tilt * 10) / 10;
-        if (Number.isFinite(sensor?.pitch)) point.pitch = Math.round(sensor.pitch * 10) / 10;
-        if (Number.isFinite(sensor?.vibrationLevel)) point.vibrationLevel = sensor.vibrationLevel;
+        if (wantsTilt) {
+            if (Number.isFinite(sensor?.tilt)) point.tilt = Math.round(sensor.tilt * 10) / 10;
+            if (Number.isFinite(sensor?.pitch)) point.pitch = Math.round(sensor.pitch * 10) / 10;
+        }
+        if (wantsVibration && Number.isFinite(sensor?.vibrationLevel)) {
+            point.vibrationLevel = sensor.vibrationLevel;
+        }
     }
     return point;
 }
@@ -915,14 +1008,16 @@ function shouldAcceptRecordingFix(fix) {
 
     const distance = distanceMeters(lastPoint, fix);
 
-    // Se fermo (nessuno spostamento significativo) ma è trascorso l'intervallo minimo,
-    // registra il punto comunque — permette la registrazione stazionaria in base al tempo
-    if (distance < RECORDING_STILL_MIN_DISTANCE_M) return true;
+    // Movimento reale: rispetta la distanza minima impostata dall'utente
+    // (prima questo controllo era irraggiungibile e ogni fix veniva accettato).
+    if (distance >= requiredRecordingDistance(fix)) {
+        const impliedSpeed = distance / Math.max(0.001, elapsedMs / 1000);
+        return impliedSpeed <= RECORDING_OUTLIER_MAX_SPEED_MPS;
+    }
 
-    if (distance < requiredRecordingDistance(fix)) return false;
-
-    const impliedSpeed = distance / Math.max(0.001, elapsedMs / 1000);
-    return impliedSpeed <= RECORDING_OUTLIER_MAX_SPEED_MPS;
+    // Fermo o jitter GPS sotto soglia: heartbeat stazionario a bassa frequenza
+    // invece di un punto a ogni intervallo (meno punti, snapshot più leggeri).
+    return elapsedMs >= Math.max(_recordingSettings.minIntervalMs, RECORDING_STILL_HEARTBEAT_MS);
 }
 
 function requiredRecordingDistance(fix) {
@@ -1291,6 +1386,7 @@ function resolveHeading(fix, previousFix, distance, moving) {
 
 async function startOrientationTracking() {
     if (isPageHidden()) return;
+    if (!_orientationSensorEnabled) return;
     if (_orientationListening || typeof window.DeviceOrientationEvent === 'undefined') return;
     const requestToken = ++_orientationRequestToken;
 
@@ -1305,6 +1401,7 @@ async function startOrientationTracking() {
 
 async function requestOrientationAccess(options = {}) {
     if (typeof window.DeviceOrientationEvent === 'undefined') return false;
+    if (!_orientationSensorEnabled) return false;
     if (_orientationPermissionGranted && options.forcePrompt !== true) return true;
     if (_orientationPermissionPromise) return _orientationPermissionPromise;
 
@@ -1338,10 +1435,18 @@ function stopOrientationTracking() {
     window.removeEventListener('deviceorientation', handleDeviceOrientation, true);
     _orientationListening = false;
     _orientationHeading = null;
+    _absoluteOrientationSeen = false;
     _currentHeading = _lastHeading;
 }
 
 function handleDeviceOrientation(event) {
+    // Su alcuni browser sono attivi entrambi gli stream (absolute + relativo):
+    // processiamo solo quello assoluto quando disponibile, dimezzando il lavoro.
+    if (event.type === 'deviceorientationabsolute') {
+        _absoluteOrientationSeen = true;
+    } else if (_absoluteOrientationSeen) {
+        return;
+    }
     const rawHeading = Number.isFinite(event.webkitCompassHeading) ?
         event.webkitCompassHeading :
         (Number.isFinite(event.alpha) ? 360 - event.alpha : null);
@@ -1421,6 +1526,7 @@ function emitStatus(extra = {}) {
 
 function getOrientationPermissionStatus() {
     if (typeof window.DeviceOrientationEvent === 'undefined') return 'unsupported';
+    if (!_orientationSensorEnabled) return 'disabled';
     return _orientationPermissionGranted ? 'granted' : 'prompt';
 }
 
@@ -1557,7 +1663,17 @@ function schedulePersistRecordingSnapshot() {
     _persistSnapshotTimer = setTimeout(() => {
         _persistSnapshotTimer = null;
         persistRecordingSnapshot();
-    }, RECORDING_PERSIST_DEBOUNCE_MS);
+    }, recordingPersistDebounceMs());
+}
+
+// Debounce adattivo: lo snapshot serializza TUTTI i punti, quindi su registrazioni
+// lunghe un JSON.stringify ogni 5s diventa costoso (CPU/batteria). Allunghiamo
+// l'intervallo al crescere dei punti; il flush su pagehide resta immediato.
+function recordingPersistDebounceMs() {
+    const count = _recording.points.length;
+    if (count > 8000) return 30000;
+    if (count > 3000) return 15000;
+    return RECORDING_PERSIST_DEBOUNCE_MS;
 }
 
 function flushPersistedRecordingSnapshot() {
@@ -1620,6 +1736,26 @@ function readPersistedRecordingSnapshot() {
     }
 }
 
+// ---- Persistenza impostazioni registrazione -----------------------------
+function readPersistedRecordingSettings() {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+        const raw = localStorage.getItem(RECORDING_SETTINGS_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch (err) {
+        return null;
+    }
+}
+
+function persistRecordingSettings() {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        localStorage.setItem(RECORDING_SETTINGS_KEY, JSON.stringify(_recordingSettings));
+    } catch (err) {}
+}
+
 // ---- Permesso orientamento dispositivo (iOS richiede gesto utente) -----
 // La permission API per DeviceOrientation NON espone uno stato persistito,
 // quindi memorizziamo noi l'esito del primo prompt, evitando di mostrare
@@ -1638,6 +1774,21 @@ function persistOrientationGrant(granted) {
     try {
         if (granted) localStorage.setItem(ORIENTATION_PERMISSION_KEY, 'granted');
         else localStorage.removeItem(ORIENTATION_PERMISSION_KEY);
+    } catch (err) {}
+}
+
+function readPersistedOrientationSensorEnabled() {
+    try {
+        const value = localStorage.getItem(ORIENTATION_SENSOR_ENABLED_KEY);
+        return value === null ? true : value === 'enabled';
+    } catch (err) {
+        return true;
+    }
+}
+
+function persistOrientationSensorEnabled(enabled) {
+    try {
+        localStorage.setItem(ORIENTATION_SENSOR_ENABLED_KEY, enabled ? 'enabled' : 'disabled');
     } catch (err) {}
 }
 

@@ -16,66 +16,166 @@ import {
 
 import { saveHistoryState } from './tracks.js';
 import { updateMapData, queryElevation } from './map.js';
-import { showToast } from './ui.js';
+import { showToast, updateToolButtons, updateMapToolCursor } from './ui.js';
+import { trovaTipoWaypoint } from './waypointTypes.js';
 
 let _waypointInteractionsBound = false;
 let _draggingWaypoint = null;
 let _dragMoved = false;
+let _dragStartPoint = null;
 let _suppressNextWaypointClick = false;
+// Sotto questa distanza (px) il movimento è jitter del click, non un drag
+const DRAG_THRESHOLD_PX = 3;
 
-// Cache immagini pin per colore (color -> imageId)
+// Cache immagini badge per colore+simbolo (`${color}|${symbol}` -> imageId)
 const _pinImageCache = new Map();
-const ID_PIN_PREFIX = 'gpx-wp-pin-';
+const ID_PIN_PREFIX = 'gpx-wp-topo-';
+const DEFAULT_WP_SYMBOL = '📍';
 
-// Disegna un pin stile Leaflet classico per il colore dato
-function disegnaPinLeaflet(color) {
-    const scala = 2;
-    const larghezza = 30;
+// Chiave stabile e sicura per l'id immagine a partire dall'emoji
+function symbolKey(symbol) {
+    return Array.from(symbol || DEFAULT_WP_SYMBOL)
+        .map(ch => ch.codePointAt(0).toString(16))
+        .join('-');
+}
+
+function disegnaPittogrammaWaypoint(ctx, tipo) {
+    ctx.save();
+    ctx.translate(20, 18);
+    ctx.lineWidth = 1.7;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#ffffff';
+    ctx.fillStyle = '#ffffff';
+
+    switch (tipo.chiave) {
+        case 'bivacco':
+            ctx.beginPath();
+            ctx.moveTo(-7, 5);
+            ctx.lineTo(0, -7);
+            ctx.lineTo(7, 5);
+            ctx.closePath();
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(0, -7);
+            ctx.lineTo(0, 5);
+            ctx.stroke();
+            break;
+        case 'vetta':
+            ctx.beginPath();
+            ctx.moveTo(-8, 5);
+            ctx.lineTo(-2, -5);
+            ctx.lineTo(1, -1);
+            ctx.lineTo(4, -7);
+            ctx.lineTo(9, 5);
+            ctx.closePath();
+            ctx.stroke();
+            break;
+        case 'acqua':
+            ctx.beginPath();
+            ctx.moveTo(0, -8);
+            ctx.bezierCurveTo(5, -2, 7, 1, 7, 4);
+            ctx.bezierCurveTo(7, 8, 4, 10, 0, 10);
+            ctx.bezierCurveTo(-4, 10, -7, 8, -7, 4);
+            ctx.bezierCurveTo(-7, 1, -5, -2, 0, -8);
+            ctx.fill();
+            break;
+        case 'parcheggio':
+            ctx.font = '700 15px Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('P', 0, 1);
+            break;
+        case 'rifugio':
+            ctx.beginPath();
+            ctx.moveTo(-8, -1);
+            ctx.lineTo(0, -8);
+            ctx.lineTo(8, -1);
+            ctx.stroke();
+            ctx.strokeRect(-5.5, -1, 11, 8);
+            ctx.beginPath();
+            ctx.moveTo(0, 7);
+            ctx.lineTo(0, 2);
+            ctx.stroke();
+            break;
+        case 'pericolo':
+            ctx.font = '800 17px Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('!', 0, 1);
+            break;
+        default:
+            ctx.beginPath();
+            ctx.arc(0, 0, 5.2, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(0, -9);
+            ctx.lineTo(0, -6);
+            ctx.moveTo(0, 6);
+            ctx.lineTo(0, 9);
+            ctx.moveTo(-9, 0);
+            ctx.lineTo(-6, 0);
+            ctx.moveTo(6, 0);
+            ctx.lineTo(9, 0);
+            ctx.stroke();
+            break;
+    }
+
+    ctx.restore();
+}
+
+// Disegna un badge topografico compatto con categoria interna e bordo traccia.
+// Rasterizzato a 3x per restare nitido quando icon-size cresce con lo zoom.
+function disegnaBadgeTopo(color, symbol) {
+    const scala = 3;
+    const larghezza = 40;
     const altezza = 44;
+    const cx = larghezza / 2;
+    const cy = 18;
+    const raggio = 14;
+    const tipo = trovaTipoWaypoint(symbol);
+
     const canvas = document.createElement('canvas');
     canvas.width = larghezza * scala;
     canvas.height = altezza * scala;
     const ctx = canvas.getContext('2d');
     ctx.scale(scala, scala);
 
-    const cx = larghezza / 2; // 15
-
-    // Ombra ellittica sotto la punta
     ctx.save();
-    ctx.globalAlpha = 0.22;
+    ctx.globalAlpha = 0.18;
     ctx.fillStyle = '#000000';
     ctx.beginPath();
-    ctx.ellipse(cx, altezza - 1.5, 7, 2.5, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx, altezza - 3.2, 6.5, 2.2, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
 
-    // Corpo del pin (teardrop)
     ctx.save();
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
-    ctx.shadowBlur = 5;
-    ctx.shadowOffsetX = 1;
+    ctx.shadowColor = 'rgba(15, 23, 42, 0.30)';
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 2;
-
     ctx.beginPath();
-    ctx.moveTo(cx, altezza - 3);                          // punta in basso
-    ctx.bezierCurveTo(cx - 3, altezza - 10, 3, 26, 3, 15);  // lato sinistro
-    ctx.bezierCurveTo(3, 7, 8, 2.5, cx, 2.5);             // curva in alto a sx
-    ctx.bezierCurveTo(cx + 7, 2.5, larghezza - 3, 7, larghezza - 3, 15); // curva in alto a dx
-    ctx.bezierCurveTo(larghezza - 3, 26, cx + 3, altezza - 10, cx, altezza - 3); // lato destro
+    ctx.moveTo(cx, altezza - 4);
+    ctx.quadraticCurveTo(cx - 5.5, altezza - 13, cx - raggio * 0.72, cy + raggio * 0.70);
+    ctx.arc(cx, cy, raggio, 0.76 * Math.PI, 0.24 * Math.PI, false);
+    ctx.quadraticCurveTo(cx + 5.5, altezza - 13, cx, altezza - 4);
     ctx.closePath();
-
-    ctx.fillStyle = color;
+    ctx.fillStyle = 'rgba(248, 250, 252, 0.97)';
     ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2.3;
+    ctx.strokeStyle = color || '#3b82f6';
     ctx.stroke();
     ctx.restore();
 
-    // Cerchio bianco interno (il "buco" classico del pin Leaflet)
     ctx.beginPath();
-    ctx.arc(cx, 15, 5.5, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+    ctx.arc(cx, cy, 10.2, 0, Math.PI * 2);
+    ctx.fillStyle = tipo.colore;
     ctx.fill();
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.78)';
+    ctx.stroke();
+
+    disegnaPittogrammaWaypoint(ctx, tipo);
 
     return {
         imageData: ctx.getImageData(0, 0, canvas.width, canvas.height),
@@ -83,16 +183,18 @@ function disegnaPinLeaflet(color) {
     };
 }
 
-// Restituisce l'imageId del pin per questo colore, registrandolo se necessario
-function getOrRegisterPinImage(color) {
+// Restituisce l'imageId del pin per colore+simbolo, registrandolo se necessario
+function getOrRegisterPinImage(color, symbol) {
     const safeColor = (color || '#3b82f6').replace('#', '');
-    const imageId = ID_PIN_PREFIX + safeColor;
+    const safeSymbol = symbol || DEFAULT_WP_SYMBOL;
+    const cacheKey = `${safeColor}|${safeSymbol}`;
+    const imageId = `${ID_PIN_PREFIX}${safeColor}-${symbolKey(safeSymbol)}`;
     if (!map) return imageId;
-    if (!_pinImageCache.has(color) && !map.hasImage(imageId)) {
-        const { imageData, pixelRatio } = disegnaPinLeaflet(color || '#3b82f6');
+    if (!_pinImageCache.has(cacheKey) && !map.hasImage(imageId)) {
+        const { imageData, pixelRatio } = disegnaBadgeTopo(color || '#3b82f6', safeSymbol);
         map.addImage(imageId, imageData, { pixelRatio });
     }
-    _pinImageCache.set(color, imageId);
+    _pinImageCache.set(cacheKey, imageId);
     return imageId;
 }
 
@@ -107,17 +209,18 @@ function buildWaypointFeatureCollection() {
         const track = tracks[ti];
         if (track.visible === false || track.waypointsVisible === false) continue;
         const trackColor = track.color || '#3b82f6';
-        const imageId = getOrRegisterPinImage(trackColor);
         for (let wi = 0; wi < track.waypoints.length; wi++) {
             const wp = track.waypoints[wi];
             if (wp.visible === false) continue;
+            // Immagine per combinazione colore traccia + simbolo del waypoint
+            const imageId = getOrRegisterPinImage(trackColor, wp.symbol);
             features.push({
                 type: 'Feature',
                 properties: {
                     trackId: track.id,
                     wpId: wp.id,
                     name: wp.name,
-                    symbol: wp.symbol || '📍',
+                    symbol: wp.symbol || DEFAULT_WP_SYMBOL,
                     color: trackColor,
                     imageId: imageId
                 },
@@ -153,6 +256,8 @@ export async function addWaypointAtCoords(lon, lat) {
     if (!activeTrackId) {
         showToast("Seleziona o crea una traccia prima di aggiungere un waypoint.", "error");
         setIsAddingWaypoint(false);
+        updateToolButtons();
+        updateMapToolCursor();
         return;
     }
     const track = tracks.find(t => t.id === activeTrackId);
@@ -173,9 +278,15 @@ export async function addWaypointAtCoords(lon, lat) {
     // Aggiunge SUBITO il waypoint e lo mostra sulla mappa senza attendere la quota
     track.waypoints.push(newWp);
     setIsAddingWaypoint(false);
+    // Sincronizza pulsante toolbar e cursore dopo la disattivazione automatica
+    updateToolButtons();
+    updateMapToolCursor();
     updateMapData();
-    showToast(`Waypoint "${wpName}" aggiunto`, "success");
     saveHistoryState();
+
+    // Apre subito l'editor: l'utente assegna nome/icona senza dover cercare
+    // il waypoint appena creato nel GIS tree.
+    openWaypointEditor(track.id, newWp.id);
 
     // Aggiorna la quota in background (non blocca la UI)
     try {
@@ -211,14 +322,11 @@ export function setupWaypointLayers() {
             paint: {
                 'circle-radius': [
                     'step', ['get', 'point_count'],
-                    14, 10, 17, 50, 21, 200, 25
+                    13, 10, 16, 50, 19, 200, 23
                 ],
-                'circle-color': [
-                    'step', ['get', 'point_count'],
-                    '#38bdf8', 10, '#22c55e', 50, '#f59e0b', 200, '#ef4444'
-                ],
-                'circle-opacity': 0.18,
-                'circle-blur': 0.35
+                'circle-color': '#f8fafc',
+                'circle-opacity': 0.26,
+                'circle-blur': 0.28
             }
         });
     }
@@ -232,17 +340,14 @@ export function setupWaypointLayers() {
             paint: {
                 'circle-radius': [
                     'step', ['get', 'point_count'],
-                    10, 10, 12, 50, 15, 200, 18
+                    9, 10, 11.5, 50, 14.5, 200, 17
                 ],
-                'circle-color': [
-                    'step', ['get', 'point_count'],
-                    '#0284c7', 10, '#16a34a', 50, '#d97706', 200, '#dc2626'
-                ],
+                'circle-color': '#111827',
                 'circle-opacity': 0.94,
                 'circle-stroke-width': [
-                    'interpolate', ['linear'], ['zoom'], 4, 1.5, 12, 2.5
+                    'interpolate', ['linear'], ['zoom'], 4, 1.3, 12, 2.4
                 ],
-                'circle-stroke-color': 'rgba(255,255,255,0.92)'
+                'circle-stroke-color': 'rgba(248,250,252,0.92)'
             }
         });
     }
@@ -258,7 +363,10 @@ export function setupWaypointLayers() {
                 'text-size': [
                     'step', ['get', 'point_count'], 11, 50, 12, 200, 13
                 ],
-                'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+                // NB: un solo font: con piu' font MapLibre richiede il fontstack COMBINATO
+                // ("Open Sans Semibold,Arial Unicode MS Bold") che sul glyph server
+                // demotiles risponde 404 -> nessuna etichetta renderizzata.
+                'text-font': ['Open Sans Semibold'],
                 'text-allow-overlap': true,
                 'text-ignore-placement': true
             },
@@ -272,7 +380,8 @@ export function setupWaypointLayers() {
 
     // --- Layer pin singolo ---
 
-    // Area di hit invisibile: copre il corpo del pin (punta in basso, testa in alto)
+    // Area di hit invisibile: copre il badge e la punta geografica.
+    // Raggio e offset seguono la scala del marker con lo zoom.
     if (!map.getLayer('gpx-waypoints-hit-layer')) {
         map.addLayer({
             id: 'gpx-waypoints-hit-layer',
@@ -280,17 +389,20 @@ export function setupWaypointLayers() {
             source: 'gpx-waypoints',
             filter: ['!', ['has', 'point_count']],
             paint: {
-                'circle-radius': 20,
+                'circle-radius': [
+                    'interpolate', ['linear'], ['zoom'],
+                    5, 10, 10, 13, 16, 17
+                ],
                 'circle-color': '#000000',
                 'circle-opacity': 0,
-                // Sposta l'area di hit verso il centro del pin (sopra la punta)
-                'circle-translate': [0, -16],
+                // Sposta l'area di hit verso il centro del badge (sopra la punta)
+                'circle-translate': [0, -18],
                 'circle-translate-anchor': 'viewport'
             }
         });
     }
 
-    // Pin teardrop colorato con icona per-colore traccia
+    // Badge topografico compatto, scala con lo zoom
     if (!map.getLayer('gpx-waypoints-marker-layer')) {
         map.addLayer({
             id: 'gpx-waypoints-marker-layer',
@@ -298,9 +410,13 @@ export function setupWaypointLayers() {
             source: 'gpx-waypoints',
             filter: ['!', ['has', 'point_count']],
             layout: {
-                'icon-image': ['get', 'imageId'],   // selezione dinamica per colore traccia
+                'icon-image': ['get', 'imageId'],   // selezione dinamica per colore traccia + simbolo
                 'icon-anchor': 'bottom',
-                'icon-size': 1,
+                // Piccolo da lontano, pieno formato da vicino
+                'icon-size': [
+                    'interpolate', ['linear'], ['zoom'],
+                    5, 0.58, 10, 0.78, 13, 0.92, 16, 1.05
+                ],
                 'icon-allow-overlap': true,
                 'icon-ignore-placement': true
             }
@@ -313,22 +429,25 @@ export function setupWaypointLayers() {
             type: 'symbol',
             source: 'gpx-waypoints',
             filter: ['!', ['has', 'point_count']],
-            minzoom: 9,
+            minzoom: 12,
             layout: {
                 'text-field': ['coalesce', ['get', 'name'], 'Waypoint'],
-                'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+                // NB: un solo font: con piu' font MapLibre richiede il fontstack COMBINATO
+                // ("Open Sans Semibold,Arial Unicode MS Bold") che sul glyph server
+                // demotiles risponde 404 -> nessuna etichetta renderizzata.
+                'text-font': ['Open Sans Semibold'],
                 'text-size': [
-                    'interpolate', ['linear'], ['zoom'], 9, 10, 14, 12
+                    'interpolate', ['linear'], ['zoom'], 12, 10, 16, 11.5
                 ],
-                'text-anchor': 'top',
-                'text-offset': [0, 0.35],
+                'text-anchor': 'left',
+                'text-offset': [0.85, -1.55],
                 'text-allow-overlap': false,
                 'text-ignore-placement': false
             },
             paint: {
-                'text-color': '#0f172a',
-                'text-halo-color': 'rgba(255,255,255,0.94)',
-                'text-halo-width': 1.8
+                'text-color': '#111827',
+                'text-halo-color': 'rgba(255,255,255,0.96)',
+                'text-halo-width': 1.6
             }
         });
     }
@@ -393,6 +512,7 @@ export function bindWaypointInteractions() {
 
         _draggingWaypoint = found;
         _dragMoved = false;
+        _dragStartPoint = e.point;
         _suppressNextWaypointClick = false;
         map.dragPan.disable();
         map.getCanvas().style.cursor = 'grabbing';
@@ -401,7 +521,14 @@ export function bindWaypointInteractions() {
 
     map.on('mousemove', (e) => {
         if (!_draggingWaypoint) return;
-        _dragMoved = true;
+        // Ignora il jitter del click: il drag parte solo oltre la soglia in pixel,
+        // altrimenti il click di apertura editor verrebbe scambiato per spostamento.
+        if (!_dragMoved && _dragStartPoint) {
+            const dx = e.point.x - _dragStartPoint.x;
+            const dy = e.point.y - _dragStartPoint.y;
+            if ((dx * dx + dy * dy) < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) return;
+            _dragMoved = true;
+        }
         _draggingWaypoint.wp.lon = e.lngLat.lng;
         _draggingWaypoint.wp.lat = e.lngLat.lat;
         updateWaypointsOnMap();

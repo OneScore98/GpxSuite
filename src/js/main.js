@@ -23,8 +23,10 @@ import {
     initDeviceLocation,
     setDeviceLocationStatusHandler,
     toggleDeviceLocation,
+    stopDeviceLocation,
     requestDeviceLocationPermission,
     requestDeviceOrientationPermission,
+    setDeviceOrientationEnabled,
     setDeviceRecordingStatusHandler,
     startDeviceRecording,
     pauseDeviceRecording,
@@ -97,13 +99,19 @@ import {
     fetchSurfaceDataForTrack,
     extractOffroadFromTrack,
     extractOffroadFromSegment,
+    cancelOffroadAnalysis,
     setSegmentActive,
     deleteSegment,
     zoomToWaypoint,
     deleteWaypoint,
     searchNominatim,
     getCurrentRecordingSensorData
-} from './ui.js?v=dashboard-settings-collapse-20260605';
+// NB: importare './ui.js' senza query string: gli altri moduli (map.js, tracks.js,
+// gpx.js, print.js, waypoints.js) lo importano senza versione e un URL diverso
+// creerebbe UNA SECONDA ISTANZA del modulo con stato interno duplicato
+// (selezione GIS tree, dipendenze iniettate, job offroad). Il cache-busting
+// avviene tramite la versione di main.js in index.html.
+} from './ui.js';
 
 initDeviceLocation({
     showToast,
@@ -145,8 +153,10 @@ injectDeps({
     generateHighResPrintPreview,
     syncPrintOutputFromPreview,
     toggleDeviceLocation,
+    stopDeviceLocation,
     requestDeviceLocationPermission,
     requestDeviceOrientationPermission,
+    setDeviceOrientationEnabled,
     setDeviceLocationStatusHandler,
     setDeviceRecordingStatusHandler,
     startDeviceRecording,
@@ -195,6 +205,7 @@ window.renameSegmentFromMenu = renameSegmentFromMenu;
 window.fetchSurfaceDataForTrack = fetchSurfaceDataForTrack;
 window.extractOffroadFromTrack = extractOffroadFromTrack;
 window.extractOffroadFromSegment = extractOffroadFromSegment;
+window.cancelOffroadAnalysis = cancelOffroadAnalysis;
 window.setSegmentActive = setSegmentActive;
 window.deleteSegment = deleteSegment;
 window.zoomToWaypoint = zoomToWaypoint;

@@ -646,7 +646,8 @@ function createHydroBaseMapStyle() {
                 }
             },
             {
-                // POI importanti visibili già da zoom 10 (porto, traghetto, picnic, ristorante, rifugio, panorama)
+                // POI importanti visibili già da zoom 10 (porto, traghetto, picnic, ristorante, rifugio,
+                // panorama, fontanelle/punti acqua e sorgenti/cascate per ciclisti e runner)
                 id: 'idro-river-poi-lowzoom',
                 type: 'symbol',
                 source: 'openmaptiles',
@@ -664,6 +665,7 @@ function createHydroBaseMapStyle() {
                         'shelter',
                         'restaurant', 'cafe',
                         'drinking_water',
+                        'waterfall', 'spring',
                         'information'
                     ], true, false]
                 ],
@@ -678,6 +680,7 @@ function createHydroBaseMapStyle() {
                         ['restaurant'], 'restaurant',
                         ['cafe'], 'cafe',
                         ['drinking_water'], 'drinking_water',
+                        ['waterfall', 'spring'], 'water',
                         ['information'], 'information',
                         'circle'
                     ],

@@ -18,7 +18,7 @@ import {
 
 import { updateMapData, updateBoxDeletePreview } from './map.js';
 import { queryElevation } from './map.js';
-import { showToast, updateActiveTracksHeader, createNewTrack } from './ui.js';
+import { showToast, updateActiveTracksHeader, createNewTrack, renderGisTree, updateToolButtons, updateMapToolCursor } from './ui.js';
 import { haversineDistance } from './stats.js';
 import { schedulePersistAppSession, schedulePersistTracks } from './storage.js';
 import { trackAnalyticsEvent } from './auth.js';
@@ -137,6 +137,7 @@ export async function addPointToActiveSegment(lon, lat) {
         segment.points.push(point);
         saveHistoryState({ idleTimeout: 2500 });
         updateMapData();
+        renderGisTree(); // mantiene aggiornati i contatori punti nel GIS tree (debounced)
         queryElevation(lon, lat).then(ele => {
             point.ele = ele;
             updateMapData();
@@ -192,6 +193,7 @@ export async function addPointToActiveSegment(lon, lat) {
 
     saveHistoryState({ idleTimeout: 2500 });
     updateMapData();
+    renderGisTree(); // aggiorna i contatori punti dopo i punti aggiunti dal routing
 }
 
 function snapRouteCandidates(profile) {
@@ -294,6 +296,16 @@ export async function fetchSnapRoute(from, to, profile) {
 export function cutTrackAtPoint(lngLat) {
     let segmentCut = false;
 
+    // Tolleranza di taglio in PIXEL convertita in km in base allo zoom corrente:
+    // con la vecchia soglia fissa (0.2 km) a zoom bassi il punto era impossibile
+    // da centrare e il taglio falliva sempre.
+    const CUT_TOLERANCE_PX = 16;
+    let toleranceKm = 0.2;
+    if (map) {
+        const metersPerPixel = (156543.03392 * Math.cos(lngLat.lat * Math.PI / 180)) / Math.pow(2, map.getZoom());
+        toleranceKm = Math.max(0.02, (CUT_TOLERANCE_PX * metersPerPixel) / 1000);
+    }
+
     for (let tIdx = 0; tIdx < tracks.length; tIdx++) {
         let track = tracks[tIdx];
         for (let sIdx = 0; sIdx < track.segments.length; sIdx++) {
@@ -306,7 +318,7 @@ export function cutTrackAtPoint(lngLat) {
 
             seg.points.forEach((pt, index) => {
                 const d = haversineDistance(lngLat.lng, lngLat.lat, pt.lon, pt.lat);
-                if (d < minDist && d < 0.2) {
+                if (d < minDist && d < toleranceKm) {
                     minDist = d;
                     cutIndex = index;
                 }
@@ -337,12 +349,17 @@ export function cutTrackAtPoint(lngLat) {
     if (segmentCut) {
         saveHistoryState();
         updateMapData();
+        renderGisTree();
         showToast("Tracciato diviso in due segmenti!", "success");
     } else {
         showToast("Punto di taglio non valido o troppo lontano dalla linea", "error");
     }
 
     setIsCutting(false);
+    // Sincronizza pulsante toolbar e cursore: senza questo lo strumento sembra
+    // ancora attivo dopo l'uso ma i click non fanno più nulla.
+    updateToolButtons();
+    updateMapToolCursor();
 }
 
 export function handleBoxDeleteClick(lngLat) {
@@ -379,12 +396,15 @@ export function handleBoxDeleteClick(lngLat) {
         if (countDeleted > 0) {
             saveHistoryState();
             updateMapData();
+            renderGisTree();
             showToast(`Eliminati ${countDeleted} punti all'interno del rettangolo`, "success");
         } else {
             showToast("Nessun punto trovato all'interno dell'area selezionata", "info");
         }
 
         setIsBoxDeleting(false);
+        updateToolButtons();
+        updateMapToolCursor();
         setBoxDeleteCoords(null);
         updateBoxDeletePreview(null, null);
         if (boxDeleteMarker) {
