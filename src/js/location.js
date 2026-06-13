@@ -33,9 +33,8 @@ const SIMULATED_WATCH_ID = '__gpxsuite_simulated_location__';
 
 const RECORDING_OUTLIER_MAX_SPEED_MPS = 45;
 const RECORDING_STILL_MIN_DISTANCE_M = 8;
-// Heartbeat stazionario: da fermi (spostamento sotto soglia) registriamo comunque
-// un punto ogni 30s, invece che a ogni intervallo minimo. Evita nuvole di jitter
-// GPS durante le soste e riduce drasticamente punti, snapshot e consumo batteria.
+// Heartbeat stazionario usato SOLO dalla modalità classica (AND): da fermi
+// registriamo un punto ogni 30s invece che a ogni intervallo minimo.
 const RECORDING_STILL_HEARTBEAT_MS = 30000;
 // Persistenza locale: snapshot della sessione corrente per recovery da crash.
 const RECORDING_PERSIST_KEY = 'gpxsuite-recording-snapshot-v1';
@@ -60,6 +59,10 @@ const DEFAULT_RECORDING_SETTINGS = {
     showLiveTrack: true,
     saveElevation: true,
     keepScreenOn: true,
+    // true = nuova logica OR (distanza minima OPPURE intervallo minimo):
+    // più punti ad alta velocità, meno da fermo. false = logica classica AND
+    // (intervallo minimo obbligatorio + heartbeat stazionario), come fallback.
+    distanceOrTimeTrigger: true,
     // true = chip GPS ad alta precisione (default per attività sportive);
     // false = profilo risparmio energetico: meno calore, meno batteria, accuratezza leggermente inferiore.
     highAccuracyGps: true,
@@ -193,6 +196,9 @@ export function updateRecordingSettings(settings = {}) {
     }
     if (typeof settings.keepScreenOn === 'boolean') {
         next.keepScreenOn = settings.keepScreenOn;
+    }
+    if (typeof settings.distanceOrTimeTrigger === 'boolean') {
+        next.distanceOrTimeTrigger = settings.distanceOrTimeTrigger;
     }
     if (typeof settings.highAccuracyGps === 'boolean') {
         next.highAccuracyGps = settings.highAccuracyGps;
@@ -1038,19 +1044,30 @@ function shouldAcceptRecordingFix(fix) {
     }
 
     const elapsedMs = Math.max(0, fix.timestamp - (Number(lastPoint.time) || fix.timestamp));
-    if (elapsedMs < _recordingSettings.minIntervalMs) return false;
-
     const distance = distanceMeters(lastPoint, fix);
 
-    // Movimento reale: rispetta la distanza minima impostata dall'utente
-    // (prima questo controllo era irraggiungibile e ogni fix veniva accettato).
+    // Nuova logica OR (attivabile/disattivabile dalle impostazioni): si registra
+    // un punto se è stata percorsa la distanza minima OPPURE se è passato
+    // l'intervallo minimo. Così a velocità alta la soglia di distanza scatta in
+    // continuazione (tanti punti), mentre da fermo scatta solo il tempo, alla
+    // cadenza di minIntervalMs (pochi punti).
+    if (_recordingSettings.distanceOrTimeTrigger !== false) {
+        const distanceReached = distance >= requiredRecordingDistance(fix);
+        const intervalReached = elapsedMs >= _recordingSettings.minIntervalMs;
+        if (!distanceReached && !intervalReached) return false;
+        const impliedSpeed = distance / Math.max(0.001, elapsedMs / 1000);
+        return impliedSpeed <= RECORDING_OUTLIER_MAX_SPEED_MPS;
+    }
+
+    // Logica classica (AND), fallback: intervallo minimo obbligatorio, distanza
+    // minima per il movimento reale, heartbeat stazionario a bassa frequenza.
+    if (elapsedMs < _recordingSettings.minIntervalMs) return false;
+
     if (distance >= requiredRecordingDistance(fix)) {
         const impliedSpeed = distance / Math.max(0.001, elapsedMs / 1000);
         return impliedSpeed <= RECORDING_OUTLIER_MAX_SPEED_MPS;
     }
 
-    // Fermo o jitter GPS sotto soglia: heartbeat stazionario a bassa frequenza
-    // invece di un punto a ogni intervallo (meno punti, snapshot più leggeri).
     return elapsedMs >= Math.max(_recordingSettings.minIntervalMs, RECORDING_STILL_HEARTBEAT_MS);
 }
 

@@ -1478,6 +1478,7 @@ function syncRecordingSettingsForm() {
     setValue('recording-min-speed', settings.minSpeedMps);
     setValue('recording-track-width', settings.trackWidth);
     setValue('recording-track-color', settings.trackColor);
+    setChecked('recording-distance-or-time', settings.distanceOrTimeTrigger !== false);
     setChecked('recording-show-live-track', settings.showLiveTrack);
     setChecked('recording-save-elevation', settings.saveElevation);
     setChecked('recording-keep-screen-on', settings.keepScreenOn);
@@ -1506,6 +1507,10 @@ function bindRecordingSettingsForm() {
     bindNumber('recording-min-speed', 'minSpeedMps');
     bindNumber('recording-track-width', 'trackWidth');
 
+    const distanceOrTimeToggle = document.getElementById('recording-distance-or-time');
+    if (distanceOrTimeToggle) {
+        distanceOrTimeToggle.onchange = () => _updateRecordingSettings?.({ distanceOrTimeTrigger: distanceOrTimeToggle.checked });
+    }
     const liveToggle = document.getElementById('recording-show-live-track');
     if (liveToggle) {
         liveToggle.onchange = () => _updateRecordingSettings?.({ showLiveTrack: liveToggle.checked });

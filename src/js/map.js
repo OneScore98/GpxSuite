@@ -122,6 +122,13 @@ let _currentLod = -1;
 let _cacheDataVersion = 0; // incrementato ogni volta che i dati cambiano
 let _cacheBuildVersion = -1; // versione che la cache ha attualmente
 let _idleHandle = null;
+// Cache di semplificazione per-segmento (keyed per identità del segmento).
+// Memorizza le coordinate semplificate di ciascun LOD finché la geometria del
+// segmento non cambia. Così una traccia "aperta e ferma" (es. file enorme) viene
+// semplificata una sola volta: a ogni updateMapData solo il segmento realmente
+// modificato (es. registrazione live, disegno) viene ricalcolato, mentre gli altri
+// riusano il risultato in cache. WeakMap = nessun leak quando un segmento viene rimosso.
+const _segmentLodCache = new WeakMap();
 let _mapillaryInteractionsBound = false;
 let _mapillaryCurrentImageId = null;
 let _mapillarySequenceId = null;
@@ -1762,6 +1769,48 @@ window.addEventListener('gpxsuite:colormode-changed', (e) => {
 
 // ──────────────────────────────────────────────────────────────────────────────
 
+// Firma leggera della geometria di un segmento: numero di punti + estremi + punto
+// mediano. Nell'app la geometria di un punto non viene mai modificata in place (i
+// punti di editing sono solo display, non trascinabili); ogni mutazione reale
+// (append in registrazione/disegno, taglio, box-delete, import, paste) cambia la
+// lunghezza o l'identità dell'array. Quindi questa firma intercetta ogni cambio
+// geometrico senza dover scorrere tutti i punti. L'idratazione quote modifica solo
+// `ele`, che non incide sulla geometria: la cache resta correttamente valida.
+function segmentGeometrySignature(pts) {
+    const n = pts.length;
+    if (n === 0) return '0';
+    const f = pts[0];
+    const l = pts[n - 1];
+    const m = pts[n >> 1];
+    return `${n}:${f.lon},${f.lat}:${m.lon},${m.lat}:${l.lon},${l.lat}`;
+}
+
+function buildSegmentCoords(pts, tol) {
+    const simplified = (tol === 0) ? pts : rdpIterative(pts, tol);
+    const coords = new Array(simplified.length);
+    for (let i = 0; i < simplified.length; i++) {
+        const p = simplified[i];
+        coords[i] = [p.lon, p.lat];
+    }
+    return coords;
+}
+
+// Restituisce le coordinate semplificate del segmento per un dato LOD, riusando la
+// cache per-segmento se la geometria non è cambiata.
+function getSegmentCoordsCached(seg, lodIndex, tol) {
+    const pts = seg.points;
+    const sig = segmentGeometrySignature(pts);
+    let entry = _segmentLodCache.get(seg);
+    if (!entry || entry.sig !== sig) {
+        entry = { sig, lods: new Array(LOD_LEVELS.length).fill(null) };
+        _segmentLodCache.set(seg, entry);
+    }
+    if (!entry.lods[lodIndex]) {
+        entry.lods[lodIndex] = buildSegmentCoords(pts, tol);
+    }
+    return entry.lods[lodIndex];
+}
+
 function buildLodFeatures(lodIndex) {
     const tol = LOD_LEVELS[lodIndex].tol;
     const features = [];
@@ -1775,12 +1824,7 @@ function buildLodFeatures(lodIndex) {
             if (seg.visible === false) continue;
             const pts = seg.points;
             if (pts.length < 2) continue;
-            const simplified = (tol === 0) ? pts : rdpIterative(pts, tol);
-            const coords = new Array(simplified.length);
-            for (let i = 0; i < simplified.length; i++) {
-                const p = simplified[i];
-                coords[i] = [p.lon, p.lat];
-            }
+            const coords = getSegmentCoordsCached(seg, lodIndex, tol);
             features.push({
                 type: 'Feature',
                 properties: { color, width, trackId: track.id, segmentId: seg.id },

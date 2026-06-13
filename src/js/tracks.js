@@ -29,20 +29,41 @@ import { trackAnalyticsEvent } from './auth.js';
 let _historyIdleHandle = null;
 let _historyPending = false;
 
+function pushHistorySnapshot() {
+    const stateCopy = JSON.stringify({ tracks });
+    if (undoStack[undoStack.length - 1] === stateCopy) return;
+    undoStack.push(stateCopy);
+    if (undoStack.length > 30) undoStack.shift();
+    schedulePersistTracks(tracks);
+}
+
+function cancelPendingHistorySnapshot() {
+    if (_historyIdleHandle === null) return;
+    if (window.cancelIdleCallback) {
+        window.cancelIdleCallback(_historyIdleHandle);
+    } else {
+        clearTimeout(_historyIdleHandle);
+    }
+    _historyIdleHandle = null;
+    _historyPending = false;
+}
+
 export function saveHistoryState(options = {}) {
-    _historyPending = true;
     document.getElementById('btn-undo').disabled = false;
+    if (options.immediate) {
+        cancelPendingHistorySnapshot();
+        pushHistorySnapshot();
+        return;
+    }
+    _historyPending = true;
     if (_historyIdleHandle !== null) return;
     const idleTimeout = options.idleTimeout || 800;
     const flush = () => {
         _historyIdleHandle = null;
         if (!_historyPending) return;
         _historyPending = false;
-        // Stringify lazy: ora il main thread è probabilmente idle
-        const stateCopy = JSON.stringify({ tracks });
-        undoStack.push(stateCopy);
-        if (undoStack.length > 30) undoStack.shift();
-        schedulePersistTracks(tracks);
+        // Stringify lazy: ora il main thread è probabilmente idle.
+        pushHistorySnapshot();
     };
     if (window.requestIdleCallback) {
         _historyIdleHandle = window.requestIdleCallback(flush, { timeout: idleTimeout });
@@ -384,17 +405,23 @@ export function handleBoxDeleteClick(lngLat) {
 
         tracks.forEach(track => {
             track.segments.forEach(seg => {
-                const initialLength = seg.points.length;
-                seg.points = seg.points.filter(pt => {
+                seg.points.forEach(pt => {
                     const inBox = pt.lon >= minLng && pt.lon <= maxLng && pt.lat >= minLat && pt.lat <= maxLat;
                     if (inBox) countDeleted++;
-                    return !inBox;
                 });
             });
         });
 
         if (countDeleted > 0) {
-            saveHistoryState();
+            saveHistoryState({ immediate: true });
+            tracks.forEach(track => {
+                track.segments.forEach(seg => {
+                    seg.points = seg.points.filter(pt => (
+                        pt.lon < minLng || pt.lon > maxLng || pt.lat < minLat || pt.lat > maxLat
+                    ));
+                });
+            });
+            saveHistoryState({ immediate: true });
             updateMapData();
             renderGisTree();
             showToast(`Eliminati ${countDeleted} punti all'interno del rettangolo`, "success");
