@@ -38,7 +38,7 @@ import {
     updateRecordingSettings,
     getDefaultRecordingName,
     restoreDeviceOverlays
-} from './location.js?v=movement-heading-compass-20260613';
+} from './location.js?v=big-gpx-fluidity-20260706';
 import {
     togglePrintPlanning,
     disablePrintPlanning,
@@ -106,7 +106,9 @@ import {
     zoomToWaypoint,
     deleteWaypoint,
     searchNominatim,
-    getCurrentRecordingSensorData
+    getCurrentRecordingSensorData,
+    showMoreGisSegments,
+    showMoreGisWaypoints
 // NB: importare './ui.js' senza query string: gli altri moduli (map.js, tracks.js,
 // gpx.js, print.js, waypoints.js) lo importano senza versione e un URL diverso
 // creerebbe UNA SECONDA ISTANZA del modulo con stato interno duplicato
@@ -215,6 +217,8 @@ window.deleteWaypoint = deleteWaypoint;
 window.openWaypointEditor = openWaypointEditor;
 window.openStoredTrackFromLibrary = openStoredTrackFromLibrary;
 window.deleteStoredTrackFromLibrary = deleteStoredTrackFromLibrary;
+window.showMoreGisSegments = showMoreGisSegments;
+window.showMoreGisWaypoints = showMoreGisWaypoints;
 window.handleGisDragStart = handleGisDragStart;
 window.handleGisDragOver = handleGisDragOver;
 window.handleGisDrop = handleGisDrop;

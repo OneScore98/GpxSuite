@@ -23,6 +23,7 @@ let _waypointInteractionsBound = false;
 let _draggingWaypoint = null;
 let _dragMoved = false;
 let _dragStartPoint = null;
+let _dragRafHandle = null;
 let _suppressNextWaypointClick = false;
 // Sotto questa distanza (px) il movimento è jitter del click, non un drag
 const DRAG_THRESHOLD_PX = 3;
@@ -531,7 +532,14 @@ export function bindWaypointInteractions() {
         }
         _draggingWaypoint.wp.lon = e.lngLat.lng;
         _draggingWaypoint.wp.lat = e.lngLat.lat;
-        updateWaypointsOnMap();
+        // Throttle a un frame: con centinaia di waypoint ricostruire la sorgente
+        // clusterizzata a ogni mousemove (anche 100+ eventi/s) satura il main thread.
+        if (_dragRafHandle === null) {
+            _dragRafHandle = requestAnimationFrame(() => {
+                _dragRafHandle = null;
+                updateWaypointsOnMap();
+            });
+        }
     });
 
     map.on('mouseup', async () => {

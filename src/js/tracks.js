@@ -18,7 +18,7 @@ import {
 
 import { updateMapData, updateBoxDeletePreview } from './map.js';
 import { queryElevation } from './map.js';
-import { showToast, updateActiveTracksHeader, createNewTrack, renderGisTree, updateToolButtons, updateMapToolCursor } from './ui.js';
+import { showToast, updateActiveTracksHeader, createNewTrack, renderGisTree, updateGisTreeCounters, updateToolButtons, updateMapToolCursor } from './ui.js';
 import { haversineDistance } from './stats.js';
 import { schedulePersistAppSession, schedulePersistTracks } from './storage.js';
 import { trackAnalyticsEvent } from './auth.js';
@@ -29,8 +29,63 @@ import { trackAnalyticsEvent } from './auth.js';
 let _historyIdleHandle = null;
 let _historyPending = false;
 
+// ── Snapshot "copy-on-write" ──────────────────────────────────────────────────
+// Su file enormi (50k+ punti) JSON.stringify({tracks}) costa 100+ ms A OGNI
+// snapshot e 30 snapshot × 5MB saturano la memoria. Qui il JSON viene costruito
+// per-segmento con una cache: solo il segmento realmente modificato viene
+// ri-serializzato, gli altri riusano la stringa già calcolata (che resta
+// CONDIVISA tra gli snapshot nello stack → memoria ~costante).
+// Il formato risultante è identico a JSON.stringify({tracks}): triggerUndo
+// continua a funzionare senza modifiche.
+const _segmentSnapshotCache = new WeakMap();
+
+function _segmentSnapshotSignature(seg) {
+    const pts = seg.points || [];
+    const n = pts.length;
+    let sig = `${seg.id}|${seg.name}|${seg.visible !== false}|${n}`;
+    if (n > 0) {
+        const f = pts[0];
+        const m = pts[n >> 1];
+        const l = pts[n - 1];
+        sig += `|${f.lon},${f.lat},${f.ele},${f.surfaceFromPrev || ''}` +
+            `|${m.lon},${m.lat},${m.ele},${m.surfaceFromPrev || ''}` +
+            `|${l.lon},${l.lat},${l.ele}`;
+    }
+    return sig;
+}
+
+function _segmentSnapshotJson(seg) {
+    const sig = _segmentSnapshotSignature(seg);
+    let entry = _segmentSnapshotCache.get(seg);
+    if (!entry || entry.sig !== sig) {
+        entry = { sig, json: JSON.stringify(seg) };
+        _segmentSnapshotCache.set(seg, entry);
+    }
+    return entry.json;
+}
+
+function _trackSnapshotJson(track) {
+    const meta = {};
+    for (const key in track) {
+        if (key !== 'segments' && key !== 'waypoints') meta[key] = track[key];
+    }
+    const metaJson = JSON.stringify(meta);
+    const segs = track.segments || [];
+    const segJsons = new Array(segs.length);
+    for (let i = 0; i < segs.length; i++) segJsons[i] = _segmentSnapshotJson(segs[i]);
+    const wpJson = JSON.stringify(track.waypoints || []);
+    const head = metaJson === '{}' ? '{' : metaJson.slice(0, -1) + ',';
+    return head + '"segments":[' + segJsons.join(',') + '],"waypoints":' + wpJson + '}';
+}
+
+function buildTracksSnapshotJson() {
+    const parts = new Array(tracks.length);
+    for (let i = 0; i < tracks.length; i++) parts[i] = _trackSnapshotJson(tracks[i]);
+    return '{"tracks":[' + parts.join(',') + ']}';
+}
+
 function pushHistorySnapshot() {
-    const stateCopy = JSON.stringify({ tracks });
+    const stateCopy = buildTracksSnapshotJson();
     if (undoStack[undoStack.length - 1] === stateCopy) return;
     undoStack.push(stateCopy);
     if (undoStack.length > 30) undoStack.shift();
@@ -157,11 +212,14 @@ export async function addPointToActiveSegment(lon, lat) {
         };
         segment.points.push(point);
         saveHistoryState({ idleTimeout: 2500 });
-        updateMapData();
-        renderGisTree(); // mantiene aggiornati i contatori punti nel GIS tree (debounced)
+        // Percorso leggero: aggiorna solo l'overlay del segmento attivo —
+        // su file enormi evita il rebuild completo della sorgente MapLibre.
+        updateMapData(true, { activeSegmentOnly: true, trackId: track.id, segmentId: segment.id });
+        updateGisTreeCounters(track.id, segment.id); // contatori punti senza re-render completo
+        schedulePersistTracks(tracks);
         queryElevation(lon, lat).then(ele => {
             point.ele = ele;
-            updateMapData();
+            updateMapData(true, { activeSegmentOnly: true, trackId: track.id, segmentId: segment.id });
             schedulePersistTracks(tracks);
         });
         return;
@@ -213,8 +271,11 @@ export async function addPointToActiveSegment(lon, lat) {
     }
 
     saveHistoryState({ idleTimeout: 2500 });
-    updateMapData();
-    renderGisTree(); // aggiorna i contatori punti dopo i punti aggiunti dal routing
+    // Percorso leggero anche dopo il routing: i punti aggiunti appartengono
+    // tutti al segmento attivo.
+    updateMapData(true, { activeSegmentOnly: true, trackId: track.id, segmentId: segment.id });
+    updateGisTreeCounters(track.id, segment.id); // contatori punti senza re-render completo
+    schedulePersistTracks(tracks);
 }
 
 function snapRouteCandidates(profile) {

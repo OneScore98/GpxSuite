@@ -49,7 +49,47 @@ function countTrackPoints(track) {
 }
 
 function cloneTrack(track) {
+    if (typeof structuredClone === 'function') return structuredClone(track);
     return JSON.parse(JSON.stringify(track));
+}
+
+// ── Firma contenuto traccia ───────────────────────────────────────────────────
+// Permette di saltare il salvataggio IndexedDB delle tracce NON modificate:
+// prima di questa ottimizzazione ogni schedulePersistTracks ri-serializzava
+// TUTTE le tracce (su file enormi = 100+ ms di clone per ogni modifica).
+// La firma è O(numero segmenti + waypoint), non O(numero punti).
+const _persistedTrackSignatures = new WeakMap();
+
+function trackContentSignature(track) {
+    const parts = [
+        track.localFileId || '',
+        track.name || '',
+        track.desc || '',
+        track.color || '',
+        track.width || 3,
+        track.visible !== false,
+        track.waypointsVisible !== false
+    ];
+    const segs = track.segments || [];
+    for (let i = 0; i < segs.length; i++) {
+        const seg = segs[i];
+        const pts = seg.points || [];
+        const n = pts.length;
+        parts.push(seg.id, seg.name, seg.visible !== false, n);
+        if (n > 0) {
+            const f = pts[0];
+            const m = pts[n >> 1];
+            const l = pts[n - 1];
+            parts.push(f.lon, f.lat, f.ele, m.lon, m.lat, m.ele, m.surfaceFromPrev || '', l.lon, l.lat, l.ele);
+        }
+    }
+    const wps = track.waypoints || [];
+    parts.push(wps.length);
+    for (let i = 0; i < wps.length; i++) {
+        const wp = wps[i];
+        parts.push(wp.id, wp.name, wp.lat, wp.lon, wp.ele, wp.symbol, wp.visible !== false, wp.desc || '');
+    }
+    return parts.join('|');
 }
 
 export function ensureTrackStorageMeta(track, source = 'created') {
@@ -91,7 +131,9 @@ async function putTrackRecord(track) {
         pointsCount: countTrackPoints(track),
         segmentsCount: track.segments.length,
         waypointCount: track.waypoints.length,
-        track: cloneTrack(track)
+        // Nessun clone esplicito: IndexedDB esegue già lo structured clone
+        // in modo sincrono durante put() — clonare prima raddoppiava il costo.
+        track: track
     });
     await waitForTransaction(tx);
 }
@@ -160,11 +202,18 @@ export function schedulePersistAppSession() {
     }, 150);
 }
 
-async function persistTracksNow(trackList) {
+async function persistTracksNow(trackList, force = false) {
     for (let i = 0; i < trackList.length; i++) {
-        if (trackList[i]?.localSource === 'recording-live') continue;
+        const track = trackList[i];
+        if (track?.localSource === 'recording-live') continue;
         try {
-            await putTrackRecord(trackList[i]);
+            // Salta le tracce il cui contenuto non è cambiato dall'ultimo
+            // salvataggio (firma leggera). Il flush di uscita forza sempre
+            // il salvataggio completo per garantire la durabilità.
+            const signature = trackContentSignature(track);
+            if (!force && _persistedTrackSignatures.get(track) === signature) continue;
+            await putTrackRecord(track);
+            _persistedTrackSignatures.set(track, signature);
         } catch (err) {
             console.error('Errore salvataggio IndexedDB:', err);
         }
@@ -190,7 +239,7 @@ export async function flushPersistedStateNow() {
     _persistTimer = null;
     _sessionTimer = null;
     _persistQueuedTracks = appTracks.filter(track => track?.localSource !== 'recording-live');
-    await persistTracksNow(_persistQueuedTracks);
+    await persistTracksNow(_persistQueuedTracks, true);
     persistAppSessionNow();
 }
 
@@ -219,7 +268,13 @@ export async function loadStoredTrack(id) {
     const tx = db.transaction(STORE_NAME, 'readonly');
     const record = await promisifyRequest(tx.objectStore(STORE_NAME).get(id));
     await waitForTransaction(tx);
-    return record ? cloneTrack(record.track) : null;
+    if (!record) return null;
+    const track = cloneTrack(record.track);
+    // La traccia appena letta è per definizione identica a quella salvata:
+    // pre-carica la firma per evitare un ri-salvataggio completo inutile
+    // al primo schedulePersistTracks dopo il ripristino.
+    _persistedTrackSignatures.set(track, trackContentSignature(track));
+    return track;
 }
 
 export async function deleteStoredTrack(id) {

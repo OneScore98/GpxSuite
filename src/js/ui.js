@@ -3576,6 +3576,47 @@ let _gisTreeDirty = false;
 const _collapsedActiveTrackIds = new Set();
 const _collapsedTrackSectionKeys = new Set();
 
+// Paginazione GIS tree: con file enormi (1000+ segmenti, centinaia di waypoint)
+// renderizzare tutte le righe in un colpo solo blocca il main thread per
+// centinaia di ms (HTML + innerHTML + icone Lucide). Mostriamo le prime N righe
+// e un pulsante "Mostra altri".
+const GIS_TREE_PAGE_SIZE = 120;
+const _gisTreeSegmentLimits = new Map();
+const _gisTreeWaypointLimits = new Map();
+
+export function showMoreGisSegments(trackId) {
+    const current = _gisTreeSegmentLimits.get(trackId) || GIS_TREE_PAGE_SIZE;
+    _gisTreeSegmentLimits.set(trackId, current + GIS_TREE_PAGE_SIZE);
+    renderGisTree();
+}
+
+export function showMoreGisWaypoints(trackId) {
+    const current = _gisTreeWaypointLimits.get(trackId) || GIS_TREE_PAGE_SIZE;
+    _gisTreeWaypointLimits.set(trackId, current + GIS_TREE_PAGE_SIZE);
+    renderGisTree();
+}
+
+// Aggiornamento leggero dei contatori punti nel GIS tree senza re-render
+// completo: usato durante il disegno/registrazione (hot path).
+export function updateGisTreeCounters(trackId, segId = null) {
+    _gisTreeDirty = true; // il prossimo flush completo riallinea tutto il resto
+    if (!isGisTreeVisible()) return;
+    const track = tracks.find(t => t.id === trackId);
+    if (!track) return;
+    if (segId) {
+        const seg = track.segments.find(s => s.id === segId);
+        const segEl = document.getElementById(`seg-pt-count-${segId}`);
+        if (seg && segEl) segEl.textContent = `${seg.points.length.toLocaleString('it-IT')} pt`;
+    }
+    const metaEl = document.getElementById(`track-meta-${track.id}`);
+    if (metaEl) {
+        const trackIndex = tracks.indexOf(track);
+        let pointCount = 0;
+        for (let i = 0; i < track.segments.length; i++) pointCount += track.segments[i].points.length;
+        metaEl.textContent = `File ${trackIndex + 1} · ${track.segments.length} segmenti · ${pointCount} pt · ${track.waypoints.length} wp · ${track.width || 3}px`;
+    }
+}
+
 function pruneCollapsedActiveTracks() {
     const validTrackIds = new Set(tracks.map(track => track.id));
     _collapsedActiveTrackIds.forEach(trackId => {
@@ -3584,6 +3625,12 @@ function pruneCollapsedActiveTracks() {
     _collapsedTrackSectionKeys.forEach(key => {
         const [trackId] = key.split(':');
         if (!validTrackIds.has(trackId)) _collapsedTrackSectionKeys.delete(key);
+    });
+    _gisTreeSegmentLimits.forEach((_, trackId) => {
+        if (!validTrackIds.has(trackId)) _gisTreeSegmentLimits.delete(trackId);
+    });
+    _gisTreeWaypointLimits.forEach((_, trackId) => {
+        if (!validTrackIds.has(trackId)) _gisTreeWaypointLimits.delete(trackId);
     });
 }
 
@@ -3671,6 +3718,23 @@ function _doRenderGisTree() {
             const areWaypointsExpanded = isTrackSectionExpanded(track.id, 'waypoints');
             const segmentCount = track.segments.length;
             const pointCount = track.segments.reduce((sum, seg) => sum + seg.points.length, 0);
+
+            // Paginazione righe: mostra al massimo N segmenti/waypoint per volta.
+            // Il limite viene esteso automaticamente per includere il segmento attivo.
+            let segRenderLimit = _gisTreeSegmentLimits.get(track.id) || GIS_TREE_PAGE_SIZE;
+            if (isActive && activeSegmentId) {
+                const activeSegIndex = track.segments.findIndex(seg => seg.id === activeSegmentId);
+                if (activeSegIndex >= segRenderLimit) segRenderLimit = activeSegIndex + 1;
+            }
+            const visibleSegments = track.segments.length > segRenderLimit
+                ? track.segments.slice(0, segRenderLimit)
+                : track.segments;
+            const hiddenSegmentCount = track.segments.length - visibleSegments.length;
+            const wpRenderLimit = _gisTreeWaypointLimits.get(track.id) || GIS_TREE_PAGE_SIZE;
+            const visibleWaypoints = track.waypoints.length > wpRenderLimit
+                ? track.waypoints.slice(0, wpRenderLimit)
+                : track.waypoints;
+            const hiddenWaypointCount = track.waypoints.length - visibleWaypoints.length;
             html += `
             <div class="gis-track-card group bg-gray-900/95 border ${isSelected ? 'border-cyan-400/80 bg-cyan-950/20' : (isActive ? 'border-blue-500/60 shadow-blue-950/30' : 'border-gray-800')} rounded-xl overflow-hidden shadow-lg"
                  onclick="handleTrackTreeClick(event, '${track.id}', true)"
@@ -3700,9 +3764,7 @@ function _doRenderGisTree() {
                           <span id="track-name-${track.id}" data-track-name-id="${track.id}" role="button" tabindex="0" contenteditable="false"
                                 class="track-name-label block text-xs font-bold ${track.visible === false ? 'text-gray-500 line-through' : 'text-white'} border-b border-transparent focus:border-blue-500 focus:outline-none min-w-0 flex-1 truncate cursor-pointer select-none">${escapeXml(track.name)}</span>
                         </div>
-                        <div class="gis-track-meta text-[10px] text-gray-500 mt-0.5 pl-5">
-                          File ${trackIndex + 1} · ${segmentCount} segmenti · ${pointCount} pt · ${track.waypoints.length} wp · ${track.width || 3}px
-                        </div>
+                        <div id="track-meta-${track.id}" class="gis-track-meta text-[10px] text-gray-500 mt-0.5 pl-5">File ${trackIndex + 1} · ${segmentCount} segmenti · ${pointCount} pt · ${track.waypoints.length} wp · ${track.width || 3}px</div>
                       </div>
                     </div>
                     <div class="gis-track-actions flex items-center gap-1.5 shrink-0">
@@ -3727,7 +3789,7 @@ function _doRenderGisTree() {
                         <i data-lucide="git-branch" class="w-3 h-3"></i> Segmenti
                       </button>
                     </div>
-                    ${areSegmentsExpanded ? track.segments.map((seg, segIndex) => {
+                    ${areSegmentsExpanded ? visibleSegments.map((seg, segIndex) => {
                         const isSegActive = seg.id === activeSegmentId;
                         const isSegSelected = selectionHas(makeTreeKey('segment', track.id, seg.id));
                         return `
@@ -3752,13 +3814,16 @@ function _doRenderGisTree() {
                             <input id="segment-name-${seg.id}" type="text" value="${escapeXml(seg.name)}" onchange="renameSegment('${track.id}', '${seg.id}', this.value)" onclick="event.stopPropagation()" class="bg-transparent text-[11px] border-b border-transparent hover:border-gray-700 focus:border-blue-500 focus:outline-none flex-1 min-w-0 ${seg.visible === false ? 'line-through' : ''}">
                           </div>
                           <div class="flex items-center gap-1.5 shrink-0">
-                            <span class="text-[10px] text-gray-500 whitespace-nowrap">${seg.points.length.toLocaleString('it-IT')} pt</span>
+                            <span id="seg-pt-count-${seg.id}" class="text-[10px] text-gray-500 whitespace-nowrap">${seg.points.length.toLocaleString('it-IT')} pt</span>
                             <button onclick="toggleSegmentVisibility('${track.id}', '${seg.id}')" class="text-gray-500 hover:text-white" title="Mostra/Nascondi Segmento"><i data-lucide="${seg.visible === false ? 'eye-off' : 'eye'}" class="w-3 h-3"></i></button>
                             <button onclick="deleteSegment('${track.id}', '${seg.id}')" class="text-gray-600 hover:text-red-400" title="Elimina segmento"><i data-lucide="x" class="w-3 h-3"></i></button>
                           </div>
                         </div>
                       `;
-                    }).join('') + `
+                    }).join('') + (hiddenSegmentCount > 0 ? `
+                    <button onclick="event.stopPropagation(); showMoreGisSegments('${track.id}')" class="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-0.5 pt-1 pl-1">
+                      <i data-lucide="chevrons-down" class="w-3 h-3"></i> Mostra altri ${Math.min(GIS_TREE_PAGE_SIZE, hiddenSegmentCount)} segmenti (${hiddenSegmentCount} nascosti)
+                    </button>` : '') + `
                     <button onclick="addNewSegmentToTrack('${track.id}')" class="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-0.5 pt-1 pl-1">
                       <i data-lucide="plus" class="w-3 h-3"></i> Aggiungi Segmento
                     </button>` : ''}
@@ -3776,7 +3841,7 @@ function _doRenderGisTree() {
                       <button onclick="event.stopPropagation(); toggleAllWaypointsVisibility('${track.id}')" class="text-gray-500 hover:text-white" title="Mostra/Nascondi Gruppo Waypoint"><i data-lucide="${track.waypointsVisible === false ? 'eye-off' : 'eye'}" class="w-3.5 h-3.5"></i></button>
                     </div>
                     ${areWaypointsExpanded ? `<div class="${track.waypointsVisible === false ? 'hidden' : 'space-y-1'}">
-                      ${track.waypoints.map(wp => {
+                      ${visibleWaypoints.map(wp => {
                           const tipoWp = trovaTipoWaypoint(wp.symbol);
                           return `
                           <div class="gis-waypoint-row flex items-center justify-between gap-1 text-xs hover:bg-gray-800/40 p-1 rounded transition-all ${wp.visible === false ? 'opacity-50' : ''}">
@@ -3793,6 +3858,10 @@ function _doRenderGisTree() {
                           </div>
                       `;
                       }).join('')}
+                      ${hiddenWaypointCount > 0 ? `
+                      <button onclick="event.stopPropagation(); showMoreGisWaypoints('${track.id}')" class="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-0.5 pt-1 pl-1">
+                        <i data-lucide="chevrons-down" class="w-3 h-3"></i> Mostra altri ${Math.min(GIS_TREE_PAGE_SIZE, hiddenWaypointCount)} waypoint (${hiddenWaypointCount} nascosti)
+                      </button>` : ''}
                     </div>` : ''}
                   </div>
                 ` : '') : ''}

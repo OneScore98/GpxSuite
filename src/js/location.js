@@ -1183,7 +1183,14 @@ function scheduleRecordingTrackRefresh() {
         }
         _recordingRefreshPending = false;
         _lastRecordingRefreshAt = Date.now();
-        _updateMapData(false);
+        // Percorso leggero: aggiorna solo l'overlay del segmento in registrazione.
+        // Con altri file enormi caricati in mappa evita il rebuild completo
+        // della sorgente GPX a ogni refresh live.
+        _updateMapData(true, {
+            activeSegmentOnly: true,
+            trackId: _recording.trackId,
+            segmentId: _recording.segmentId
+        });
     }, delay);
 }
 

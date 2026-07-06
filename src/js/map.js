@@ -157,6 +157,7 @@ const APPLICATION_LAYER_ORDER = [
     'mapillary-images-layer',
     'gpx-lines-layer',
     'gpx-lines-colored-layer',
+    'gpx-active-line-layer',
     'box-delete-preview-fill',
     'box-delete-preview-line',
     'gpx-waypoints-cluster-halo-layer',
@@ -2073,29 +2074,22 @@ function scheduleMissingElevationHydration() {
 
 // ─── API pubblica ─────────────────────────────────────────────────────────────
 
-// Debounce: se chiamato in sequenza rapida, esegue una volta sola
-let _updateTimer = null;
-export function updateMapData(immediate = false) {
-    if (!mapLoaded) return;
-    clearTimeout(_updateTimer);
-    if (immediate) {
-        _doUpdateMapData();
-    } else {
-        _updateTimer = setTimeout(_doUpdateMapData, 80);
-    }
+// Overlay "segmento attivo": sorgente leggera dedicata al segmento in editing o
+// registrazione. Aggiornarla costa O(punti del segmento) invece di rispedire a
+// MapLibre l'intera collezione GPX (decine di migliaia di punti) a ogni punto
+// aggiunto. La sorgente principale resta "congelata" durante l'editing rapido e
+// viene riallineata al successivo update completo.
+let _overlayTargetKey = null;
+
+function _setActiveLineFeatures(features) {
+    const src = map.getSource('gpx-active-line');
+    if (!src) return false;
+    src.setData({ type: 'FeatureCollection', features });
+    return true;
 }
 
-function _doUpdateMapData() {
-    if (!mapLoaded) return;
-
-    // 1. Marca la cache come sporca — la ricostruzione avviene on-demand sotto applyLodToMap()
-    _cacheDataVersion++;
-
-    // 2. Applica subito il LOD corrente (solo questo viene costruito sul main thread)
-    applyLodToMap(true);
-    scheduleMissingElevationHydration();
-
-    // 3. Punti di editing (solo segmento attivo in draw mode)
+// Punti di editing (cerchietti rossi del segmento attivo in draw mode)
+function _refreshEditPointsSource() {
     const pointsFeatures = [];
     if (isDrawing) {
         for (let ti = 0; ti < tracks.length; ti++) {
@@ -2120,6 +2114,85 @@ function _doUpdateMapData() {
     }
     const editSrc = map.getSource('gpx-edit-points');
     if (editSrc) editSrc.setData({ type: 'FeatureCollection', features: pointsFeatures });
+}
+
+// Percorso leggero: aggiorna SOLO l'overlay del segmento attivo (nessuna
+// invalidazione della cache LOD, nessun rebuild della sorgente principale).
+// Ritorna false se il percorso leggero non è applicabile (serve update completo).
+function _updateActiveSegmentOverlay(options) {
+    const trackId = options.trackId || activeTrackId;
+    const segId = options.segmentId || activeSegmentId;
+    if (!trackId || !segId) return false;
+    const key = trackId + ':' + segId;
+    // Cambio di segmento target: la sorgente principale potrebbe non contenere
+    // gli ultimi punti del vecchio segmento — serve un update completo.
+    if (_overlayTargetKey && _overlayTargetKey !== key) return false;
+
+    const track = tracks.find(t => t.id === trackId);
+    const seg = track ? track.segments.find(s => s.id === segId) : null;
+    if (!track || !seg || track.visible === false || seg.visible === false) return false;
+
+    const pts = seg.points;
+    const features = [];
+    if (pts.length >= 2) {
+        const coords = new Array(pts.length);
+        for (let i = 0; i < pts.length; i++) coords[i] = [pts[i].lon, pts[i].lat];
+        features.push({
+            type: 'Feature',
+            properties: { color: track.color || '#3b82f6', width: track.width || 3 },
+            geometry: { type: 'LineString', coordinates: coords }
+        });
+    }
+    if (!_setActiveLineFeatures(features)) return false;
+    _overlayTargetKey = key;
+
+    _refreshEditPointsSource();
+    scheduleMissingElevationHydration();
+    // Statistiche: riguardano solo la traccia attiva, il ricalcolo è già
+    // debounced/idle e viene saltato a pannello chiuso. Durante il disegno
+    // manteniamo il comportamento storico (skip totale).
+    if (!isDrawing) {
+        updateStatsAndProfile();
+    }
+    return true;
+}
+
+// Debounce: se chiamato in sequenza rapida, esegue una volta sola
+let _updateTimer = null;
+export function updateMapData(immediate = false, options = {}) {
+    if (!mapLoaded) return;
+    if (options.activeSegmentOnly) {
+        // Percorso leggero per editing/registrazione: non tocca il debounce
+        // di eventuali update completi già pianificati.
+        if (_updateActiveSegmentOverlay(options)) return;
+        // Fallback: percorso completo immediato
+        immediate = true;
+    }
+    clearTimeout(_updateTimer);
+    if (immediate) {
+        _doUpdateMapData();
+    } else {
+        _updateTimer = setTimeout(_doUpdateMapData, 80);
+    }
+}
+
+function _doUpdateMapData() {
+    if (!mapLoaded) return;
+
+    // 1. Marca la cache come sporca — la ricostruzione avviene on-demand sotto applyLodToMap()
+    _cacheDataVersion++;
+
+    // 2. Applica subito il LOD corrente (solo questo viene costruito sul main thread)
+    applyLodToMap(true);
+    scheduleMissingElevationHydration();
+
+    // La sorgente principale è ora allineata ai dati: l'overlay del segmento
+    // attivo non serve più (evita doppio disegno).
+    _overlayTargetKey = null;
+    _setActiveLineFeatures([]);
+
+    // 3. Punti di editing (solo segmento attivo in draw mode)
+    _refreshEditPointsSource();
 
     // 4. UI: aggiorna solo se i pannelli sono effettivamente visibili
     //    (evita lavoro inutile su pannelli chiusi con file enormi)
@@ -2168,6 +2241,30 @@ export function setupLayers() {
                 'line-color': ['get', 'color'],
                 'line-width': ['get', 'width'],
                 'line-opacity': 0.85
+            }
+        });
+    }
+
+    // Overlay del segmento attivo (editing/registrazione): sorgente leggera
+    // aggiornata a ogni punto senza toccare la collezione principale.
+    if (!map.getSource('gpx-active-line')) {
+        map.addSource('gpx-active-line', {
+            type: 'geojson',
+            data: { type: 'FeatureCollection', features: [] }
+        });
+    }
+    if (!map.getLayer('gpx-active-line-layer')) {
+        map.addLayer({
+            id: 'gpx-active-line-layer',
+            type: 'line',
+            source: 'gpx-active-line',
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: {
+                'line-color': ['get', 'color'],
+                'line-width': ['get', 'width'],
+                // Opacità piena: copre l'eventuale copia "congelata" del segmento
+                // nella sorgente principale senza artefatti di sovrapposizione.
+                'line-opacity': 1
             }
         });
     }

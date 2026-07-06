@@ -627,6 +627,10 @@ function _doUpdateStats() {
     let isFirstSegment = true;
 
     // ── Conteggio rapido punti totali e range temporale per il sampling ───────
+    // La scansione dei timestamp (Date.parse per punto!) serve solo con asse
+    // tempo: con asse distanza viene saltata — su file enormi risparmia decine
+    // di ms a ogni ricalcolo.
+    const needsTimeScan = _chartXAxis === 'time';
     let pointsTotalEstimate = 0;
     for (let ti = 0; ti < tracks.length; ti++) {
         const t = tracks[ti];
@@ -636,6 +640,7 @@ function _doUpdateStats() {
             const s = t.segments[si];
             if (s.visible === false) continue;
             pointsTotalEstimate += s.points.length;
+            if (!needsTimeScan) continue;
             for (let pi = 0; pi < s.points.length; pi++) {
                 const timeMs = readPointTimeMs(s.points[pi]);
                 if (timeMs === null) continue;
