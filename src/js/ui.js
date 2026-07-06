@@ -2024,6 +2024,12 @@ function openTrackContextMenuAt(trackId, clientX, clientY) {
     const hasClipboard = !!_treeClipboard && (((_treeClipboard.tracks || []).length + (_treeClipboard.segments || []).length) > 0);
     const pointCount = (track.segments || []).reduce((sum, segment) => sum + ((segment.points || []).length), 0);
 
+    const trackIndex = tracks.findIndex(t => t.id === trackId);
+    const isFirst = trackIndex === 0;
+    const isLast = trackIndex === tracks.length - 1;
+    const selectedTracks = getSelectedTracks();
+    const selectedTracksCount = selectedTracks.length;
+
     closeTrackContextMenu();
     const menu = document.createElement('div');
     menu.className = 'gpx-track-context-menu fixed z-50 w-60 rounded-xl border border-gray-700 bg-gray-950 shadow-2xl p-2 text-xs text-gray-200';
@@ -2039,6 +2045,12 @@ function openTrackContextMenuAt(trackId, clientX, clientY) {
       ${createTreeContextMenuButton('database', 'Recupera superfici OSM', `fetchSurfaceDataForTrack('${track.id}')`, pointCount < 2)}
       ${createTreeContextMenuButton('route', 'Estrai tratti non asfaltati', `extractOffroadFromTrack('${track.id}')`, pointCount < 2)}
       ${createTreeContextMenuButton('download', 'Scarica traccia', `downloadTrackGPX('${track.id}', 'context_menu')`)}
+      ${createTreeContextMenuButton('chevron-up', 'Sposta su', `moveTrackUp('${track.id}')`, isFirst)}
+      ${createTreeContextMenuButton('chevron-down', 'Sposta giù', `moveTrackDown('${track.id}')`, isLast)}
+      ${selectedTracksCount > 1 
+        ? createTreeContextMenuButton('git-merge', 'Unisci tracce selezionate', 'mergeSelectedTracks()')
+        : createTreeContextMenuButton('git-merge', 'Unisci con un\'altra traccia...', `openMergeTracksModal('${track.id}')`, tracks.length < 2)
+      }
       <div class="my-1 border-t border-gray-800"></div>
       <button onclick="openTrackNameEditor('${track.id}')" class="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-gray-800 text-left">
         <i data-lucide="pencil" class="w-3.5 h-3.5"></i><span>Rinomina</span>
@@ -3718,6 +3730,8 @@ function _doRenderGisTree() {
             const areWaypointsExpanded = isTrackSectionExpanded(track.id, 'waypoints');
             const segmentCount = track.segments.length;
             const pointCount = track.segments.reduce((sum, seg) => sum + seg.points.length, 0);
+            const isFirst = trackIndex === 0;
+            const isLast = trackIndex === tracks.length - 1;
 
             // Paginazione righe: mostra al massimo N segmenti/waypoint per volta.
             // Il limite viene esteso automaticamente per includere il segmento attivo.
@@ -3768,6 +3782,8 @@ function _doRenderGisTree() {
                       </div>
                     </div>
                     <div class="gis-track-actions flex items-center gap-1.5 shrink-0">
+                      <button onclick="moveTrackUp('${track.id}')" ${isFirst ? 'disabled class="opacity-20 cursor-not-allowed text-gray-700"' : 'class="text-gray-400 hover:text-white"'} title="Sposta su"><i data-lucide="chevron-up" class="w-3.5 h-3.5"></i></button>
+                      <button onclick="moveTrackDown('${track.id}')" ${isLast ? 'disabled class="opacity-20 cursor-not-allowed text-gray-700"' : 'class="text-gray-400 hover:text-white"'} title="Sposta giù"><i data-lucide="chevron-down" class="w-3.5 h-3.5"></i></button>
                       <button onclick="toggleTrackVisibility('${track.id}')" class="text-gray-400 hover:text-white" title="Mostra/Nascondi File"><i data-lucide="${track.visible === false ? 'eye-off' : 'eye'}" class="w-3.5 h-3.5"></i></button>
                       <input type="color" value="${track.color}" onchange="changeTrackColor('${track.id}', this.value)" class="w-4 h-4 rounded border-0 bg-transparent cursor-pointer" title="Colore traccia">
                       <button onclick="handleTrackContextMenu(event, '${track.id}')" class="text-gray-500 hover:text-white" title="Menu file"><i data-lucide="more-vertical" class="w-3.5 h-3.5"></i></button>
@@ -4248,6 +4264,188 @@ export function showToast(message, type = 'info') {
             toast.remove();
         }, 220);
     }, duration);
+}
+
+export function moveTrackUp(trackId) {
+    closeTrackContextMenu();
+    const index = tracks.findIndex(t => t.id === trackId);
+    if (index <= 0) return;
+
+    const temp = tracks[index];
+    tracks[index] = tracks[index - 1];
+    tracks[index - 1] = temp;
+
+    finishGisTreeMove("Traccia spostata in alto");
+}
+
+export function moveTrackDown(trackId) {
+    closeTrackContextMenu();
+    const index = tracks.findIndex(t => t.id === trackId);
+    if (index === -1 || index >= tracks.length - 1) return;
+
+    const temp = tracks[index];
+    tracks[index] = tracks[index + 1];
+    tracks[index + 1] = temp;
+
+    finishGisTreeMove("Traccia spostata in basso");
+}
+
+export function openMergeTracksModal(trackId) {
+    closeTrackContextMenu();
+    const sourceTrack = tracks.find(t => t.id === trackId);
+    if (!sourceTrack) return;
+
+    const otherTracks = tracks.filter(t => t.id !== trackId);
+    if (otherTracks.length === 0) {
+        showToast("Nessun'altra traccia disponibile con cui effettuare l'unione", "error");
+        return;
+    }
+
+    const modal = document.createElement('div');
+    modal.id = 'dynamic-merge-modal';
+    modal.className = 'fixed inset-0 bg-black/70 backdrop-blur-sm z-[100000] flex items-center justify-center p-4';
+
+    let optionsHtml = otherTracks.map(t => `<option value="${t.id}">${escapeXml(t.name)}</option>`).join('');
+
+    modal.innerHTML = `
+        <div class="bg-gray-950 border border-gray-800 p-5 rounded-2xl shadow-2xl space-y-4 w-full max-w-sm text-gray-200">
+            <h3 class="font-bold text-sm flex items-center gap-2 border-b border-gray-800 pb-2.5">
+                <i data-lucide="git-merge" class="w-4 h-4 text-blue-400"></i> UNISCI TRACCE
+            </h3>
+            <p class="text-xs text-gray-400">
+                Stai per unire la traccia <strong class="text-white">${escapeXml(sourceTrack.name)}</strong> in un'altra traccia.
+                I segmenti e waypoint verranno spostati nella traccia di destinazione e questa traccia verrà rimossa.
+            </p>
+            <div class="space-y-1">
+                <label class="text-[10px] text-gray-400 uppercase font-semibold">Seleziona traccia di destinazione</label>
+                <select id="merge-target-select" class="w-full bg-gray-900 border border-gray-800 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500">
+                    ${optionsHtml}
+                </select>
+            </div>
+            <div class="flex items-center justify-end gap-2 pt-2">
+                <button id="btn-merge-cancel" class="px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-400 hover:text-white hover:bg-gray-800 transition-all">
+                    Annulla
+                </button>
+                <button id="btn-merge-confirm" class="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 transition-all flex items-center gap-1">
+                    <i data-lucide="git-merge" class="w-3.5 h-3.5"></i> Unisci
+                </button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+    refreshLucideIcons();
+
+    modal.querySelector('#btn-merge-cancel').onclick = () => {
+        modal.remove();
+    };
+
+    modal.querySelector('#btn-merge-confirm').onclick = () => {
+        const targetId = modal.querySelector('#merge-target-select').value;
+        modal.remove();
+        mergeTwoTracks(sourceTrack.id, targetId);
+    };
+}
+
+export function mergeTwoTracks(sourceId, targetId) {
+    const sourceTrack = tracks.find(t => t.id === sourceId);
+    const targetTrack = tracks.find(t => t.id === targetId);
+    if (!sourceTrack || !targetTrack) return;
+
+    // Copy segments
+    if (sourceTrack.segments) {
+        sourceTrack.segments.forEach(seg => {
+            targetTrack.segments.push({
+                ...seg,
+                id: uid('seg')
+            });
+        });
+    }
+    // Copy waypoints
+    if (sourceTrack.waypoints) {
+        sourceTrack.waypoints.forEach(wp => {
+            targetTrack.waypoints.push({
+                ...wp,
+                id: uid('wp')
+            });
+        });
+    }
+
+    // Remove source track
+    setTracks(tracks.filter(t => t.id !== sourceTrack.id));
+    _collapsedActiveTrackIds.delete(sourceTrack.id);
+
+    setActiveTrackId(targetTrack.id);
+    if (targetTrack.segments.length > 0) {
+        setActiveSegmentId(targetTrack.segments[0].id);
+    }
+    setTrackExpanded(targetTrack.id, true);
+    setTreeSelection([makeTreeKey('track', targetTrack.id)]);
+
+    if (_saveHistoryState) _saveHistoryState();
+    if (_updateMapData) _updateMapData();
+    updateActiveTracksHeader();
+    renderGisTree();
+    renderLocalGpxLibrary();
+
+    showToast(`Traccia "${sourceTrack.name}" unita in "${targetTrack.name}"!`, "success");
+}
+
+export function mergeSelectedTracks() {
+    closeTrackContextMenu();
+    const selectedTracks = getSelectedTracks();
+    if (selectedTracks.length < 2) {
+        showToast("Seleziona almeno due tracce per effettuare l'unione", "error");
+        return;
+    }
+
+    // Sort selectedTracks by their index in tracks to keep order consistent
+    selectedTracks.sort((a, b) => {
+        return tracks.findIndex(t => t.id === a.id) - tracks.findIndex(t => t.id === b.id);
+    });
+
+    const targetTrack = selectedTracks[0];
+    const tracksToMerge = selectedTracks.slice(1);
+
+    tracksToMerge.forEach(sourceTrack => {
+        // Copy segments
+        if (sourceTrack.segments) {
+            sourceTrack.segments.forEach(seg => {
+                targetTrack.segments.push({
+                    ...seg,
+                    id: uid('seg')
+                });
+            });
+        }
+        // Copy waypoints
+        if (sourceTrack.waypoints) {
+            sourceTrack.waypoints.forEach(wp => {
+                targetTrack.waypoints.push({
+                    ...wp,
+                    id: uid('wp')
+                });
+            });
+        }
+
+        // Remove source track
+        setTracks(tracks.filter(t => t.id !== sourceTrack.id));
+        _collapsedActiveTrackIds.delete(sourceTrack.id);
+    });
+
+    setActiveTrackId(targetTrack.id);
+    if (targetTrack.segments.length > 0) {
+        setActiveSegmentId(targetTrack.segments[0].id);
+    }
+    setTrackExpanded(targetTrack.id, true);
+    setTreeSelection([makeTreeKey('track', targetTrack.id)]);
+
+    if (_saveHistoryState) _saveHistoryState();
+    if (_updateMapData) _updateMapData();
+    updateActiveTracksHeader();
+    renderGisTree();
+    renderLocalGpxLibrary();
+
+    showToast(`Tracce unite con successo in "${targetTrack.name}"!`, "success");
 }
 
 export function setupEvents() {
