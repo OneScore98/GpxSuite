@@ -184,6 +184,10 @@ let _lastDashboardOrientationProcessedAt = 0;
 // Ultimo stato registrazione noto: usato per attivare i sensori solo quando servono.
 let _lastRecordingSensorStatus = null;
 let _dashboardSensorVisibilityBound = false;
+// Feed sensori esterno (GPXSuite Logger): quando attivo i listener
+// deviceorientation/devicemotion del telefono restano staccati e la
+// dashboard viene alimentata da device.js con i dati della BMI270.
+let _externalSensorFeedActive = false;
 
 function easeInOutCubic(t) {
     return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -633,9 +637,9 @@ function syncDeviceDashboardSensors() {
         document.addEventListener('visibilitychange', syncDeviceDashboardSensors);
     }
     const pageHidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
-    const needsOrientation = !pageHidden && isDashboardOrientationEnabled() &&
+    const needsOrientation = !pageHidden && !_externalSensorFeedActive && isDashboardOrientationEnabled() &&
         (isDeviceDashboardFieldEnabled('tilt') || recordingNeedsSensor('orientation'));
-    const needsMotion = !pageHidden && _deviceDashboardMotionEnabled &&
+    const needsMotion = !pageHidden && !_externalSensorFeedActive && _deviceDashboardMotionEnabled &&
         (isDeviceDashboardFieldEnabled('vibration') || recordingNeedsSensor('motion'));
 
     if (needsOrientation && !_deviceDashboardSensorListeners.orientation && typeof window.DeviceOrientationEvent !== 'undefined') {
@@ -660,15 +664,56 @@ function syncDeviceDashboardSensors() {
     }
 }
 
+// Feed sensori esterno (GPXSuite Logger). Attivato/disattivato da device.js.
+export function setExternalSensorFeed(active) {
+    const next = active === true;
+    if (next === _externalSensorFeedActive) return;
+    _externalSensorFeedActive = next;
+    if (!next) {
+        _deviceDashboardTiltState = { rawTilt: null, rawPitch: null, tilt: null, pitch: null, updatedAt: 0 };
+        _deviceDashboardMotionState = { magnitude: null, lastMagnitude: null, vibration: null, level: null, updatedAt: 0 };
+    }
+    syncDeviceDashboardSensors();
+    scheduleDeviceDashboardSensorRender();
+}
+
+// Dati BMI270 dal logger verso la dashboard (pitch/tilt in gradi, vibrazione 1-10).
+// Il logger e' gia' calibrato a bordo: nessuno zero locale da applicare.
+export function feedExternalDashboardSensors(data = {}) {
+    if (!_externalSensorFeedActive) return;
+    const now = Date.now();
+    if (Number.isFinite(data.pitch) || Number.isFinite(data.tilt)) {
+        _deviceDashboardTiltState = {
+            rawTilt: Number.isFinite(data.tilt) ? data.tilt : null,
+            rawPitch: Number.isFinite(data.pitch) ? data.pitch : null,
+            tilt: Number.isFinite(data.tilt) ? data.tilt : _deviceDashboardTiltState.tilt,
+            pitch: Number.isFinite(data.pitch) ? data.pitch : _deviceDashboardTiltState.pitch,
+            updatedAt: now
+        };
+    }
+    if (Number.isFinite(data.vibrationLevel)) {
+        _deviceDashboardMotionState = {
+            magnitude: null,
+            lastMagnitude: null,
+            vibration: null,
+            level: clampDeviceDashboardValue(Math.round(data.vibrationLevel), 1, 10),
+            updatedAt: now
+        };
+    }
+    scheduleDeviceDashboardSensorRender();
+}
+
 // Restituisce i dati sensore correnti per arricchire i punti GPS durante la registrazione.
 // Chiamata da location.js tramite dependency injection in initDeviceLocation.
 export function getCurrentRecordingSensorData() {
     const tiltFresh = isDeviceDashboardSensorFresh(_deviceDashboardTiltState.updatedAt);
     const motionFresh = isDeviceDashboardSensorFresh(_deviceDashboardMotionState.updatedAt);
+    const orientationOk = isDashboardOrientationEnabled() || _externalSensorFeedActive;
+    const motionOk = _deviceDashboardMotionEnabled || _externalSensorFeedActive;
     return {
-        tilt: isDashboardOrientationEnabled() && tiltFresh && Number.isFinite(_deviceDashboardTiltState.tilt) ? _deviceDashboardTiltState.tilt : null,
-        pitch: isDashboardOrientationEnabled() && tiltFresh && Number.isFinite(_deviceDashboardTiltState.pitch) ? _deviceDashboardTiltState.pitch : null,
-        vibrationLevel: _deviceDashboardMotionEnabled && motionFresh && Number.isFinite(_deviceDashboardMotionState.level) ? _deviceDashboardMotionState.level : null
+        tilt: orientationOk && tiltFresh && Number.isFinite(_deviceDashboardTiltState.tilt) ? _deviceDashboardTiltState.tilt : null,
+        pitch: orientationOk && tiltFresh && Number.isFinite(_deviceDashboardTiltState.pitch) ? _deviceDashboardTiltState.pitch : null,
+        vibrationLevel: motionOk && motionFresh && Number.isFinite(_deviceDashboardMotionState.level) ? _deviceDashboardMotionState.level : null
     };
 }
 

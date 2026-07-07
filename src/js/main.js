@@ -37,8 +37,21 @@ import {
     getRecordingSettings,
     updateRecordingSettings,
     getDefaultRecordingName,
-    restoreDeviceOverlays
-} from './location.js?v=big-gpx-fluidity-20260706';
+    restoreDeviceOverlays,
+    isDeviceLocationActive,
+    setExternalFixProvider,
+    feedExternalFix,
+    startDeviceLocation
+} from './location.js?v=device-logger-20260707';
+import {
+    initDeviceModule,
+    toggleDeviceRecording,
+    setDeviceRate,
+    calibrateDeviceImu,
+    loadDeviceSessions,
+    importDeviceSession,
+    deleteDeviceSession
+} from './device.js';
 import {
     togglePrintPlanning,
     disablePrintPlanning,
@@ -107,6 +120,8 @@ import {
     deleteWaypoint,
     searchNominatim,
     getCurrentRecordingSensorData,
+    setExternalSensorFeed,
+    feedExternalDashboardSensors,
     showMoreGisSegments,
     showMoreGisWaypoints,
     moveTrackUp,
@@ -233,6 +248,13 @@ window.moveTrackDown = moveTrackDown;
 window.openMergeTracksModal = openMergeTracksModal;
 window.mergeTwoTracks = mergeTwoTracks;
 window.mergeSelectedTracks = mergeSelectedTracks;
+// Strumento esterno (GPXSuite Logger): handler usati dal pannello Dispositivo
+window.toggleDeviceRecording = toggleDeviceRecording;
+window.setDeviceRate = setDeviceRate;
+window.calibrateDeviceImu = calibrateDeviceImu;
+window.loadDeviceSessions = loadDeviceSessions;
+window.importDeviceSession = importDeviceSession;
+window.deleteDeviceSession = deleteDeviceSession;
 
 function updateViewportMetrics() {
     const vv = window.visualViewport;
@@ -335,6 +357,24 @@ function initApp() {
         setupLayers();
         setupEvents();
         bindAuthUi();
+
+        // Strumento esterno (GPXSuite Logger): inizializzato a mappa pronta,
+        // cosi' l'eventuale autoconnessione puo' attivare subito il marker.
+        initDeviceModule({
+            showToast,
+            updateMapData,
+            renderGisTree,
+            updateActiveTracksHeader,
+            schedulePersistTracks,
+            saveHistoryState,
+            importGPX,
+            setExternalFixProvider,
+            feedExternalFix,
+            startDeviceLocation,
+            isDeviceLocationActive,
+            setExternalSensorFeed,
+            feedExternalDashboardSensors
+        });
         configureMapillaryToken(localStorage.getItem(MAPILLARY_TOKEN_KEY) || '');
         renderGisTree();
         updateActiveTracksHeader();

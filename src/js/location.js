@@ -30,6 +30,10 @@ const LOCATION_HALO_LAYER_ID = 'device-location-halo-layer';
 const LOCATION_HEADING_LAYER_ID = 'device-location-heading-layer';
 const LOCATION_HEADING_ICON_ID = 'device-location-heading-icon';
 const SIMULATED_WATCH_ID = '__gpxsuite_simulated_location__';
+// Provider esterno (GPXSuite Logger): quando attivo i fix arrivano dal
+// dispositivo via WiFi e i sensori del telefono (GPS + orientamento)
+// NON vengono utilizzati. Vedi device.js.
+const EXTERNAL_WATCH_ID = '__gpxsuite_external_location__';
 
 const RECORDING_OUTLIER_MAX_SPEED_MPS = 45;
 const RECORDING_STILL_MIN_DISTANCE_M = 8;
@@ -134,6 +138,7 @@ let _persistSnapshotTimer = null;
 let _lastPersistSnapshotAt = 0;
 let _simulationIntervalId = null;
 let _pageVisibilityBound = false;
+let _externalFixProvider = false;
 
 export function initDeviceLocation(options = {}) {
     _showToast = typeof options.showToast === 'function' ? options.showToast : null;
@@ -242,6 +247,12 @@ export function getDefaultRecordingName(date = new Date()) {
 
 export function startDeviceRecording() {
     if (_recording.state !== 'idle') return false;
+    if (_externalFixProvider) {
+        // La registrazione vera vive sul logger (la flash e' la verita'):
+        // il REC dell'app va fatto dal pannello Dispositivo.
+        notify("Strumento esterno collegato: usa REC nel pannello Dispositivo", "info");
+        return false;
+    }
 
     _recording = createEmptyRecording();
     _recording.state = 'recording';
@@ -476,6 +487,29 @@ export async function requestDeviceOrientationPermission(options = {}) {
 }
 
 export function startDeviceLocation() {
+    if (_externalFixProvider) {
+        // Posizione dal logger: nessun watchPosition, nessun sensore telefono.
+        if (!mapLoaded || !map) {
+            emitStatus({ error: 'map-not-ready' });
+            return false;
+        }
+        _waitingForFirstFix = true;
+        _isMoving = false;
+        _lastFix = null;
+        _lastHeading = null;
+        _movementHeading = null;
+        _currentHeading = null;
+        _lastFollowAt = 0;
+        _recentCenteredUntil = 0;
+        _focusAnimationUntil = 0;
+        purgeLegacyDomLocationMarkers();
+        bindMapExplorationDetection();
+        _watchId = EXTERNAL_WATCH_ID;
+        _watchMode = 'external';
+        notify("Posizione dal dispositivo esterno", "info");
+        emitStatus();
+        return true;
+    }
     if (!navigator.geolocation) {
         notify("Localizzazione non supportata da questo browser", "error");
         emitStatus({ error: 'unsupported' });
@@ -534,7 +568,7 @@ export function stopDeviceLocation(reason = 'programmatic') {
     }
     clearLocationSimulationTimer();
     if (_watchId !== null) {
-        if (_watchId !== SIMULATED_WATCH_ID) {
+        if (_watchId !== SIMULATED_WATCH_ID && _watchId !== EXTERNAL_WATCH_ID) {
             navigator.geolocation.clearWatch(_watchId);
         }
     }
@@ -581,7 +615,7 @@ function geolocationOptionsForMode(mode) {
 }
 
 function syncGeolocationWatchMode() {
-    if (_watchId === null || _watchId === SIMULATED_WATCH_ID || !navigator.geolocation) return true;
+    if (_watchId === null || _watchId === SIMULATED_WATCH_ID || _watchId === EXTERNAL_WATCH_ID || !navigator.geolocation) return true;
     const nextMode = desiredWatchMode();
     if (_watchMode === nextMode) return true;
 
@@ -1462,6 +1496,7 @@ function shouldPreferMovementHeading() {
 
 async function startOrientationTracking() {
     if (isPageHidden()) return;
+    if (_externalFixProvider) return;   // heading dal logger, non dai sensori telefono
     if (!_orientationSensorEnabled) return;
     if (_orientationListening || typeof window.DeviceOrientationEvent === 'undefined') return;
     const requestToken = ++_orientationRequestToken;
@@ -2068,4 +2103,60 @@ function bearingDegrees(a, b) {
     const x = Math.cos(lat1) * Math.sin(lat2) -
         Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
     return normalizeHeading(Math.atan2(y, x) * 180 / Math.PI);
+}
+
+// ============================================================================
+// Provider esterno di posizione (GPXSuite Logger, vedi device.js)
+// Quando attivo: niente navigator.geolocation, niente deviceorientation.
+// I fix arrivano dal dispositivo via feedExternalFix() e attraversano lo
+// stesso pipeline di marker/follow/heading dei fix del telefono.
+// ============================================================================
+
+export function setExternalFixProvider(enabled) {
+    const next = enabled === true;
+    if (next === _externalFixProvider) return;
+    _externalFixProvider = next;
+
+    if (next) {
+        // Spegne il GPS del telefono se attivo e passa al sentinel esterno.
+        if (_watchId !== null && _watchId !== SIMULATED_WATCH_ID && _watchId !== EXTERNAL_WATCH_ID && navigator.geolocation) {
+            navigator.geolocation.clearWatch(_watchId);
+            _watchId = EXTERNAL_WATCH_ID;
+            _watchMode = 'external';
+        }
+        stopOrientationTracking();
+        emitStatus();
+        return;
+    }
+
+    // Ritorno ai sensori del telefono: se la localizzazione era attiva
+    // con il provider esterno, riparte con navigator.geolocation.
+    if (_watchId === EXTERNAL_WATCH_ID) {
+        _watchId = null;
+        _watchMode = 'idle';
+        startDeviceLocation();
+    }
+    emitStatus();
+}
+
+export function isExternalFixProviderActive() {
+    return _externalFixProvider;
+}
+
+// fix: { lat, lon, ele?, speedMps?, heading?, accuracy? }
+export function feedExternalFix(fix) {
+    if (!_externalFixProvider || _watchId !== EXTERNAL_WATCH_ID) return;
+    if (!Number.isFinite(fix?.lat) || !Number.isFinite(fix?.lon)) return;
+    handlePosition({
+        coords: {
+            latitude: fix.lat,
+            longitude: fix.lon,
+            accuracy: Number.isFinite(fix.accuracy) ? fix.accuracy : 5,
+            altitude: Number.isFinite(fix.ele) ? fix.ele : null,
+            altitudeAccuracy: null,
+            speed: Number.isFinite(fix.speedMps) ? fix.speedMps : null,
+            heading: Number.isFinite(fix.heading) ? fix.heading : null
+        },
+        timestamp: Date.now()
+    });
 }

@@ -39,15 +39,15 @@ function yieldToMain() {
 function readSensorExtensions(node) {
     const result = {};
     const fields = [
-        { tag: 'tilt',      prefixed: 'gpxsuite:tilt',      key: 'tilt' },
-        { tag: 'pitch',     prefixed: 'gpxsuite:pitch',     key: 'pitch' },
+        { tag: 'tilt', prefixed: 'gpxsuite:tilt', key: 'tilt' },
+        { tag: 'pitch', prefixed: 'gpxsuite:pitch', key: 'pitch' },
         { tag: 'vibration', prefixed: 'gpxsuite:vibration', key: 'vibrationLevel' }
     ];
     for (let i = 0; i < fields.length; i++) {
         const f = fields[i];
         const el = node.getElementsByTagName(f.prefixed)[0] ||
-                   node.getElementsByTagName(f.tag)[0] ||
-                   (typeof node.getElementsByTagNameNS === 'function' ? node.getElementsByTagNameNS('*', f.tag)[0] : null);
+            node.getElementsByTagName(f.tag)[0] ||
+            (typeof node.getElementsByTagNameNS === 'function' ? node.getElementsByTagNameNS('*', f.tag)[0] : null);
         if (el && el.textContent) {
             const val = parseFloat(el.textContent);
             if (Number.isFinite(val)) result[f.key] = val;
@@ -326,7 +326,7 @@ export function simplifyDouglasPeucker(points, tolerance) {
     while (stack.length) {
         const [start, end] = stack.pop();
         const x1 = points[start].lon, y1 = points[start].lat;
-        const x2 = points[end].lon,   y2 = points[end].lat;
+        const x2 = points[end].lon, y2 = points[end].lat;
         const dx = x2 - x1, dy = y2 - y1;
         const lenSq = dx * dx + dy * dy;
         let dmax = 0, index = start;
@@ -345,7 +345,7 @@ export function simplifyDouglasPeucker(points, tolerance) {
         if (dmax > tol2) {
             keep[index] = 1;
             if (index - start > 1) stack.push([start, index]);
-            if (end - index > 1)   stack.push([index, end]);
+            if (end - index > 1) stack.push([index, end]);
         }
     }
     const result = [];

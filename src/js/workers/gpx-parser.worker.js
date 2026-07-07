@@ -8,7 +8,7 @@
 //   diversi secondi (tutto il parsing + l'iterazione dei nodi avviene sincrono).
 //   Spostandolo qui il main thread resta libero per rendering mappa e UI.
 
-self.onmessage = function(e) {
+self.onmessage = function (e) {
     const { xmlText, fileName } = e.data;
     try {
         const result = parseGpx(xmlText, fileName);
@@ -21,15 +21,15 @@ self.onmessage = function(e) {
 function readSensorExtensions(node) {
     const result = {};
     const fields = [
-        { tag: 'tilt',      prefixed: 'gpxsuite:tilt',      key: 'tilt' },
-        { tag: 'pitch',     prefixed: 'gpxsuite:pitch',     key: 'pitch' },
+        { tag: 'tilt', prefixed: 'gpxsuite:tilt', key: 'tilt' },
+        { tag: 'pitch', prefixed: 'gpxsuite:pitch', key: 'pitch' },
         { tag: 'vibration', prefixed: 'gpxsuite:vibration', key: 'vibrationLevel' }
     ];
     for (let i = 0; i < fields.length; i++) {
         const f = fields[i];
         const el = node.getElementsByTagName(f.prefixed)[0] ||
-                   node.getElementsByTagName(f.tag)[0] ||
-                   (typeof node.getElementsByTagNameNS === 'function' ? node.getElementsByTagNameNS('*', f.tag)[0] : null);
+            node.getElementsByTagName(f.tag)[0] ||
+            (typeof node.getElementsByTagNameNS === 'function' ? node.getElementsByTagNameNS('*', f.tag)[0] : null);
         if (el && el.textContent) {
             const val = parseFloat(el.textContent);
             if (Number.isFinite(val)) result[f.key] = val;
@@ -128,7 +128,7 @@ function parseGpx(xmlText, fileName) {
         const lon = parseFloat(wptNode.getAttribute("lon"));
         const nameNode = wptNode.getElementsByTagName("name")[0];
         const descNode = wptNode.getElementsByTagName("desc")[0];
-        const eleNode  = wptNode.getElementsByTagName("ele")[0];
+        const eleNode = wptNode.getElementsByTagName("ele")[0];
 
         waypoints.push({
             id: 'wp_imp_' + baseId + `_${i}`,
