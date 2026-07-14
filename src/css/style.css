@@ -787,6 +787,13 @@ body.auth-locked #print-drag-grid {
     transition-duration: 0s !important;
 }
 
+#panel-bottom-stats.translate-y-60 {
+    transform: translateY(calc(100% + 1rem)) !important;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
 #sidebar-tracks-right:not(.translate-x-96) {
     transform: translateX(0) !important;
     transition-duration: 0s !important;
@@ -805,20 +812,32 @@ body.auth-locked #print-drag-grid {
 }
 
 #panel-bottom-stats .stats-panel-header {
-    min-height: 2.3rem;
-    padding: 0.42rem 0.75rem;
+    min-height: 2.05rem;
+    padding: 0.28rem 0.45rem;
 }
 
 #panel-bottom-stats .stats-panel-body {
     gap: 0;
     padding: 0;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .stats-chart-controls {
     display: flex;
     align-items: center;
-    gap: 0.45rem;
-    flex-shrink: 0;
+    gap: 0.32rem;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+
+.stats-chart-controls::-webkit-scrollbar {
+    display: none;
 }
 
 .stats-control-group {
@@ -828,19 +847,20 @@ body.auth-locked #print-drag-grid {
     gap: 0.12rem;
     padding: 0.12rem;
     border: 1px solid rgba(31, 41, 55, 0.95);
-    border-radius: 0.65rem;
+    border-radius: 0.5rem;
     background: rgba(17, 24, 39, 0.86);
+    flex-shrink: 0;
 }
 
 .stats-segment-button {
-    min-width: 2.7rem;
-    height: 1.65rem;
+    min-width: 2.45rem;
+    height: 1.48rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.25rem;
-    padding: 0 0.45rem;
-    border-radius: 0.5rem;
+    padding: 0 0.36rem;
+    border-radius: 0.38rem;
     color: #9ca3af;
     font-size: 0.64rem;
     font-weight: 700;
@@ -854,9 +874,59 @@ body.auth-locked #print-drag-grid {
     box-shadow: 0 0.35rem 0.9rem rgba(37, 99, 235, 0.24);
 }
 
-.stats-close-button {
+.stats-icon-button {
+    min-width: 1.9rem;
+    padding: 0 0.34rem;
+}
+
+.stats-chart-shell canvas {
+    cursor: crosshair;
+    touch-action: none;
+}
+
+.stats-chart-shell canvas.stats-chart-canvas--panning {
+    cursor: grabbing;
+}
+
+.stats-chart-shell canvas.stats-chart-canvas--ruler-drag {
+    cursor: ew-resize;
+}
+
+.stats-chart-floating-controls {
+    position: absolute;
+    top: 0.45rem;
+    right: 0.55rem;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    z-index: 4;
+    padding: 0.18rem;
+    border: 1px solid rgba(55, 65, 81, 0.9);
+    border-radius: 0.55rem;
+    background: rgba(3, 7, 18, 0.82);
+    backdrop-filter: blur(8px);
+}
+
+.stats-chart-floating-button {
     width: 1.9rem;
     height: 1.9rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.42rem;
+    color: #d1d5db;
+    background: rgba(31, 41, 55, 0.78);
+    transition: background 140ms ease, color 140ms ease;
+}
+
+.stats-chart-floating-button:hover {
+    color: #fff;
+    background: rgba(37, 99, 235, 0.88);
+}
+
+.stats-close-button {
+    width: 1.65rem;
+    height: 1.65rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -865,7 +935,16 @@ body.auth-locked #print-drag-grid {
 
 /* ── Altezza pannello stats (sovrascrive h-48 Tailwind) ─────────────── */
 #panel-bottom-stats {
-    height: 14rem; /* 224px — sta dentro translate-y-60 (240px) */
+    left: var(--safe-left);
+    right: var(--safe-right);
+    bottom: var(--safe-bottom);
+    width: auto;
+    max-width: none;
+    height: min(52vh, calc(var(--app-height) - var(--safe-top) - var(--safe-bottom) - 1.5rem));
+    min-height: min(20rem, calc(var(--app-height) - var(--safe-top) - var(--safe-bottom) - 1.5rem));
+    border-radius: 0.95rem 0.95rem 0 0;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
 }
 
 /* ── Striscia KPI principali ─────────────────────────────────────────── */
@@ -938,16 +1017,31 @@ body.auth-locked #print-drag-grid {
 
 /* ── Pannello statistiche secondarie ─────────────────────────────────── */
 .stats-secondary-grid {
-    width: min(18rem, 30vw);
+    position: relative;
+    order: 1;
+    flex: 0 0 auto;
+    width: auto;
+    max-width: none;
+    max-height: 4rem;
+    margin: 0.28rem 0.36rem 0.08rem;
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-rows: repeat(2, minmax(1.25rem, auto));
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(8.7rem, 1fr);
     gap: 0.08rem 0.3rem;
     align-content: center;
-    border-left: 1px solid rgba(31, 41, 55, 0.85);
-    padding: 0.4rem 0.5rem;
-    overflow-y: auto;
+    border: 1px solid rgba(51, 65, 85, 0.92);
+    border-radius: 0.58rem;
+    background: rgba(3, 7, 18, 0.78);
+    box-shadow: none;
+    padding: 0.32rem 0.42rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
-    flex-shrink: 0;
+    z-index: 2;
+    pointer-events: auto;
     font-variant-numeric: tabular-nums;
 }
 
@@ -986,9 +1080,229 @@ body.auth-locked #print-drag-grid {
     text-align: right;
 }
 
-.stats-chart-shell {
+#panel-bottom-stats .stats-chart-shell {
+    order: 2;
+    flex: 1 1 auto;
+    height: auto;
     min-height: 0;
-    padding: 0.3rem 0.25rem 0.35rem 0.5rem;
+    padding: 0.18rem 0.18rem 0.24rem 0.32rem;
+}
+
+.stats-point-card {
+    width: min(15rem, calc(100vw - 1.5rem));
+    border: 1px solid rgba(71, 85, 105, 0.9);
+    border-radius: 0.55rem;
+    background: rgba(3, 7, 18, 0.93);
+    color: #e5e7eb;
+    box-shadow: 0 0.75rem 2rem rgba(0, 0, 0, 0.38);
+    font-variant-numeric: tabular-nums;
+    overflow: hidden;
+}
+
+.stats-point-card.stats-point-card--chart {
+    position: absolute;
+    z-index: 6;
+    pointer-events: none;
+    width: max-content;
+    max-width: min(7.75rem, calc(100vw - 0.75rem));
+    border-radius: 0.42rem;
+    background: rgba(3, 7, 18, 0.9);
+    box-shadow: 0 0.4rem 1rem rgba(0, 0, 0, 0.3);
+}
+
+.stats-point-card.stats-point-card--map {
+    position: fixed;
+    z-index: 45;
+    pointer-events: none;
+    width: min(10.75rem, calc(100vw - 0.75rem));
+    border-radius: 0.42rem;
+    background: rgba(3, 7, 18, 0.9);
+    box-shadow: 0 0.45rem 1.15rem rgba(0, 0, 0, 0.32);
+}
+
+.stats-point-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.38rem 0.5rem;
+    border-bottom: 1px solid rgba(51, 65, 85, 0.85);
+    background: rgba(15, 23, 42, 0.78);
+}
+
+.stats-point-card-head span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.62rem;
+    font-weight: 800;
+    color: #f8fafc;
+}
+
+.stats-point-card-head strong {
+    color: #93c5fd;
+    font-size: 0.62rem;
+}
+
+.stats-point-card-head--compact {
+    padding: 0.3rem 0.42rem;
+}
+
+.stats-point-card-inline {
+    display: flex;
+    align-items: center;
+    gap: 0.28rem;
+    min-width: 0;
+    padding: 0.22rem 0.32rem;
+    line-height: 1;
+}
+
+.stats-point-card-chip {
+    flex: 0 0 auto;
+    padding: 0.13rem 0.22rem;
+    border-radius: 999px;
+    background: rgba(37, 99, 235, 0.9);
+    color: #dbeafe;
+    font-size: 0.5rem;
+    font-weight: 900;
+}
+
+.stats-point-card-label {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #94a3b8;
+    font-size: 0.5rem;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.stats-point-card-value {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    font-size: 0.72rem;
+    font-weight: 900;
+}
+
+.stats-point-card-metric {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.55rem;
+    padding: 0.42rem 0.52rem 0.48rem;
+}
+
+.stats-point-card-metric span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #94a3b8;
+    font-size: 0.58rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.stats-point-card-metric strong {
+    white-space: nowrap;
+    font-size: 1rem;
+    line-height: 1;
+    font-weight: 900;
+}
+
+.stats-point-card-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.12rem 0.45rem;
+    padding: 0.42rem 0.5rem 0.48rem;
+}
+
+.stats-point-card--map .stats-point-card-grid {
+    gap: 0.025rem 0.22rem;
+    padding: 0.18rem 0.28rem 0.24rem;
+}
+
+.stats-point-card--map .stats-point-card-head {
+    padding: 0.2rem 0.26rem 0.2rem 0.32rem;
+}
+
+.stats-point-card-close {
+    pointer-events: auto;
+    width: 1rem;
+    height: 1rem;
+    flex: 0 0 1rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(96, 165, 250, 0.46);
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.96);
+    color: #bfdbfe;
+    font-size: 0.68rem;
+    line-height: 1;
+    font-weight: 900;
+}
+
+.stats-point-card-close:active {
+    transform: scale(0.94);
+}
+
+.stats-point-card-row {
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.35rem;
+    border-bottom: 1px solid rgba(30, 41, 59, 0.5);
+}
+
+.stats-point-card--map .stats-point-card-row {
+    gap: 0.16rem;
+    min-height: 0.84rem;
+}
+
+.stats-point-card-row span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.53rem;
+    color: #94a3b8;
+}
+
+.stats-point-card--map .stats-point-card-row span {
+    font-size: 0.43rem;
+}
+
+.stats-point-card-row strong {
+    white-space: nowrap;
+    font-size: 0.58rem;
+    color: #f8fafc;
+}
+
+.stats-point-card--map .stats-point-card-row strong {
+    font-size: 0.49rem;
+}
+
+.stats-point-card-empty,
+.stats-chart-empty {
+    color: #64748b;
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+}
+
+.stats-chart-empty {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
 }
 
 .stats-summary-panel {
@@ -1054,7 +1368,7 @@ body.auth-locked #print-drag-grid {
 }
 
 body.stats-panel-open #recording-status-chip {
-    bottom: calc(var(--safe-bottom) + 15.25rem);
+    bottom: calc(var(--safe-bottom) + min(52vh, 32rem) + 0.85rem);
 }
 
 #recording-settings-panel[data-expanded="true"] #recording-settings-chevron {
@@ -1911,8 +2225,7 @@ body.stats-panel-open #recording-status-chip {
     color: #fb7185;
 }
 
-.device-vibration-scale,
-.device-vibration-trace {
+.device-vibration-scale {
     font-size: 0.44rem;
     line-height: 1;
     font-weight: 800;
@@ -1921,7 +2234,7 @@ body.stats-panel-open #recording-status-chip {
 
 .device-vibration-bars {
     display: grid;
-    grid-template-columns: repeat(10, minmax(0, 1fr));
+    grid-template-columns: repeat(20, minmax(0, 1fr));
     gap: 1px;
     align-items: end;
     height: 0.66rem;
@@ -1934,11 +2247,11 @@ body.stats-panel-open #recording-status-chip {
     background: rgba(71, 85, 105, 0.8);
 }
 
-.device-vibration-bar:nth-child(n+4) {
+.device-vibration-bar:nth-child(n+7) {
     height: 54%;
 }
 
-.device-vibration-bar:nth-child(n+7) {
+.device-vibration-bar:nth-child(n+14) {
     height: 78%;
 }
 
@@ -2278,6 +2591,325 @@ body.stats-panel-open #recording-status-chip {
 
 #device-dashboard-settings-panel[data-expanded="true"] #device-dashboard-settings-chevron {
     transform: rotate(180deg);
+}
+
+.device-logger-topbar {
+    position: absolute;
+    top: calc(var(--safe-top) + 0.62rem);
+    right: calc(var(--safe-right) + 0.72rem);
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.36rem;
+    pointer-events: none;
+}
+
+.device-logger-status-indicator {
+    --logger-status-fill: 0%;
+    --logger-status-color: rgba(148, 163, 184, 0.72);
+    position: relative;
+    width: 3.55rem;
+    height: 1.48rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.18rem;
+    overflow: hidden;
+    border: 1px solid rgba(226, 232, 240, 0.34);
+    border-radius: 0.34rem;
+    background: rgba(2, 6, 23, 0.78);
+    color: #ffffff;
+    font-size: 0.56rem;
+    font-weight: 900;
+    line-height: 1;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95), 0 0 0.35rem rgba(0, 0, 0, 0.72);
+    box-shadow:
+        0 0.2rem 0.6rem rgba(2, 6, 23, 0.32),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.device-logger-status-indicator::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: var(--logger-status-fill);
+    max-width: 100%;
+    min-width: 0;
+    border-radius: 0.2rem 0 0 0.2rem;
+    background: var(--logger-status-color);
+    transition: width 260ms ease, background-color 260ms ease;
+}
+
+.device-logger-status-indicator > span,
+.device-logger-status-icon {
+    position: relative;
+    z-index: 1;
+}
+
+.device-logger-status-icon {
+    width: 0.72rem;
+    height: 0.72rem;
+    flex: 0 0 auto;
+    color: rgba(255, 255, 255, 0.9);
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.8));
+}
+
+.device-logger-status-indicator--battery {
+    width: 3.15rem;
+    margin-right: 0.16rem;
+    border-radius: 0.25rem;
+}
+
+.device-logger-status-indicator--battery::after {
+    content: "";
+    position: absolute;
+    right: -0.22rem;
+    top: 0.42rem;
+    width: 0.18rem;
+    height: 0.58rem;
+    border-radius: 0 0.14rem 0.14rem 0;
+    background: rgba(226, 232, 240, 0.58);
+}
+
+.device-logger-status-indicator--battery[data-charging="true"] {
+    box-shadow:
+        0 0.2rem 0.6rem rgba(2, 6, 23, 0.32),
+        0 0 0.42rem rgba(34, 197, 94, 0.22),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+body.device-speed-cockpit-active .device-dashboard-zone--bottom-center {
+    inset: 0;
+    transform: none;
+    width: auto;
+    max-width: none;
+    align-items: stretch;
+    justify-content: center;
+    gap: 0;
+    pointer-events: none;
+}
+
+body.device-speed-cockpit-active .device-dashboard-card--speed {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    height: var(--app-height, 100vh);
+    min-height: 12rem;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #f8fafc;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    pointer-events: none;
+}
+
+.device-dashboard-card--speed > .device-dashboard-label,
+.device-dashboard-card--speed > .device-dashboard-meta {
+    display: none;
+}
+
+.device-dashboard-card--speed .device-dashboard-value {
+    height: 100%;
+    overflow: visible;
+}
+
+.device-speed-cockpit {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 12rem;
+    overflow: hidden;
+    isolation: isolate;
+    background:
+        radial-gradient(circle at 50% 50%, rgba(15, 23, 42, 0.18), transparent 34%),
+        linear-gradient(180deg, rgba(2, 6, 23, 0.18), rgba(2, 6, 23, 0.48));
+}
+
+.device-speed-cockpit::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background:
+        radial-gradient(circle at 50% 54%, rgba(239, 68, 68, var(--speed-alarm-alpha)), transparent 58%),
+        linear-gradient(180deg, rgba(245, 158, 11, var(--speed-warm-alpha)), transparent 46%),
+        linear-gradient(0deg, rgba(239, 68, 68, var(--speed-alarm-alpha)), transparent 62%);
+    transition: background 260ms ease;
+}
+
+.device-speed-horizon {
+    position: absolute;
+    left: -18vw;
+    right: -18vw;
+    top: calc(50% + var(--speed-horizon-offset));
+    z-index: 1;
+    height: 0.18rem;
+    transform: rotate(var(--speed-horizon-rotation));
+    transform-origin: 50% 50%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, transparent 5%, var(--speed-vibration-color) 28%, var(--speed-vibration-color) 72%, transparent 95%);
+    box-shadow:
+        0 0 0.45rem var(--speed-vibration-color),
+        0 0 1.2rem rgba(255, 255, 255, 0.14);
+    transition: top 220ms cubic-bezier(0.2, 0.8, 0.2, 1), transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), background 260ms ease, box-shadow 260ms ease;
+}
+
+.device-speed-readout {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(0.35rem, 1.3vw, 0.8rem);
+    padding: calc(var(--safe-top) + 2.2rem) calc(var(--safe-right) + 1.2rem) calc(var(--safe-bottom) + 2.6rem) calc(var(--safe-left) + 1.2rem);
+    color: #ffffff;
+    text-align: center;
+    text-shadow:
+        0 0.08em 0.12em rgba(0, 0, 0, 0.62),
+        0 0 1.6rem rgba(2, 6, 23, 0.84);
+}
+
+.device-speed-number {
+    display: block;
+    color: var(--speed-number-color, #ffffff);
+    font-size: clamp(5.8rem, 24vw, 17rem);
+    line-height: 0.82;
+    font-weight: 950;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.device-speed-unit {
+    align-self: flex-end;
+    margin-bottom: clamp(0.55rem, 2.6vw, 1.9rem);
+    color: rgba(226, 232, 240, 0.82);
+    font-size: clamp(1.05rem, 3.2vw, 2.2rem);
+    line-height: 1;
+    font-weight: 900;
+    letter-spacing: 0;
+}
+
+.device-speed-bottom {
+    position: absolute;
+    left: 50%;
+    bottom: calc(var(--safe-bottom) + 0.82rem);
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(1.2rem, 5vw, 4rem);
+    transform: translateX(-50%);
+    color: rgba(248, 250, 252, 0.9);
+    font-size: clamp(0.92rem, 2.2vw, 1.32rem);
+    line-height: 1;
+    font-weight: 850;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 2px 0.6rem rgba(0, 0, 0, 0.74);
+    white-space: nowrap;
+}
+
+.device-dashboard-card--vibration {
+    width: 12.6rem;
+    min-height: 6.4rem;
+    padding: 0.68rem 0.76rem;
+    border-color: rgba(248, 113, 113, 0.26);
+    background:
+        radial-gradient(circle at 16% 12%, rgba(248, 113, 113, 0.08), transparent 36%),
+        rgba(8, 13, 24, 0.9);
+}
+
+.device-vibration-widget {
+    gap: 0.42rem;
+}
+
+.device-vibration-main {
+    gap: 0.12rem;
+}
+
+.device-vibration-score {
+    font-size: 2.28rem;
+    line-height: 0.9;
+    color: var(--vibration-color);
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 0.62rem rgba(248, 113, 113, 0.24);
+}
+
+.device-vibration-scale {
+    font-size: 0.78rem;
+    color: rgba(226, 232, 240, 0.7);
+}
+
+.device-vibration-bars {
+    height: 2.2rem;
+    gap: 2px;
+}
+
+.device-vibration-bar {
+    height: var(--vibration-bar-height, 32%);
+    border-radius: 999px 999px 0.16rem 0.16rem;
+    background: var(--vibration-bar-color, rgba(51, 65, 85, 0.62));
+    opacity: 0.26;
+    transition: height 120ms ease, background-color 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+}
+
+.device-vibration-bar:nth-child(n+7),
+.device-vibration-bar:nth-child(n+14) {
+    height: var(--vibration-bar-height, 32%);
+}
+
+.device-vibration-bar[data-active="true"] {
+    background: var(--vibration-bar-color);
+    opacity: 1;
+    box-shadow: 0 0 0.34rem rgba(248, 113, 113, 0.28);
+}
+
+.device-vibration-axis {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: rgba(203, 213, 225, 0.62);
+    font-size: 0.52rem;
+    line-height: 1;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+
+.device-dashboard-card--vibration[data-dashboard-size="medium"] {
+    width: 15rem;
+    min-height: 7.4rem;
+    padding: 0.82rem 0.92rem;
+}
+
+.device-dashboard-card--vibration[data-dashboard-size="large"] {
+    width: 18rem;
+    min-height: 8.8rem;
+    padding: 1rem 1.1rem;
+}
+
+.device-dashboard-card--vibration[data-dashboard-size="medium"] .device-vibration-score {
+    font-size: 2.86rem;
+}
+
+.device-dashboard-card--vibration[data-dashboard-size="large"] .device-vibration-score {
+    font-size: 3.55rem;
+}
+
+.device-dashboard-card--vibration[data-dashboard-size="medium"] .device-vibration-bars {
+    height: 2.65rem;
+}
+
+.device-dashboard-card--vibration[data-dashboard-size="large"] .device-vibration-bars {
+    height: 3.1rem;
 }
 
 body.stats-panel-open .device-dashboard-zone--bottom-left,
@@ -2922,8 +3554,11 @@ label {
     }
 
     #panel-bottom-stats {
-        bottom: calc(var(--safe-bottom) + 7.35rem);
-        height: min(44vh, 18.5rem, calc(var(--app-height) - var(--safe-top) - var(--safe-bottom) - 8.2rem));
+        left: var(--safe-left);
+        right: var(--safe-right);
+        bottom: var(--safe-bottom);
+        height: min(48vh, calc(var(--app-height) - var(--safe-top) - var(--safe-bottom) - 0.75rem));
+        border-radius: 0.95rem 0.95rem 0 0;
         z-index: 20;
     }
 
@@ -2952,19 +3587,32 @@ label {
 
     #panel-bottom-stats .stats-chart-controls {
         width: 100%;
-        display: grid;
-        grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+        display: flex;
+        align-items: center;
         gap: 0.28rem;
+        overflow-x: auto;
     }
 
     #panel-bottom-stats .stats-control-group {
-        flex: 1 1 8rem;
+        flex: 0 0 auto;
         grid-auto-columns: minmax(0, 1fr);
     }
 
-    /* Il gruppo colorazione occupa una riga intera e scorre lateralmente se serve */
+    #panel-bottom-stats .stats-control-group[aria-label="Metrica grafico"],
+    #panel-bottom-stats .stats-control-group[aria-label="Overlay sensori"] {
+        grid-auto-columns: max-content;
+        justify-content: start;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+
+    #panel-bottom-stats .stats-control-group[aria-label="Metrica grafico"]::-webkit-scrollbar,
+    #panel-bottom-stats .stats-control-group[aria-label="Overlay sensori"]::-webkit-scrollbar {
+        display: none;
+    }
+
     #panel-bottom-stats .stats-control-group[aria-label="Colora traccia per"] {
-        grid-column: 1 / -1;
         grid-auto-columns: max-content;
         justify-content: start;
         overflow-x: auto;
@@ -2983,15 +3631,26 @@ label {
         font-size: 0.58rem;
     }
 
+    #panel-bottom-stats .stats-zoom-controls {
+        grid-auto-columns: 1.55rem;
+    }
+
     #panel-bottom-stats .stats-close-button {
         margin-left: 0;
         width: 1.8rem;
         height: 1.8rem;
     }
 
-    /* Su mobile la colonna secondaria si nasconde: il grafico prende tutto */
     #panel-bottom-stats .stats-secondary-grid {
-        display: none;
+        display: grid;
+        width: auto;
+        max-height: 5rem;
+        margin: 0.24rem 0.3rem 0.08rem;
+        grid-template-columns: none;
+        grid-template-rows: repeat(3, minmax(1.1rem, auto));
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(8.4rem, 1fr);
+        padding: 0.28rem 0.38rem;
     }
 
     #panel-bottom-stats .stats-panel-body {
@@ -3040,10 +3699,27 @@ label {
 
     #panel-main-menu,
     #panel-print-setup,
-    #panel-bottom-stats,
     #sidebar-tracks-right,
     #panel-mapillary-viewer {
         bottom: calc(var(--safe-bottom) + 6.95rem);
+    }
+}
+
+@media (max-width: 480px) {
+    .stats-point-card {
+        width: min(13.5rem, calc(100vw - 1.25rem));
+    }
+
+    .stats-point-card-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .stats-point-card.stats-point-card--map {
+        width: min(10.25rem, calc(100vw - 0.75rem));
+    }
+
+    .stats-point-card--map .stats-point-card-grid {
+        grid-template-columns: 1fr 1fr;
     }
 }
 
@@ -3103,6 +3779,11 @@ label {
     .device-dashboard-zone--bottom-right {
         right: calc(var(--safe-right) + 0.6rem);
         bottom: calc(var(--safe-bottom) + 0.55rem);
+    }
+
+    body.device-dashboard-bottom-center-active .device-dashboard-zone--bottom-left,
+    body.device-dashboard-bottom-center-active .device-dashboard-zone--bottom-right {
+        bottom: calc(var(--safe-bottom) + clamp(8.2rem, 18vh, 10.2rem));
     }
 
     .device-dashboard-card {
@@ -3229,6 +3910,12 @@ label {
         visibility: visible;
         pointer-events: auto;
         transform: translateY(0) scale(1);
+    }
+
+    body.mobile-tools-open #btn-device-location-main {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
     }
 
     #toolbar-quick-tools > button,
@@ -3417,10 +4104,11 @@ label {
     }
 
     #panel-bottom-stats {
-        left: calc(var(--safe-left) + 0.6rem);
-        right: calc(var(--safe-right) + 0.6rem);
-        bottom: calc(var(--safe-bottom) + 4.1rem);
-        height: min(42vh, 18rem, calc(var(--app-height) - var(--safe-top) - var(--safe-bottom) - 5.2rem));
+        left: var(--safe-left);
+        right: var(--safe-right);
+        bottom: var(--safe-bottom);
+        height: min(48vh, calc(var(--app-height) - var(--safe-top) - var(--safe-bottom) - 0.75rem));
+        border-radius: 0.95rem 0.95rem 0 0;
     }
 
     body.stats-panel-open #recording-status-chip {
@@ -3455,7 +4143,7 @@ label {
     }
 
     #panel-bottom-stats.translate-y-60 {
-        transform: translateY(calc(100vh + 2rem));
+        transform: translateY(calc(100% + 1rem));
     }
 
     #panel-mapillary-viewer {
@@ -3492,6 +4180,79 @@ label {
         opacity: 1;
         visibility: visible;
         pointer-events: auto;
+    }
+}
+
+@media (max-width: 767px) {
+    .device-logger-topbar {
+        top: calc(var(--safe-top) + 0.48rem);
+        right: calc(var(--safe-right) + 0.52rem);
+        gap: 0.28rem;
+    }
+
+    .device-logger-status-indicator {
+        width: 3.15rem;
+        height: 1.34rem;
+        font-size: 0.5rem;
+    }
+
+    .device-logger-status-indicator--battery {
+        width: 2.85rem;
+    }
+
+    .device-speed-readout {
+        padding: calc(var(--safe-top) + 1.7rem) calc(var(--safe-right) + 0.7rem) calc(var(--safe-bottom) + 2.4rem) calc(var(--safe-left) + 0.7rem);
+    }
+
+    .device-speed-number {
+        font-size: clamp(4.15rem, 32vw, 8.7rem);
+    }
+
+    .device-speed-unit {
+        margin-bottom: clamp(0.42rem, 2.2vw, 0.82rem);
+        font-size: clamp(0.78rem, 4vw, 1.28rem);
+    }
+
+    .device-speed-bottom {
+        bottom: calc(var(--safe-bottom) + 0.72rem);
+        gap: clamp(0.9rem, 8vw, 2.2rem);
+        font-size: clamp(0.78rem, 4vw, 1rem);
+    }
+
+    .device-dashboard-card--vibration,
+    .device-dashboard-card--vibration[data-dashboard-size="medium"],
+    .device-dashboard-card--vibration[data-dashboard-size="large"] {
+        width: min(12.4rem, calc(100vw - var(--safe-left) - var(--safe-right) - 1rem));
+        min-height: 5.65rem;
+        padding: 0.58rem 0.66rem;
+    }
+
+    .device-dashboard-card--vibration .device-vibration-score,
+    .device-dashboard-card--vibration[data-dashboard-size="medium"] .device-vibration-score,
+    .device-dashboard-card--vibration[data-dashboard-size="large"] .device-vibration-score {
+        font-size: 2.25rem;
+    }
+
+    .device-dashboard-card--vibration .device-vibration-bars,
+    .device-dashboard-card--vibration[data-dashboard-size="medium"] .device-vibration-bars,
+    .device-dashboard-card--vibration[data-dashboard-size="large"] .device-vibration-bars {
+        height: 1.72rem;
+    }
+}
+
+@media (max-height: 380px) and (orientation: landscape) {
+    .device-speed-number {
+        font-size: clamp(4.5rem, 30vh, 8.2rem);
+    }
+
+    .device-speed-unit {
+        font-size: clamp(0.82rem, 5vh, 1.32rem);
+        margin-bottom: clamp(0.36rem, 2vh, 0.7rem);
+    }
+
+    .device-speed-bottom {
+        bottom: calc(var(--safe-bottom) + 0.52rem);
+        font-size: clamp(0.72rem, 3.8vh, 0.94rem);
     }
 }
 

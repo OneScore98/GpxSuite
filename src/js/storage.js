@@ -63,6 +63,8 @@ const _persistedTrackSignatures = new WeakMap();
 function trackContentSignature(track) {
     const parts = [
         track.localFileId || '',
+        track.deviceSessionId || '',
+        Number.isFinite(track.deviceLastSeq) ? track.deviceLastSeq : '',
         track.name || '',
         track.desc || '',
         track.color || '',
@@ -128,6 +130,8 @@ async function putTrackRecord(track) {
         source: track.localSource || 'created',
         createdAt: track.localCreatedAt,
         updatedAt: track.localUpdatedAt,
+        deviceSessionId: track.deviceSessionId || null,
+        deviceLastSeq: Number.isFinite(track.deviceLastSeq) ? track.deviceLastSeq : null,
         pointsCount: countTrackPoints(track),
         segmentsCount: track.segments.length,
         waypointCount: track.waypoints.length,
@@ -136,6 +140,17 @@ async function putTrackRecord(track) {
         track: track
     });
     await waitForTransaction(tx);
+}
+
+async function persistOneTrackNow(track, force = false) {
+    if (!track || track.localSource === 'recording-live') return null;
+    const signature = trackContentSignature(track);
+    if (!force && _persistedTrackSignatures.get(track) === signature) {
+        return track.localFileId || null;
+    }
+    await putTrackRecord(track);
+    _persistedTrackSignatures.set(track, signature);
+    return track.localFileId || null;
 }
 
 function readHikingTrailsVisibility() {
@@ -210,14 +225,18 @@ async function persistTracksNow(trackList, force = false) {
             // Salta le tracce il cui contenuto non è cambiato dall'ultimo
             // salvataggio (firma leggera). Il flush di uscita forza sempre
             // il salvataggio completo per garantire la durabilità.
-            const signature = trackContentSignature(track);
-            if (!force && _persistedTrackSignatures.get(track) === signature) continue;
-            await putTrackRecord(track);
-            _persistedTrackSignatures.set(track, signature);
+            await persistOneTrackNow(track, force);
         } catch (err) {
             console.error('Errore salvataggio IndexedDB:', err);
         }
     }
+}
+
+export async function persistTrackNow(track, options = {}) {
+    const id = await persistOneTrackNow(track, options.force === true);
+    persistAppSessionNow();
+    if (options.emit !== false) emitLibraryChanged();
+    return id;
 }
 
 export function schedulePersistTracks(trackList) {
@@ -253,6 +272,9 @@ export async function listStoredTracks() {
             id: rec.id,
             name: rec.name,
             source: rec.source,
+            deviceSessionId: rec.deviceSessionId || rec.track?.deviceSessionId || null,
+            deviceLastSeq: Number.isFinite(rec.deviceLastSeq) ? rec.deviceLastSeq :
+                (Number.isFinite(rec.track?.deviceLastSeq) ? rec.track.deviceLastSeq : null),
             createdAt: rec.createdAt,
             updatedAt: rec.updatedAt,
             visible: rec.track?.visible !== false,

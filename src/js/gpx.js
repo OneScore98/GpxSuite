@@ -4,11 +4,11 @@
 // per evitare di bloccare il main thread su file enormi. Se il Worker non è
 // disponibile (es. apertura via file://) si ricade sul parsing inline a chunk.
 
-import { tracks, activeTrackId, map, setActiveSegmentId } from './state.js';
+import { tracks, activeTrackId, map, setActiveTrackId, setActiveSegmentId } from './state.js';
 import { createNewTrack, showToast } from './ui.js';
 import { saveHistoryState } from './tracks.js';
 import { updateMapData } from './map.js';
-import { escapeXml } from './utils.js';
+import { escapeXml, generateDistinctTrackColor } from './utils.js';
 
 // Singleton del worker: lo creiamo lazy e lo riutilizziamo
 let _gpxWorker = null;
@@ -39,18 +39,22 @@ function yieldToMain() {
 function readSensorExtensions(node) {
     const result = {};
     const fields = [
-        { tag: 'tilt', prefixed: 'gpxsuite:tilt', key: 'tilt' },
-        { tag: 'pitch', prefixed: 'gpxsuite:pitch', key: 'pitch' },
-        { tag: 'vibration', prefixed: 'gpxsuite:vibration', key: 'vibrationLevel' }
+        { tags: ['tilt', 'roll'], key: 'tilt' },
+        { tags: ['pitch'], key: 'pitch' },
+        { tags: ['vibration'], key: 'vibrationLevel' }
     ];
     for (let i = 0; i < fields.length; i++) {
         const f = fields[i];
-        const el = node.getElementsByTagName(f.prefixed)[0] ||
-            node.getElementsByTagName(f.tag)[0] ||
-            (typeof node.getElementsByTagNameNS === 'function' ? node.getElementsByTagNameNS('*', f.tag)[0] : null);
-        if (el && el.textContent) {
-            const val = parseFloat(el.textContent);
-            if (Number.isFinite(val)) result[f.key] = val;
+        for (let j = 0; j < f.tags.length; j++) {
+            const tag = f.tags[j];
+            const el = node.getElementsByTagName(`gpxsuite:${tag}`)[0] ||
+                node.getElementsByTagName(tag)[0] ||
+                (typeof node.getElementsByTagNameNS === 'function' ? node.getElementsByTagNameNS('*', tag)[0] : null);
+            if (el && el.textContent) {
+                const val = parseFloat(el.textContent);
+                if (Number.isFinite(val)) result[f.key] = val;
+                break;
+            }
         }
     }
     return result;
@@ -69,21 +73,61 @@ function readSurfaceExtension(node) {
     return prefixed?.textContent ? prefixed.textContent.trim() : '';
 }
 
-export async function importGPX(xmlText, fileName) {
-    showToast("Importazione in corso...", "info");
+function createImportedTrackShell(name, options = {}) {
+    const now = Date.now();
+    const track = {
+        id: options.trackId || 'track_' + now + '_' + Math.random().toString(36).slice(2, 7),
+        localFileId: options.localFileId || 'local_' + now + '_' + Math.random().toString(36).slice(2, 8),
+        localCreatedAt: options.createdAt || now,
+        localUpdatedAt: now,
+        localSource: options.source || 'imported',
+        name,
+        desc: options.desc || 'Nessuna descrizione',
+        color: options.color || generateDistinctTrackColor(tracks.map(track => track.color)),
+        width: options.width || 3,
+        visible: options.visible !== false,
+        waypointsVisible: options.waypointsVisible !== false,
+        segments: [],
+        waypoints: []
+    };
+    tracks.push(track);
+    return track;
+}
+
+function normalizeImportTrackName(fileName, options = {}) {
+    return String(options.trackName || fileName || 'Traccia GPX')
+        .replace(/\.gpx$/i, '')
+        .trim() || 'Traccia GPX';
+}
+
+export async function importGPX(xmlText, fileName, options = {}) {
+    const silent = options.silent === true;
+    if (!silent) showToast("Importazione in corso...", "info");
 
     try {
         const result = await parseInWorker(xmlText, fileName)
             .catch(() => parseInline(xmlText, fileName));
 
         if (!result) {
-            showToast("Errore durante il parsing del file GPX", "error");
-            return;
+            if (!silent) showToast("Errore durante il parsing del file GPX", "error");
+            return null;
         }
 
-        // Costruisci il nuovo track con i dati pre-parsati
-        const newTrack = createNewTrack(fileName.replace('.gpx', ''));
-        newTrack.localSource = 'imported';
+        const trackName = normalizeImportTrackName(fileName, options);
+        const targetTrack = options.targetTrackId ?
+            tracks.find(track => track.id === options.targetTrackId) :
+            null;
+        const newTrack = targetTrack || (
+            silent || options.activate === false ?
+                createImportedTrackShell(trackName, options) :
+                createNewTrack(trackName)
+        );
+
+        newTrack.name = options.preserveName === true && newTrack.name ? newTrack.name : trackName;
+        newTrack.localSource = options.source || 'imported';
+        if (options.deviceSessionId) newTrack.deviceSessionId = options.deviceSessionId;
+        if (Number.isFinite(options.deviceLastSeq)) newTrack.deviceLastSeq = options.deviceLastSeq;
+        newTrack.localUpdatedAt = Date.now();
         newTrack.segments = result.segments.length > 0 ? result.segments : [{
             id: 'seg_' + Date.now() + '_import',
             name: 'Tracciato 1',
@@ -92,25 +136,32 @@ export async function importGPX(xmlText, fileName) {
         }];
         newTrack.visible = true;
         newTrack.waypointsVisible = true;
-        setActiveSegmentId(newTrack.segments[0].id);
+        if (options.activate !== false) {
+            setActiveTrackId(newTrack.id);
+            setActiveSegmentId(newTrack.segments[0].id);
+        }
         // I waypoint vengono aggiunti a quelli esistenti del nuovo track (se presenti)
+        newTrack.waypoints = Array.isArray(newTrack.waypoints) ? newTrack.waypoints : [];
+        if (targetTrack) newTrack.waypoints = [];
         for (let i = 0; i < result.waypoints.length; i++) {
             newTrack.waypoints.push(result.waypoints[i]);
         }
 
-        if (result.firstPoint) {
+        if (result.firstPoint && options.flyTo !== false && map) {
             map.flyTo({ center: [result.firstPoint.lon, result.firstPoint.lat], zoom: 11 });
         }
 
-        saveHistoryState();
-        updateMapData(true);
+        if (options.saveHistory !== false && !silent) saveHistoryState();
+        if (options.updateMap !== false) updateMapData(true);
 
         const total = result.totalPoints || 0;
         const ptsLabel = total >= 1000 ? `${(total / 1000).toFixed(1)}k` : total;
-        showToast(`GPX importato: ${result.segments.length} segmenti, ${ptsLabel} punti`, "success");
+        if (!silent) showToast(`GPX importato: ${result.segments.length} segmenti, ${ptsLabel} punti`, "success");
+        return newTrack;
     } catch (err) {
         console.error(err);
-        showToast("Errore durante il parsing del file GPX", "error");
+        if (!silent) showToast("Errore durante il parsing del file GPX", "error");
+        return null;
     }
 }
 
@@ -251,7 +302,7 @@ export function exportGPX(trackId = activeTrackId) {
     // Build con array di stringhe + join: molto più veloce di concatenazione su 100k+ punti
     const parts = [];
     parts.push(`<?xml version="1.0" encoding="UTF-8"?>\n`);
-    parts.push(`<gpx version="1.1" creator="GpxSuite" xmlns="http://www.topografix.com/GPX/1/1">\n`);
+    parts.push(`<gpx version="1.1" creator="GpxSuite" xmlns="http://www.topografix.com/GPX/1/1" xmlns:gpxsuite="https://gpxsuite.app/extensions/1/0">\n`);
 
     exportTracks.forEach(track => {
         (track.waypoints || []).forEach(wp => {
@@ -273,8 +324,13 @@ export function exportGPX(trackId = activeTrackId) {
 
             // Sull'export usiamo la versione iterativa (non ricorsiva): la versione
             // ricorsiva esplode lo stack su tracce con decine di migliaia di punti.
-            const hasSurfaceData = seg.points.some(point => point.surfaceFromPrev || point.surface);
-            const exportPoints = seg.points.length > 150 && !hasSurfaceData
+            const hasPerPointExtensions = seg.points.some(point =>
+                point.surfaceFromPrev || point.surface ||
+                Number.isFinite(point.tilt) ||
+                Number.isFinite(point.pitch) ||
+                Number.isFinite(point.vibrationLevel)
+            );
+            const exportPoints = seg.points.length > 150 && !hasPerPointExtensions
                 ? simplifyDouglasPeucker(seg.points, 0.00005)
                 : seg.points;
 
@@ -285,9 +341,13 @@ export function exportGPX(trackId = activeTrackId) {
                 const timeMs = typeof pt.time === 'number' ? pt.time : Date.parse(pt.time);
                 if (Number.isFinite(timeMs)) parts.push(`        <time>${new Date(timeMs).toISOString()}</time>\n`);
                 const surface = pt.surfaceFromPrev || pt.surface;
-                if (surface) {
+                const hasSensors = Number.isFinite(pt.tilt) || Number.isFinite(pt.pitch) || Number.isFinite(pt.vibrationLevel);
+                if (surface || hasSensors) {
                     parts.push(`        <extensions>\n`);
-                    parts.push(`          <surface>${escapeXml(surface)}</surface>\n`);
+                    if (surface) parts.push(`          <surface>${escapeXml(surface)}</surface>\n`);
+                    if (Number.isFinite(pt.tilt)) parts.push(`          <gpxsuite:tilt>${pt.tilt}</gpxsuite:tilt>\n`);
+                    if (Number.isFinite(pt.pitch)) parts.push(`          <gpxsuite:pitch>${pt.pitch}</gpxsuite:pitch>\n`);
+                    if (Number.isFinite(pt.vibrationLevel)) parts.push(`          <gpxsuite:vibration>${pt.vibrationLevel}</gpxsuite:vibration>\n`);
                     parts.push(`        </extensions>\n`);
                 }
                 parts.push(`      </trkpt>\n`);

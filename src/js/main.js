@@ -14,8 +14,8 @@ import {
     closeMapillaryViewer,
     createBaseMapStyle,
     setStyleRestoredHook
-} from './map.js';
-import { importGPX, exportGPX } from './gpx.js';
+} from './map.js?v=logger-chart-focus-map-point-20260714';
+import { importGPX, exportGPX } from './gpx.js?v=logger-auto-chart-20260713';
 import { addPointToActiveSegment, cutTrackAtPoint, handleBoxDeleteClick, saveHistoryState, triggerUndo, setSnapProfile } from './tracks.js';
 import { addWaypointAtCoords, saveWaypointModifications, openWaypointEditor, updateWaypointsOnMap } from './waypoints.js';
 import { flushPersistedStateNow, schedulePersistAppSession, schedulePersistTracks } from './storage.js';
@@ -48,10 +48,22 @@ import {
     toggleDeviceRecording,
     setDeviceRate,
     calibrateDeviceImu,
+    saveGpsReceiverConfig,
+    restartGpsReceiver,
+    standbyGpsReceiver,
+    loadDeviceSettings,
+    saveDeviceSettings,
     loadDeviceSessions,
     importDeviceSession,
-    deleteDeviceSession
-} from './device.js';
+    deleteDeviceSession,
+    isDeviceConnected,
+    getDeviceSessionId,
+    startLoggerRecording,
+    pauseLoggerRecording,
+    resumeLoggerRecording,
+    stopLoggerRecording,
+    openLoggerInterface
+} from './device.js?v=logger-simple-xhr-20260713';
 import {
     togglePrintPlanning,
     disablePrintPlanning,
@@ -62,8 +74,7 @@ import {
     generateHighResPrintPreview,
     syncPrintOutputFromPreview
 } from './print.js';
-import { initAuthGate, bindAuthUi, trackAnalyticsEvent } from './auth.js';
-import { startAuthMapBackground, stopAuthMapBackground } from './auth-map-background.js';
+import { initAuthGate, bindAuthUi, trackAnalyticsEvent } from './auth.js?v=logger-auth-bypass-20260713';
 import {
     injectDeps,
     setupEvents,
@@ -122,18 +133,21 @@ import {
     getCurrentRecordingSensorData,
     setExternalSensorFeed,
     feedExternalDashboardSensors,
+    feedExternalDashboardMeta,
+    setDeviceDashboardVisualSettings,
     showMoreGisSegments,
     showMoreGisWaypoints,
     moveTrackUp,
     moveTrackDown,
     openMergeTracksModal,
     mergeTwoTracks,
-    mergeSelectedTracks
-// NB: importare './ui.js' senza query string: gli altri moduli (map.js, tracks.js,
-// gpx.js, print.js, waypoints.js) lo importano senza versione e un URL diverso
-// creerebbe UNA SECONDA ISTANZA del modulo con stato interno duplicato
-// (selezione GIS tree, dipendenze iniettate, job offroad). Il cache-busting
-// avviene tramite la versione di main.js in index.html.
+    mergeSelectedTracks,
+    updateDeviceRecordingUi
+    // NB: importare './ui.js' senza query string: gli altri moduli (map.js, tracks.js,
+    // gpx.js, print.js, waypoints.js) lo importano senza versione e un URL diverso
+    // creerebbe UNA SECONDA ISTANZA del modulo con stato interno duplicato
+    // (selezione GIS tree, dipendenze iniettate, job offroad). Il cache-busting
+    // avviene tramite la versione di main.js in index.html.
 } from './ui.js';
 
 initDeviceLocation({
@@ -250,11 +264,23 @@ window.mergeTwoTracks = mergeTwoTracks;
 window.mergeSelectedTracks = mergeSelectedTracks;
 // Strumento esterno (GPXSuite Logger): handler usati dal pannello Dispositivo
 window.toggleDeviceRecording = toggleDeviceRecording;
+window.startLoggerRecording = startLoggerRecording;
+window.pauseLoggerRecording = pauseLoggerRecording;
+window.resumeLoggerRecording = resumeLoggerRecording;
+window.stopLoggerRecording = stopLoggerRecording;
+window.isDeviceConnected = isDeviceConnected;
 window.setDeviceRate = setDeviceRate;
 window.calibrateDeviceImu = calibrateDeviceImu;
+window.saveGpsReceiverConfig = saveGpsReceiverConfig;
+window.restartGpsReceiver = restartGpsReceiver;
+window.standbyGpsReceiver = standbyGpsReceiver;
+window.loadDeviceSettings = loadDeviceSettings;
+window.saveDeviceSettings = saveDeviceSettings;
 window.loadDeviceSessions = loadDeviceSessions;
 window.importDeviceSession = importDeviceSession;
 window.deleteDeviceSession = deleteDeviceSession;
+window.getDeviceSessionId = getDeviceSessionId;
+window.openLoggerInterface = openLoggerInterface;
 
 function updateViewportMetrics() {
     const vv = window.visualViewport;
@@ -307,6 +333,24 @@ function initApp() {
     });
 
     ensureLucideIcons();
+    initDeviceModule({
+        showToast,
+        updateMapData,
+        renderGisTree,
+        updateActiveTracksHeader,
+        schedulePersistTracks,
+        saveHistoryState,
+        importGPX,
+        setExternalFixProvider,
+        feedExternalFix,
+        startDeviceLocation,
+        isDeviceLocationActive,
+        setExternalSensorFeed,
+        feedExternalDashboardSensors,
+        feedExternalDashboardMeta,
+        setDeviceDashboardVisualSettings,
+        updateDeviceRecordingUi
+    });
 
     const mapInstance = new maplibregl.Map({
         container: 'map',
@@ -329,7 +373,7 @@ function initApp() {
     });
     resizeObserver.observe(document.getElementById('map'));
 
-    mapInstance.on('load', async() => {
+    mapInstance.on('load', async () => {
         setMapLoaded(true);
 
         mapInstance.addSource('terrain-nextzen', {
@@ -358,23 +402,6 @@ function initApp() {
         setupEvents();
         bindAuthUi();
 
-        // Strumento esterno (GPXSuite Logger): inizializzato a mappa pronta,
-        // cosi' l'eventuale autoconnessione puo' attivare subito il marker.
-        initDeviceModule({
-            showToast,
-            updateMapData,
-            renderGisTree,
-            updateActiveTracksHeader,
-            schedulePersistTracks,
-            saveHistoryState,
-            importGPX,
-            setExternalFixProvider,
-            feedExternalFix,
-            startDeviceLocation,
-            isDeviceLocationActive,
-            setExternalSensorFeed,
-            feedExternalDashboardSensors
-        });
         configureMapillaryToken(localStorage.getItem(MAPILLARY_TOKEN_KEY) || '');
         renderGisTree();
         updateActiveTracksHeader();
@@ -391,13 +418,48 @@ function initApp() {
             showToast("Archivio locale non disponibile in questo browser", "error");
             createNewTrack("Traccia 1");
         }
+
+        // Strumento esterno (GPXSuite Logger): parte dopo il ripristino locale,
+        // cosi' una sessione live gia' salvata riprende dall'ultimo seq noto.
+        initDeviceModule({
+            showToast,
+            updateMapData,
+            renderGisTree,
+            updateActiveTracksHeader,
+            schedulePersistTracks,
+            saveHistoryState,
+            importGPX,
+            setExternalFixProvider,
+            feedExternalFix,
+            startDeviceLocation,
+            isDeviceLocationActive,
+            setExternalSensorFeed,
+            feedExternalDashboardSensors,
+            feedExternalDashboardMeta,
+            setDeviceDashboardVisualSettings,
+            updateDeviceRecordingUi
+        });
         trackAnalyticsEvent('app_ready', { restoredTracks: tracks.length }).catch(err => console.warn(err));
     });
 }
 
 function bootstrapApp() {
     updateViewportMetrics();
-    startAuthMapBackground(); // Start the background map animation immediately
+    let stopAuthMapBackground = () => {};
+    const host = window.location.hostname;
+    const isLoggerHost = host === 'gpx.local' || host === 'gpx.local.' || host === '192.168.4.1';
+    if (isLoggerHost) {
+        document.getElementById('auth-gate')?.classList.add('hidden');
+        document.body.classList.remove('auth-locked');
+        initApp();
+        return;
+    }
+    if (!isLoggerHost) {
+        import('./auth-map-background.js').then(mod => {
+            stopAuthMapBackground = mod.stopAuthMapBackground;
+            mod.startAuthMapBackground();
+        }).catch(err => console.warn('[auth-bg] non avviato:', err));
+    }
     initAuthGate({
         onAuthorized: () => {
             stopAuthMapBackground(); // Free resources properly on successful login

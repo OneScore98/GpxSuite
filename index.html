@@ -31,7 +31,7 @@
     <script defer src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
 
     <!-- CSS Custom & Print Rules -->
-    <link rel="stylesheet" href="src/css/style.css?v=dashboard-settings-collapse-20260605">
+    <link rel="stylesheet" href="src/css/style.css?v=logger-chart-focus-map-point-20260714">
 
     <!-- Sandbox security patch per window.parent su Blob URL -->
     <script>
@@ -405,15 +405,14 @@
                 <i data-lucide="x" class="w-4 h-4"></i>
             </button>
         </div>
-        <!-- Connessione (statica: l'input non viene mai ri-renderizzato) -->
+        <!-- Connessione automatica al logger sulla WiFi GPXLogger -->
         <div class="p-3 border-b border-gray-800 space-y-2">
             <div class="flex gap-2">
-                <input id="device-url-input" type="text" placeholder="192.168.4.1 o gpx.local"
-                    class="flex-1 min-w-0 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm placeholder-gray-600 focus:border-cyan-600 focus:outline-none">
+                <input id="device-url-input" type="hidden" value="">
                 <button id="btn-device-connect"
-                    class="px-3 py-2 rounded-lg bg-cyan-700 hover:bg-cyan-600 text-white text-sm font-bold transition-all shrink-0">Connetti</button>
+                    class="w-full px-3 py-2 rounded-lg bg-cyan-700 hover:bg-cyan-600 text-white text-sm font-bold transition-all shrink-0">Connetti automaticamente</button>
             </div>
-            <label class="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+            <label class="hidden items-center gap-2 text-xs text-gray-400 cursor-pointer">
                 <input id="device-autoconnect" type="checkbox" class="accent-cyan-600">
                 Riconnetti automaticamente all'avvio
             </label>
@@ -758,7 +757,7 @@
                                         <i data-lucide="gauge" class="w-3.5 h-3.5 text-cyan-300"></i>
                                         Inclinometro
                                     </span>
-                                    <span class="block text-[9px] text-gray-500">Tilt e pitch fuoristrada</span>
+                                    <span class="block text-[9px] text-gray-500">Roll e pitch fuoristrada</span>
                                 </span>
                             </label>
                             <div class="device-dashboard-field-controls">
@@ -793,7 +792,7 @@
                                         <i data-lucide="activity" class="w-3.5 h-3.5 text-rose-300"></i>
                                         Vibrazioni
                                     </span>
-                                    <span class="block text-[9px] text-gray-500">Scala scossoni 1-10</span>
+                                    <span class="block text-[9px] text-gray-500">Scala scossoni 1-20</span>
                                 </span>
                             </label>
                             <div class="device-dashboard-field-controls">
@@ -892,7 +891,7 @@
                                 title="Disattiva per ridurre consumo energetico e calore del dispositivo">
                         </label>
                         <label class="flex items-center justify-between gap-3">
-                            <span class="text-xs text-gray-300">Registra inclinazione (tilt/pitch)</span>
+                            <span class="text-xs text-gray-300">Registra roll/pitch</span>
                             <input type="checkbox" id="recording-capture-tilt" class="accent-red-500"
                                 title="Disattiva per ridurre il consumo di batteria: il sensore di orientamento resta spento durante la registrazione">
                         </label>
@@ -1143,12 +1142,17 @@
                         <span>Pend</span>
                     </button>
                     <button type="button" class="stats-segment-button" data-stats-metric="tilt"
-                        title="Inclinazione (tracce con sensori attivi)">
+                        title="Rollio (tracce con sensori attivi)">
                         <i data-lucide="arrow-up-down" class="w-3 h-3"></i>
-                        <span>Tilt</span>
+                        <span>Roll</span>
+                    </button>
+                    <button type="button" class="stats-segment-button" data-stats-metric="pitch"
+                        title="Pitch (tracce con sensori attivi)">
+                        <i data-lucide="arrow-up-right" class="w-3 h-3"></i>
+                        <span>Pitch</span>
                     </button>
                     <button type="button" class="stats-segment-button" data-stats-metric="vibration"
-                        title="Vibrazioni (tracce con sensori attivi)">
+                        title="Vibrazioni 1-20 (tracce con sensori attivi)">
                         <i data-lucide="activity" class="w-3 h-3"></i>
                         <span>Vibr</span>
                     </button>
@@ -1162,6 +1166,23 @@
                     <button type="button" class="stats-segment-button" data-stats-x="time" title="Asse X tempo">
                         <i data-lucide="clock" class="w-3 h-3"></i>
                         <span>Tempo</span>
+                    </button>
+                </div>
+                <div class="stats-control-group stats-overlay-controls" role="group" aria-label="Overlay sensori">
+                    <button type="button" class="stats-segment-button" data-stats-overlay="tilt"
+                        title="Sovrapponi rollio">
+                        <i data-lucide="arrow-up-down" class="w-3 h-3"></i>
+                        <span>Roll</span>
+                    </button>
+                    <button type="button" class="stats-segment-button" data-stats-overlay="pitch"
+                        title="Sovrapponi pitch">
+                        <i data-lucide="arrow-up-right" class="w-3 h-3"></i>
+                        <span>Pitch</span>
+                    </button>
+                    <button type="button" class="stats-segment-button" data-stats-overlay="vibration"
+                        title="Sovrapponi vibrazioni">
+                        <i data-lucide="activity" class="w-3 h-3"></i>
+                        <span>Vibr</span>
                     </button>
                 </div>
                 <!-- Colorazione traccia per metrica -->
@@ -1188,9 +1209,9 @@
                         <span>Pend</span>
                     </button>
                     <button type="button" class="stats-segment-button" data-stats-colorby="tilt"
-                        title="Colora per inclinazione laterale (tracce con sensori attivi)">
+                        title="Colora per rollio (tracce con sensori attivi)">
                         <i data-lucide="arrow-up-down" class="w-3 h-3"></i>
-                        <span>Tilt</span>
+                        <span>Roll</span>
                     </button>
                     <button type="button" class="stats-segment-button" data-stats-colorby="pitch"
                         title="Colora per beccheggio (tracce con sensori attivi)">
@@ -1215,6 +1236,23 @@
         <div class="stats-panel-body flex-1 flex min-h-0">
             <div class="stats-chart-shell flex-1 min-w-0 h-full relative">
                 <canvas id="altitudeChart" class="w-full h-full"></canvas>
+                <div id="stats-point-card" class="stats-point-card stats-point-card--chart hidden"
+                    role="status" aria-live="polite"></div>
+                <div id="stats-chart-empty" class="stats-chart-empty hidden">N/D</div>
+                <div class="stats-chart-floating-controls" role="group" aria-label="Zoom grafico">
+                    <button type="button" class="stats-chart-floating-button" data-stats-zoom="in"
+                        title="Zoom avanti">
+                        <i data-lucide="zoom-in" class="w-3.5 h-3.5"></i>
+                    </button>
+                    <button type="button" class="stats-chart-floating-button" data-stats-zoom="out"
+                        title="Zoom indietro">
+                        <i data-lucide="zoom-out" class="w-3.5 h-3.5"></i>
+                    </button>
+                    <button type="button" class="stats-chart-floating-button" data-stats-zoom="reset"
+                        title="Ripristina vista completa">
+                        <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                    </button>
+                </div>
                 <!-- Legenda gradiente colore traccia (visibile solo con colorazione attiva) -->
                 <div id="stats-color-legend" style="display:none"
                     class="absolute bottom-1 left-10 right-2 flex items-center gap-1.5 pointer-events-none">
@@ -1281,12 +1319,12 @@
                     <span class="stat-row-label">Segmenti</span>
                     <span id="stat-segments-count" class="stat-row-value text-white">0</span>
                 </div>
-                <div class="stat-row" title="Inclinazione massima registrata (richiede sensore attivo)">
+                <div class="stat-row" title="Rollio massimo registrato (richiede sensore attivo)">
                     <i data-lucide="arrow-up-down" class="stat-row-icon"></i>
-                    <span class="stat-row-label">Inclin. Max</span>
+                    <span class="stat-row-label">Roll Max</span>
                     <span id="stat-max-tilt" class="stat-row-value text-violet-400">--</span>
                 </div>
-                <div class="stat-row" title="Vibrazioni medie / max (richiede sensore attivo, scala 1–10)">
+                <div class="stat-row" title="Vibrazioni medie / max (richiede sensore attivo, scala 1-20)">
                     <i data-lucide="activity" class="stat-row-icon"></i>
                     <span class="stat-row-label">Vibr. Med/Max</span>
                     <span class="stat-row-value"><span id="stat-avg-vibration" class="text-rose-400">--</span><span
@@ -1301,6 +1339,9 @@
     <div id="cursor-coordinates"
         class="absolute bottom-3 left-1/2 -translate-x-1/2 z-40 pointer-events-none bg-gray-950/85 border border-gray-800 text-gray-300 px-3 py-1 rounded-md text-[11px] font-mono tracking-wide shadow-lg">
         --.------, --.------
+    </div>
+
+    <div id="map-point-card" class="stats-point-card stats-point-card--map hidden" role="status" aria-live="polite">
     </div>
 
     <!-- INDICATORE REGISTRAZIONE -->
@@ -1465,7 +1506,7 @@
     <!-- Tailwind resta zero-build, ma fuori dal percorso critico iniziale. -->
     <script async src="https://cdn.tailwindcss.com/3.4.17" onload="document.documentElement.classList.add('tw-ready')"
         onerror="document.documentElement.classList.add('tw-ready')"></script>
-    <script type="module" src="src/js/main.js?v=device-logger-20260707"></script>
+    <script type="module" src="src/js/main.js?v=logger-chart-focus-map-point-20260714"></script>
 </body>
 
 </html>

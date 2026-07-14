@@ -18,8 +18,12 @@ import {
     activeWpForEdit, setActiveWpForEdit
 } from './state.js';
 
-import { escapeXml, generateDistinctTrackColor, refreshLucideIcons } from './utils.js';
-import { forceUpdateStats, haversineDistance } from './stats.js';
+import {
+    escapeXml,
+    generateDistinctTrackColor,
+    refreshLucideIcons
+} from './utils.js';
+import { forceUpdateStats, haversineDistance } from './stats.js?v=logger-chart-focus-map-point-20260714';
 import { trackAnalyticsEvent } from './auth.js';
 import { trovaTipoWaypoint } from './waypointTypes.js';
 import {
@@ -30,7 +34,8 @@ import {
     onLibraryChanged,
     loadPersistedAppSession,
     schedulePersistAppSession,
-    schedulePersistTracks
+    schedulePersistTracks,
+    persistTrackNow
 } from './storage.js';
 
 // Riferimenti a funzioni degli altri moduli — iniettati da main.js per evitare
@@ -78,6 +83,7 @@ let _getDefaultRecordingName = null;
 let _localLibraryBound = false;
 let _gisDragPayload = null;
 let _trackContextMenu = null;
+let _savingLoggerSessionId = null;
 let _trackLongPressTimer = null;
 let _lastDeviceLocationStatus = {};
 let _permissionRefreshTimer = null;
@@ -115,43 +121,44 @@ const DEVICE_DASHBOARD_SENSOR_RENDER_MS = 250;
 // quarto del lavoro CPU per la normalizzazione/smoothing.
 const DEVICE_DASHBOARD_ORIENTATION_SAMPLE_MS = 66;
 const DEVICE_DASHBOARD_TILT_MAX_DEG = 35;
+const DEVICE_DASHBOARD_VIBRATION_MAX = 20;
 const DEVICE_DASHBOARD_ZERO_HOLD_MS = 620;
 const DEVICE_DASHBOARD_SENSOR_STALE_MS = 4500;
 const DEVICE_DASHBOARD_FIELDS = [{
-        id: 'compass',
-        label: 'Bussola',
-        icon: 'navigation',
-        defaultPosition: 'top-right',
-        defaultEnabled: true
-    },
-    {
-        id: 'altitude',
-        label: 'Altitudine',
-        icon: 'mountain',
-        defaultPosition: 'top-right',
-        defaultEnabled: true
-    },
-    {
-        id: 'speed',
-        label: 'Velocità',
-        icon: 'gauge',
-        defaultPosition: 'top-right',
-        defaultEnabled: true
-    },
-    {
-        id: 'tilt',
-        label: 'Inclinometro',
-        icon: 'gauge',
-        defaultPosition: 'bottom-center',
-        defaultEnabled: false
-    },
-    {
-        id: 'vibration',
-        label: 'Vibrazioni',
-        icon: 'activity',
-        defaultPosition: 'bottom-center',
-        defaultEnabled: false
-    }
+    id: 'compass',
+    label: 'Bussola',
+    icon: 'navigation',
+    defaultPosition: 'top-right',
+    defaultEnabled: true
+},
+{
+    id: 'altitude',
+    label: 'Altitudine',
+    icon: 'mountain',
+    defaultPosition: 'top-right',
+    defaultEnabled: true
+},
+{
+    id: 'speed',
+    label: 'Velocità',
+    icon: 'gauge',
+    defaultPosition: 'top-right',
+    defaultEnabled: true
+},
+{
+    id: 'tilt',
+    label: 'Inclinometro',
+    icon: 'gauge',
+    defaultPosition: 'bottom-center',
+    defaultEnabled: false
+},
+{
+    id: 'vibration',
+    label: 'Vibrazioni',
+    icon: 'activity',
+    defaultPosition: 'bottom-center',
+    defaultEnabled: false
+}
 ];
 let _deviceLocationPermissionEnabled = readPersistedDeviceLocationEnabled();
 let _deviceDashboardSettings = readDeviceDashboardSettings();
@@ -170,7 +177,15 @@ let _deviceDashboardMotionState = {
     magnitude: null,
     lastMagnitude: null,
     vibration: null,
+    visualLevel: null,
     level: null,
+    updatedAt: 0
+};
+let _deviceDashboardLoggerMeta = {
+    temperatureC: null,
+    batteryPct: null,
+    batteryCharging: false,
+    storageFreePct: null,
     updatedAt: 0
 };
 let _deviceDashboardTiltHoldTimer = null;
@@ -188,6 +203,25 @@ let _dashboardSensorVisibilityBound = false;
 // deviceorientation/devicemotion del telefono restano staccati e la
 // dashboard viene alimentata da device.js con i dati della BMI270.
 let _externalSensorFeedActive = false;
+const DEFAULT_DEVICE_DASHBOARD_VISUAL_SETTINGS = {
+    speed: {
+        lowKmh: 35,
+        mediumKmh: 90,
+        highKmh: 140,
+        lowColor: '#38BDF8',
+        mediumColor: '#F59E0B',
+        highColor: '#EF4444'
+    },
+    vibration: {
+        lowLevel: 5,
+        mediumLevel: 12,
+        highLevel: 18,
+        lowColor: '#38BDF8',
+        mediumColor: '#F59E0B',
+        highColor: '#EF4444'
+    }
+};
+let _deviceDashboardVisualSettings = normalizeDeviceDashboardVisualSettings();
 
 function easeInOutCubic(t) {
     return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -200,6 +234,85 @@ function createSvgCursor(svgBody, hotX, hotY) {
 
 function safeHtml(value) {
     return escapeXml(String(value ?? ''));
+}
+
+function normalizeDashboardHexColor(value, fallback) {
+    const text = String(value || '').trim();
+    if (/^#[0-9a-f]{6}$/i.test(text)) return text.toUpperCase();
+    return fallback;
+}
+
+function dashboardNumberOrDefault(value, fallback) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function normalizeDeviceDashboardVisualSettings(settings = {}) {
+    const speed = settings?.speed || {};
+    const vibration = settings?.vibration || {};
+    const normalizedSpeed = {
+        lowKmh: clampDeviceDashboardValue(dashboardNumberOrDefault(speed.lowKmh, DEFAULT_DEVICE_DASHBOARD_VISUAL_SETTINGS.speed.lowKmh), 0, 250),
+        mediumKmh: clampDeviceDashboardValue(dashboardNumberOrDefault(speed.mediumKmh, DEFAULT_DEVICE_DASHBOARD_VISUAL_SETTINGS.speed.mediumKmh), 0, 280),
+        highKmh: clampDeviceDashboardValue(dashboardNumberOrDefault(speed.highKmh, DEFAULT_DEVICE_DASHBOARD_VISUAL_SETTINGS.speed.highKmh), 0, 320),
+        lowColor: normalizeDashboardHexColor(speed.lowColor, DEFAULT_DEVICE_DASHBOARD_VISUAL_SETTINGS.speed.lowColor),
+        mediumColor: normalizeDashboardHexColor(speed.mediumColor, DEFAULT_DEVICE_DASHBOARD_VISUAL_SETTINGS.speed.mediumColor),
+        highColor: normalizeDashboardHexColor(speed.highColor, DEFAULT_DEVICE_DASHBOARD_VISUAL_SETTINGS.speed.highColor)
+    };
+    if (normalizedSpeed.mediumKmh < normalizedSpeed.lowKmh + 1) normalizedSpeed.mediumKmh = normalizedSpeed.lowKmh + 1;
+    if (normalizedSpeed.highKmh < normalizedSpeed.mediumKmh + 1) normalizedSpeed.highKmh = normalizedSpeed.mediumKmh + 1;
+
+    const normalizedVibration = {
+        lowLevel: clampDeviceDashboardValue(Math.round(Number(vibration.lowLevel) || DEFAULT_DEVICE_DASHBOARD_VISUAL_SETTINGS.vibration.lowLevel), 1, DEVICE_DASHBOARD_VIBRATION_MAX),
+        mediumLevel: clampDeviceDashboardValue(Math.round(Number(vibration.mediumLevel) || DEFAULT_DEVICE_DASHBOARD_VISUAL_SETTINGS.vibration.mediumLevel), 1, DEVICE_DASHBOARD_VIBRATION_MAX),
+        highLevel: clampDeviceDashboardValue(Math.round(Number(vibration.highLevel) || DEFAULT_DEVICE_DASHBOARD_VISUAL_SETTINGS.vibration.highLevel), 1, DEVICE_DASHBOARD_VIBRATION_MAX),
+        lowColor: normalizeDashboardHexColor(vibration.lowColor, DEFAULT_DEVICE_DASHBOARD_VISUAL_SETTINGS.vibration.lowColor),
+        mediumColor: normalizeDashboardHexColor(vibration.mediumColor, DEFAULT_DEVICE_DASHBOARD_VISUAL_SETTINGS.vibration.mediumColor),
+        highColor: normalizeDashboardHexColor(vibration.highColor, DEFAULT_DEVICE_DASHBOARD_VISUAL_SETTINGS.vibration.highColor)
+    };
+    if (normalizedVibration.mediumLevel <= normalizedVibration.lowLevel) {
+        normalizedVibration.mediumLevel = Math.min(DEVICE_DASHBOARD_VIBRATION_MAX, normalizedVibration.lowLevel + 1);
+    }
+    if (normalizedVibration.highLevel <= normalizedVibration.mediumLevel) {
+        normalizedVibration.highLevel = Math.min(DEVICE_DASHBOARD_VIBRATION_MAX, normalizedVibration.mediumLevel + 1);
+    }
+    if (normalizedVibration.mediumLevel >= normalizedVibration.highLevel) {
+        normalizedVibration.mediumLevel = Math.max(2, normalizedVibration.highLevel - 1);
+    }
+    if (normalizedVibration.lowLevel >= normalizedVibration.mediumLevel) {
+        normalizedVibration.lowLevel = Math.max(1, normalizedVibration.mediumLevel - 1);
+    }
+
+    return { speed: normalizedSpeed, vibration: normalizedVibration };
+}
+
+function dashboardHexToRgb(color) {
+    const hex = normalizeDashboardHexColor(color, '#CBD5E1').slice(1);
+    return {
+        r: parseInt(hex.slice(0, 2), 16),
+        g: parseInt(hex.slice(2, 4), 16),
+        b: parseInt(hex.slice(4, 6), 16)
+    };
+}
+
+function dashboardMixColor(fromColor, toColor, amount) {
+    const from = dashboardHexToRgb(fromColor);
+    const to = dashboardHexToRgb(toColor);
+    const t = clampDeviceDashboardValue(amount, 0, 1);
+    const r = Math.round(from.r + (to.r - from.r) * t);
+    const g = Math.round(from.g + (to.g - from.g) * t);
+    const b = Math.round(from.b + (to.b - from.b) * t);
+    return `rgb(${r}, ${g}, ${b})`;
+}
+
+function dashboardThresholdColor(value, low, medium, high, lowColor, mediumColor, highColor) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return 'rgba(226, 232, 240, 0.42)';
+    if (numeric <= low) return lowColor;
+    if (numeric >= high) return highColor;
+    if (numeric <= medium) {
+        return dashboardMixColor(lowColor, mediumColor, (numeric - low) / Math.max(1, medium - low));
+    }
+    return dashboardMixColor(mediumColor, highColor, (numeric - medium) / Math.max(1, high - medium));
 }
 
 function createDefaultDeviceDashboardSettings() {
@@ -266,7 +379,7 @@ function persistDeviceLocationEnabled(enabled) {
     if (typeof localStorage === 'undefined') return;
     try {
         localStorage.setItem(DEVICE_LOCATION_ENABLED_KEY, enabled ? 'enabled' : 'disabled');
-    } catch (err) {}
+    } catch (err) { }
 }
 
 function setDeviceLocationPermissionEnabled(enabled) {
@@ -337,7 +450,7 @@ function persistDashboardMotionGrant(granted) {
     try {
         if (granted) localStorage.setItem(DEVICE_DASHBOARD_MOTION_PERMISSION_KEY, 'granted');
         else localStorage.removeItem(DEVICE_DASHBOARD_MOTION_PERMISSION_KEY);
-    } catch (err) {}
+    } catch (err) { }
 }
 
 function readPersistedDashboardMotionEnabled() {
@@ -354,7 +467,7 @@ function persistDashboardMotionEnabled(enabled) {
     if (typeof localStorage === 'undefined') return;
     try {
         localStorage.setItem(DEVICE_DASHBOARD_MOTION_ENABLED_KEY, enabled ? 'enabled' : 'disabled');
-    } catch (err) {}
+    } catch (err) { }
 }
 
 function getEnabledDeviceDashboardFields() {
@@ -380,7 +493,7 @@ function setDashboardMotionEnabled(enabled) {
     _deviceDashboardMotionEnabled = nextEnabled;
     persistDashboardMotionEnabled(nextEnabled);
     if (!nextEnabled) {
-        _deviceDashboardMotionState = { magnitude: null, lastMagnitude: null, vibration: null, level: null, updatedAt: 0 };
+        _deviceDashboardMotionState = { magnitude: null, lastMagnitude: null, vibration: null, visualLevel: null, level: null, updatedAt: 0 };
     }
     syncDeviceDashboardSensors();
     scheduleDeviceDashboardSensorRender();
@@ -605,12 +718,21 @@ function handleDeviceDashboardMotion(event) {
         _deviceDashboardMotionState.vibration :
         jerk;
     const vibration = previousVibration * 0.82 + jerk * 0.18;
-    const level = clampDeviceDashboardValue(Math.round(1 + Math.min(vibration, 5.5) / 5.5 * 9), 1, 10);
+    const level = clampDeviceDashboardValue(
+        Math.round(1 + Math.min(vibration, 5.5) / 5.5 * (DEVICE_DASHBOARD_VIBRATION_MAX - 1)),
+        1,
+        DEVICE_DASHBOARD_VIBRATION_MAX
+    );
+    const previousVisualLevel = Number.isFinite(_deviceDashboardMotionState.visualLevel) ?
+        _deviceDashboardMotionState.visualLevel :
+        level;
+    const visualLevel = previousVisualLevel * 0.78 + level * 0.22;
 
     _deviceDashboardMotionState = {
         magnitude,
         lastMagnitude: previousMagnitude,
         vibration,
+        visualLevel,
         level,
         updatedAt: Date.now()
     };
@@ -660,7 +782,7 @@ function syncDeviceDashboardSensors() {
     } else if (!needsMotion && _deviceDashboardSensorListeners.motion) {
         window.removeEventListener('devicemotion', handleDeviceDashboardMotion, true);
         _deviceDashboardSensorListeners.motion = false;
-        _deviceDashboardMotionState = { magnitude: null, lastMagnitude: null, vibration: null, level: null, updatedAt: 0 };
+        _deviceDashboardMotionState = { magnitude: null, lastMagnitude: null, vibration: null, visualLevel: null, level: null, updatedAt: 0 };
     }
 }
 
@@ -671,13 +793,25 @@ export function setExternalSensorFeed(active) {
     _externalSensorFeedActive = next;
     if (!next) {
         _deviceDashboardTiltState = { rawTilt: null, rawPitch: null, tilt: null, pitch: null, updatedAt: 0 };
-        _deviceDashboardMotionState = { magnitude: null, lastMagnitude: null, vibration: null, level: null, updatedAt: 0 };
+        _deviceDashboardMotionState = { magnitude: null, lastMagnitude: null, vibration: null, visualLevel: null, level: null, updatedAt: 0 };
+        _deviceDashboardLoggerMeta = {
+            temperatureC: null,
+            batteryPct: null,
+            batteryCharging: false,
+            storageFreePct: null,
+            updatedAt: 0
+        };
     }
     syncDeviceDashboardSensors();
     scheduleDeviceDashboardSensorRender();
 }
 
-// Dati BMI270 dal logger verso la dashboard (pitch/tilt in gradi, vibrazione 1-10).
+export function setDeviceDashboardVisualSettings(settings = null) {
+    _deviceDashboardVisualSettings = normalizeDeviceDashboardVisualSettings(settings || {});
+    scheduleDeviceDashboardSensorRender();
+}
+
+// Dati BMI270 dal logger verso la dashboard (pitch/roll in gradi, vibrazione 1-20).
 // Il logger e' gia' calibrato a bordo: nessuno zero locale da applicare.
 export function feedExternalDashboardSensors(data = {}) {
     if (!_externalSensorFeedActive) return;
@@ -692,15 +826,51 @@ export function feedExternalDashboardSensors(data = {}) {
         };
     }
     if (Number.isFinite(data.vibrationLevel)) {
+        const level = clampDeviceDashboardValue(Math.round(data.vibrationLevel), 1, DEVICE_DASHBOARD_VIBRATION_MAX);
+        const previousVisualLevel = Number.isFinite(_deviceDashboardMotionState.visualLevel) ?
+            _deviceDashboardMotionState.visualLevel :
+            level;
         _deviceDashboardMotionState = {
             magnitude: null,
             lastMagnitude: null,
             vibration: null,
-            level: clampDeviceDashboardValue(Math.round(data.vibrationLevel), 1, 10),
+            visualLevel: previousVisualLevel * 0.72 + level * 0.28,
+            level,
             updatedAt: now
         };
     }
     scheduleDeviceDashboardSensorRender();
+}
+
+export function feedExternalDashboardMeta(data = {}) {
+    let changed = false;
+    if (Object.prototype.hasOwnProperty.call(data, 'temperatureC')) {
+        const nextTemp = Number(data.temperatureC);
+        _deviceDashboardLoggerMeta.temperatureC = Number.isFinite(nextTemp) ? nextTemp : null;
+        changed = true;
+    }
+    if (Object.prototype.hasOwnProperty.call(data, 'batteryPct')) {
+        const nextBattery = Number(data.batteryPct);
+        _deviceDashboardLoggerMeta.batteryPct = Number.isFinite(nextBattery) ?
+            clampDeviceDashboardValue(nextBattery, 0, 100) :
+            null;
+        changed = true;
+    }
+    if (Object.prototype.hasOwnProperty.call(data, 'batteryCharging')) {
+        _deviceDashboardLoggerMeta.batteryCharging = data.batteryCharging === true;
+        changed = true;
+    }
+    if (Object.prototype.hasOwnProperty.call(data, 'storageFreePct')) {
+        const nextStorage = Number(data.storageFreePct);
+        _deviceDashboardLoggerMeta.storageFreePct = Number.isFinite(nextStorage) ?
+            clampDeviceDashboardValue(nextStorage, 0, 100) :
+            null;
+        changed = true;
+    }
+    if (changed) {
+        _deviceDashboardLoggerMeta.updatedAt = Date.now();
+        scheduleDeviceDashboardSensorRender();
+    }
 }
 
 // Restituisce i dati sensore correnti per arricchire i punti GPS durante la registrazione.
@@ -780,7 +950,7 @@ function bindDeviceDashboardCardInteractions() {
             setDeviceDashboardTiltZeroFromCurrent();
         }, DEVICE_DASHBOARD_ZERO_HOLD_MS);
         if (typeof tiltCard.setPointerCapture === 'function' && event.pointerId !== undefined) {
-            try { tiltCard.setPointerCapture(event.pointerId); } catch (err) {}
+            try { tiltCard.setPointerCapture(event.pointerId); } catch (err) { }
         }
     };
     tiltCard.addEventListener('pointerdown', startHold);
@@ -898,7 +1068,7 @@ function bindDeviceDashboardSettingsForm() {
 
         if (enabledInput && enabledInput.dataset.bound !== 'true') {
             enabledInput.dataset.bound = 'true';
-            enabledInput.addEventListener('change', async() => {
+            enabledInput.addEventListener('change', async () => {
                 _deviceDashboardSettings.fields[field.id].enabled = enabledInput.checked;
                 persistDeviceDashboardSettings();
                 if (enabledInput.checked && field.id === 'tilt') {
@@ -975,6 +1145,74 @@ function getLocationUnavailableMeta(status) {
     return 'Dato non disponibile';
 }
 
+function formatDeviceDashboardClock(date = new Date()) {
+    return date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDeviceDashboardTemperature() {
+    const fresh = isDeviceDashboardSensorFresh(_deviceDashboardLoggerMeta.updatedAt);
+    const temp = fresh ? _deviceDashboardLoggerMeta.temperatureC : null;
+    return Number.isFinite(temp) ? `${temp.toFixed(1)} °C` : '-- °C';
+}
+
+function formatDeviceDashboardPercent(value) {
+    return Number.isFinite(value) ? `${Math.round(clampDeviceDashboardValue(value, 0, 100))}%` : '--%';
+}
+
+function dashboardBatteryColor(percent) {
+    if (!Number.isFinite(percent)) return 'rgba(148, 163, 184, 0.72)';
+    const ratio = clampDeviceDashboardValue(percent, 0, 100) / 100;
+    const hue = Math.round(4 + ratio * 118);
+    const lightness = Math.round(48 + ratio * 8);
+    return `hsl(${hue}, 88%, ${lightness}%)`;
+}
+
+function renderDeviceLoggerStatusBar() {
+    if (!_externalSensorFeedActive || !isDeviceDashboardSensorFresh(_deviceDashboardLoggerMeta.updatedAt)) return '';
+    const batteryPct = _deviceDashboardLoggerMeta.batteryPct;
+    const storageFreePct = _deviceDashboardLoggerMeta.storageFreePct;
+    const batteryLabel = formatDeviceDashboardPercent(batteryPct);
+    const storageLabel = formatDeviceDashboardPercent(storageFreePct);
+    const batteryFill = Number.isFinite(batteryPct) ? clampDeviceDashboardValue(batteryPct, 0, 100) : 0;
+    const storageFill = Number.isFinite(storageFreePct) ? clampDeviceDashboardValue(storageFreePct, 0, 100) : 0;
+    const batteryColor = dashboardBatteryColor(batteryPct);
+    const charging = _deviceDashboardLoggerMeta.batteryCharging;
+
+    return `
+        <div class="device-logger-topbar" aria-label="Stato logger">
+            <div class="device-logger-status-indicator device-logger-status-indicator--storage" style="--logger-status-fill:${storageFill.toFixed(0)}%;--logger-status-color:rgba(255,255,255,0.92)" title="Memoria disponibile ${safeHtml(storageLabel)}">
+                <i data-lucide="hard-drive" class="device-logger-status-icon"></i>
+                <span>${safeHtml(storageLabel)}</span>
+            </div>
+            <div class="device-logger-status-indicator device-logger-status-indicator--battery" data-charging="${charging ? 'true' : 'false'}" style="--logger-status-fill:${batteryFill.toFixed(0)}%;--logger-status-color:${safeHtml(batteryColor)}" title="Batteria ${safeHtml(batteryLabel)}">
+                <span>${safeHtml(batteryLabel)}</span>
+            </div>
+        </div>
+    `;
+}
+
+function getDeviceDashboardVibrationVisualLevel() {
+    const fresh = isDeviceDashboardSensorFresh(_deviceDashboardMotionState.updatedAt);
+    if (!fresh) return null;
+    if (Number.isFinite(_deviceDashboardMotionState.visualLevel)) return _deviceDashboardMotionState.visualLevel;
+    if (Number.isFinite(_deviceDashboardMotionState.level)) return _deviceDashboardMotionState.level;
+    return null;
+}
+
+function buildDeviceDashboardSpeedMetric(status) {
+    const active = Boolean(status.active);
+    const speedMps = parseDeviceDashboardNumber(status.fix?.speed);
+    const speedKmh = active && speedMps !== null ? Math.max(0, speedMps * 3.6) : null;
+    const speedText = speedKmh !== null ? String(Math.round(speedKmh)) : '--';
+
+    return {
+        available: speedKmh !== null || _externalSensorFeedActive,
+        value: speedKmh !== null ? `${speedText} km/h` : '-- km/h',
+        valueClass: 'device-dashboard-value--speed',
+        meta: getLocationUnavailableMeta(status)
+    };
+}
+
 function buildDeviceDashboardTiltMetric() {
     if (!isDashboardOrientationEnabled()) {
         return {
@@ -1007,7 +1245,7 @@ function buildDeviceDashboardTiltMetric() {
                 </div>
                 <div class="device-tilt-readouts">
                     <div class="device-tilt-readout">
-                        <span class="device-tilt-readout-label">Tilt</span>
+                        <span class="device-tilt-readout-label">Roll</span>
                         <span class="device-tilt-readout-value">${safeHtml(formatDeviceDashboardSignedDegree(tilt))}</span>
                     </div>
                     <div class="device-tilt-readout">
@@ -1022,9 +1260,20 @@ function buildDeviceDashboardTiltMetric() {
 }
 
 function renderDeviceDashboardVibrationBars(level) {
+    const visual = _deviceDashboardVisualSettings.vibration;
     let html = '';
-    for (let i = 1; i <= 10; i++) {
-        html += `<span class="device-vibration-bar" data-active="${level !== null && i <= level ? 'true' : 'false'}"></span>`;
+    for (let i = 1; i <= DEVICE_DASHBOARD_VIBRATION_MAX; i++) {
+        const color = dashboardThresholdColor(
+            i,
+            visual.lowLevel,
+            visual.mediumLevel,
+            visual.highLevel,
+            visual.lowColor,
+            visual.mediumColor,
+            visual.highColor
+        );
+        const height = 22 + (i / DEVICE_DASHBOARD_VIBRATION_MAX) * 78;
+        html += `<span class="device-vibration-bar" style="--vibration-bar-color:${safeHtml(color)};--vibration-bar-height:${height.toFixed(1)}%" data-active="${level !== null && i <= level ? 'true' : 'false'}"></span>`;
     }
     return html;
 }
@@ -1033,29 +1282,42 @@ function buildDeviceDashboardVibrationMetric() {
     if (!_deviceDashboardMotionEnabled) {
         return {
             available: false,
-            value: '--/10',
+            value: `--/${DEVICE_DASHBOARD_VIBRATION_MAX}`,
             valueClass: 'device-dashboard-value--vibration',
             meta: 'Vibrazioni disattivate'
         };
     }
     const fresh = isDeviceDashboardSensorFresh(_deviceDashboardMotionState.updatedAt);
     const level = fresh ? _deviceDashboardMotionState.level : null;
-    const vibration = fresh ? _deviceDashboardMotionState.vibration : null;
-    const fill = level !== null ? `${level * 10}%` : '0%';
+    const fill = level !== null ? `${(level / DEVICE_DASHBOARD_VIBRATION_MAX) * 100}%` : '0%';
+    const visual = _deviceDashboardVisualSettings.vibration;
+    const color = level !== null ?
+        dashboardThresholdColor(
+            level,
+            visual.lowLevel,
+            visual.mediumLevel,
+            visual.highLevel,
+            visual.lowColor,
+            visual.mediumColor,
+            visual.highColor
+        ) :
+        '#64748b';
 
     return {
         available: fresh,
-        value: level !== null ? `${level}/10` : '--/10',
+        value: level !== null ? `${level}/${DEVICE_DASHBOARD_VIBRATION_MAX}` : `--/${DEVICE_DASHBOARD_VIBRATION_MAX}`,
         valueClass: 'device-dashboard-value--vibration',
         meta: fresh ? 'Vibrazione dispositivo' : 'Sensore non disponibile',
         valueHtml: `
-            <div class="device-vibration-widget" style="--vibration-fill:${safeHtml(fill)}">
+            <div class="device-vibration-widget" style="--vibration-fill:${safeHtml(fill)};--vibration-color:${safeHtml(color)}">
                 <div class="device-vibration-main">
                     <span class="device-vibration-score">${level !== null ? safeHtml(level) : '--'}</span>
-                    <span class="device-vibration-scale">/10</span>
+                    <span class="device-vibration-scale">/${DEVICE_DASHBOARD_VIBRATION_MAX}</span>
                 </div>
                 <div class="device-vibration-bars">${renderDeviceDashboardVibrationBars(level)}</div>
-                <div class="device-vibration-trace">${vibration !== null ? safeHtml(formatDeviceDashboardNumber(vibration, 1)) : 'N/D'}</div>
+                <div class="device-vibration-axis">
+                    <span>1</span><span>5</span><span>10</span><span>15</span><span>20</span>
+                </div>
             </div>
         `
     };
@@ -1094,13 +1356,7 @@ function buildDeviceDashboardMetric(field, status) {
     }
 
     if (field.id === 'speed') {
-        const speedMps = parseDeviceDashboardNumber(fix.speed);
-        const speedKmh = active && speedMps !== null ? formatDeviceDashboardNumber(speedMps * 3.6, 1) : null;
-        return {
-            available: speedKmh !== null,
-            value: speedKmh !== null ? `${speedKmh} km/h` : '-- km/h',
-            meta: speedKmh !== null ? (status.moving ? 'In movimento' : 'Fermo') : getLocationUnavailableMeta(status)
-        };
+        return buildDeviceDashboardSpeedMetric(status);
     }
 
     if (field.id === 'tilt') {
@@ -1146,6 +1402,7 @@ function renderDeviceDashboardCard(field, status, prebuiltMetric = null) {
 function renderDeviceDashboard() {
     const dashboard = document.getElementById('device-dashboard');
     if (!dashboard) return;
+    dashboard.querySelector('.device-logger-topbar')?.remove();
     const zoneEls = {};
     DEVICE_DASHBOARD_POSITIONS.forEach(position => {
         const zone = dashboard.querySelector(`[data-dashboard-zone="${position}"]`);
@@ -1155,7 +1412,8 @@ function renderDeviceDashboard() {
         }
     });
 
-    const enabledFields = getEnabledDeviceDashboardFields();
+    const enabledFields = getEnabledDeviceDashboardFields()
+        .filter(field => !(_externalSensorFeedActive && field.id === 'speed'));
     const hasBottomCenterWidget = enabledFields.some(field => {
         const position = _deviceDashboardSettings.fields[field.id]?.position || field.defaultPosition;
         return position === 'bottom-center';
@@ -1166,6 +1424,7 @@ function renderDeviceDashboard() {
     });
     document.body.classList.toggle('device-dashboard-bottom-center-active', hasBottomCenterWidget);
     document.body.classList.toggle('device-dashboard-bottom-active', hasBottomWidget);
+    document.body.classList.remove('device-speed-cockpit-active');
     syncDeviceDashboardSensors();
     dashboard.classList.toggle('hidden', enabledFields.length === 0);
     if (enabledFields.length === 0) return;
@@ -1276,7 +1535,10 @@ function formatRecordingElapsed(ms = 0) {
     return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-function updateDeviceRecordingUi(status = {}) {
+let _currentRecordingStatus = { state: 'idle', elapsedMs: 0, pointsCount: 0 };
+
+export function updateDeviceRecordingUi(status = {}) {
+    _currentRecordingStatus = status;
     // Tiene aggiornato lo stato usato per attivare/disattivare i sensori:
     // i listener tilt/vibrazioni partono solo a registrazione in corso
     // (se la cattura è abilitata) e si fermano in pausa/stop.
@@ -1405,9 +1667,9 @@ async function refreshDevicePermissionUi(force = false) {
 
     const geoState = _lastDeviceLocationStatus.error === 'permission-denied' ?
         'denied' :
-            (_lastDeviceLocationStatus.waiting ? 'requesting' :
-                (_lastDeviceLocationStatus.active ? 'granted' :
-                    (!_deviceLocationPermissionEnabled ? 'disabled' : await queryBrowserPermission('geolocation'))));
+        (_lastDeviceLocationStatus.waiting ? 'requesting' :
+            (_lastDeviceLocationStatus.active ? 'granted' :
+                (!_deviceLocationPermissionEnabled ? 'disabled' : await queryBrowserPermission('geolocation'))));
     const orientationState = _lastDeviceLocationStatus.orientationPermission || getOrientationPermissionState();
     const motionState = getDashboardMotionPermissionState();
 
@@ -1604,19 +1866,28 @@ function requestRecordingSensorPermissionsIfNeeded() {
         typeof window.DeviceOrientationEvent !== 'undefined' &&
         typeof window.DeviceOrientationEvent.requestPermission === 'function' &&
         (_lastDeviceLocationStatus.orientationPermission || 'prompt') !== 'granted') {
-        requestDashboardOrientationPermission({ forcePrompt: false }).catch(() => {});
+        requestDashboardOrientationPermission({ forcePrompt: false }).catch(() => { });
     }
     if (settings.recordVibration !== false &&
         _deviceDashboardMotionEnabled &&
         typeof window.DeviceMotionEvent !== 'undefined' &&
         typeof window.DeviceMotionEvent.requestPermission === 'function' &&
         !_deviceDashboardMotionPermissionGranted) {
-        requestDashboardMotionPermission().catch(() => {});
+        requestDashboardMotionPermission().catch(() => { });
     }
 }
 
+function getEffectiveRecordingStatus() {
+    const isLoggerActive = (window.isDeviceConnected && window.isDeviceConnected());
+    if (isLoggerActive) {
+        return _currentRecordingStatus;
+    }
+    return _getDeviceRecordingStatus ? _getDeviceRecordingStatus() : { state: 'idle' };
+}
+
 function handleDeviceRecordingButtonClick(source = 'toolbar') {
-    const status = _getDeviceRecordingStatus ? _getDeviceRecordingStatus() : { state: 'idle' };
+    const isLoggerActive = (window.isDeviceConnected && window.isDeviceConnected());
+    const status = getEffectiveRecordingStatus();
     if (status.state === 'recording') {
         openRecordingActionModal();
         return;
@@ -1625,13 +1896,21 @@ function handleDeviceRecordingButtonClick(source = 'toolbar') {
         if (source === 'chip') {
             openRecordingActionModal();
         } else {
-            _resumeDeviceRecording?.();
+            if (isLoggerActive) {
+                if (window.resumeLoggerRecording) window.resumeLoggerRecording();
+            } else {
+                _resumeDeviceRecording?.();
+            }
         }
         return;
     }
     if (source !== 'chip') {
-        requestRecordingSensorPermissionsIfNeeded();
-        _startDeviceRecording?.();
+        if (isLoggerActive) {
+            if (window.startLoggerRecording) window.startLoggerRecording();
+        } else {
+            requestRecordingSensorPermissionsIfNeeded();
+            _startDeviceRecording?.();
+        }
     }
 }
 
@@ -2092,10 +2371,10 @@ function openTrackContextMenuAt(trackId, clientX, clientY) {
       ${createTreeContextMenuButton('download', 'Scarica traccia', `downloadTrackGPX('${track.id}', 'context_menu')`)}
       ${createTreeContextMenuButton('chevron-up', 'Sposta su', `moveTrackUp('${track.id}')`, isFirst)}
       ${createTreeContextMenuButton('chevron-down', 'Sposta giù', `moveTrackDown('${track.id}')`, isLast)}
-      ${selectedTracksCount > 1 
-        ? createTreeContextMenuButton('git-merge', 'Unisci tracce selezionate', 'mergeSelectedTracks()')
-        : createTreeContextMenuButton('git-merge', 'Unisci con un\'altra traccia...', `openMergeTracksModal('${track.id}')`, tracks.length < 2)
-      }
+      ${selectedTracksCount > 1
+            ? createTreeContextMenuButton('git-merge', 'Unisci tracce selezionate', 'mergeSelectedTracks()')
+            : createTreeContextMenuButton('git-merge', 'Unisci con un\'altra traccia...', `openMergeTracksModal('${track.id}')`, tracks.length < 2)
+        }
       <div class="my-1 border-t border-gray-800"></div>
       <button onclick="openTrackNameEditor('${track.id}')" class="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-gray-800 text-left">
         <i data-lucide="pencil" class="w-3.5 h-3.5"></i><span>Rinomina</span>
@@ -3349,6 +3628,22 @@ function formatLibraryDate(ts) {
     });
 }
 
+function formatLibrarySource(source) {
+    if (source === 'device') return 'Logger';
+    if (source === 'recording') return 'Registrazione';
+    if (source === 'imported') return 'Importato';
+    if (source === 'derived') return 'Derivato';
+    return 'Creato in app';
+}
+
+function countTrackPoints(track) {
+    let total = 0;
+    for (const segment of track?.segments || []) {
+        total += (segment.points || []).length;
+    }
+    return total;
+}
+
 export async function renderLocalGpxLibrary() {
     const container = document.getElementById('local-gpx-library');
     if (!container) return;
@@ -3374,7 +3669,7 @@ export async function renderLocalGpxLibrary() {
                   <div class="min-w-0">
                     <div class="text-xs font-semibold text-white truncate">${escapeXml(file.name)}</div>
                     <div class="text-[10px] text-gray-500">
-                      ${file.source === 'imported' ? 'Importato' : 'Creato in app'} · Agg. ${formatLibraryDate(file.updatedAt)}
+                      ${formatLibrarySource(file.source)} · Agg. ${formatLibraryDate(file.updatedAt)}
                     </div>
                   </div>
                   <button onclick="deleteStoredTrackFromLibrary('${file.id}')" class="text-gray-500 hover:text-red-400 shrink-0" title="Elimina dal dispositivo">
@@ -3621,10 +3916,10 @@ export function syncMobileBackdrop() {
         return;
     }
 
-    // Struttura GIS e progettazione stampa restano leggere su mobile: niente
-    // backdrop, cosi la mappa rimane visibile mentre si naviga tra gli elementi.
-    const hasOpenPanel = isMainMenuOpen() || isStatsPanelOpen();
-    backdrop.classList.toggle('hidden', !hasOpenPanel);
+    // Statistiche resta agganciato al fondo senza oscurare la mappa:
+    // il backdrop serve solo al menu principale, che copre contenuti e comandi.
+    const hasBlockingPanel = isMainMenuOpen();
+    backdrop.classList.toggle('hidden', !hasBlockingPanel);
 }
 
 // Debounce interno: evita di ricostruire il tree DOM ad ogni singola modifica
@@ -3851,9 +4146,9 @@ function _doRenderGisTree() {
                       </button>
                     </div>
                     ${areSegmentsExpanded ? visibleSegments.map((seg, segIndex) => {
-                        const isSegActive = seg.id === activeSegmentId;
-                        const isSegSelected = selectionHas(makeTreeKey('segment', track.id, seg.id));
-                        return `
+                const isSegActive = seg.id === activeSegmentId;
+                const isSegSelected = selectionHas(makeTreeKey('segment', track.id, seg.id));
+                return `
                         <div class="gis-segment-row flex items-center justify-between text-xs py-1.5 px-1.5 rounded border ${isSegSelected ? 'bg-cyan-950/45 text-cyan-200 border-cyan-700/70' : (isSegActive ? 'bg-blue-950/40 text-blue-300 border-blue-900/60' : 'text-gray-400 border-transparent hover:bg-gray-800/45 hover:border-gray-800')} ${seg.visible === false ? 'opacity-55' : ''}"
                              onclick="handleSegmentTreeClick(event, '${track.id}', '${seg.id}', true)"
                              oncontextmenu="handleSegmentContextMenu(event, '${track.id}', '${seg.id}')"
@@ -3881,7 +4176,7 @@ function _doRenderGisTree() {
                           </div>
                         </div>
                       `;
-                    }).join('') + (hiddenSegmentCount > 0 ? `
+            }).join('') + (hiddenSegmentCount > 0 ? `
                     <button onclick="event.stopPropagation(); showMoreGisSegments('${track.id}')" class="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-0.5 pt-1 pl-1">
                       <i data-lucide="chevrons-down" class="w-3 h-3"></i> Mostra altri ${Math.min(GIS_TREE_PAGE_SIZE, hiddenSegmentCount)} segmenti (${hiddenSegmentCount} nascosti)
                     </button>` : '') + `
@@ -3903,8 +4198,8 @@ function _doRenderGisTree() {
                     </div>
                     ${areWaypointsExpanded ? `<div class="${track.waypointsVisible === false ? 'hidden' : 'space-y-1'}">
                       ${visibleWaypoints.map(wp => {
-                          const tipoWp = trovaTipoWaypoint(wp.symbol);
-                          return `
+                const tipoWp = trovaTipoWaypoint(wp.symbol);
+                return `
                           <div class="gis-waypoint-row flex items-center justify-between gap-1 text-xs hover:bg-gray-800/40 p-1 rounded transition-all ${wp.visible === false ? 'opacity-50' : ''}">
                             <div class="flex items-center gap-1.5 min-w-0">
                               <span class="gis-waypoint-symbol" style="--wp-color: ${tipoWp.colore}" title="${escapeXml(tipoWp.etichetta)}">${escapeXml(tipoWp.sigla)}</span>
@@ -3918,7 +4213,7 @@ function _doRenderGisTree() {
                             </div>
                           </div>
                       `;
-                      }).join('')}
+            }).join('')}
                       ${hiddenWaypointCount > 0 ? `
                       <button onclick="event.stopPropagation(); showMoreGisWaypoints('${track.id}')" class="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-0.5 pt-1 pl-1">
                         <i data-lucide="chevrons-down" class="w-3 h-3"></i> Mostra altri ${Math.min(GIS_TREE_PAGE_SIZE, hiddenWaypointCount)} waypoint (${hiddenWaypointCount} nascosti)
@@ -4700,7 +4995,7 @@ export function setupEvents() {
         scheduleDevicePermissionRefresh(true);
         setTimeout(() => scheduleDevicePermissionRefresh(true), 1200);
     });
-    document.getElementById('btn-orientation-permission')?.addEventListener('click', async() => {
+    document.getElementById('btn-orientation-permission')?.addEventListener('click', async () => {
         const orientationState = _lastDeviceLocationStatus.orientationPermission || getOrientationPermissionState();
         if (orientationState === 'granted') {
             _setDeviceOrientationEnabled?.(false);
@@ -4713,7 +5008,7 @@ export function setupEvents() {
         await requestDashboardOrientationPermission({ forcePrompt: true });
         scheduleDevicePermissionRefresh(true);
     });
-    document.getElementById('btn-motion-permission')?.addEventListener('click', async() => {
+    document.getElementById('btn-motion-permission')?.addEventListener('click', async () => {
         const motionState = getDashboardMotionPermissionState();
         if (motionState === 'granted') {
             setDashboardMotionEnabled(false);
@@ -4737,12 +5032,34 @@ export function setupEvents() {
         handleDeviceRecordingButtonClick('chip');
     });
     document.getElementById('btn-recording-action-pause')?.addEventListener('click', () => {
+        const isLoggerActive = (window.isDeviceConnected && window.isDeviceConnected());
+        if (isLoggerActive) {
+            const status = getEffectiveRecordingStatus();
+            if (status.state === 'paused') {
+                if (window.resumeLoggerRecording) window.resumeLoggerRecording();
+            } else if (window.pauseLoggerRecording) {
+                window.pauseLoggerRecording();
+            }
+            closeRecordingActionModal();
+            return;
+        }
+
         const status = _getDeviceRecordingStatus ? _getDeviceRecordingStatus() : { state: 'idle' };
         if (status.state === 'paused') _resumeDeviceRecording?.();
         else _pauseDeviceRecording?.();
         closeRecordingActionModal();
     });
     document.getElementById('btn-recording-action-stop')?.addEventListener('click', () => {
+        const isLoggerActive = (window.isDeviceConnected && window.isDeviceConnected());
+        if (isLoggerActive) {
+            const activeSessionId = window.getDeviceSessionId ? window.getDeviceSessionId() : null;
+            _savingLoggerSessionId = activeSessionId;
+            if (window.stopLoggerRecording) window.stopLoggerRecording();
+            closeRecordingActionModal();
+            openRecordingSaveModal();
+            return;
+        }
+
         _pauseDeviceRecording?.();
         closeRecordingActionModal();
         openRecordingSaveModal();
@@ -4753,14 +5070,53 @@ export function setupEvents() {
         const status = _getDeviceRecordingStatus ? _getDeviceRecordingStatus() : { state: 'idle' };
         if (status.state === 'paused') _resumeDeviceRecording?.();
     });
-    document.getElementById('btn-recording-save-confirm')?.addEventListener('click', async() => {
+    document.getElementById('btn-recording-save-confirm')?.addEventListener('click', async () => {
         const btn = document.getElementById('btn-recording-save-confirm');
         const input = document.getElementById('recording-save-name');
         const name = input?.value?.trim() || (_getDefaultRecordingName ? _getDefaultRecordingName() : 'rec');
         btn?.setAttribute('disabled', 'true');
         try {
-            const result = await _finishDeviceRecording?.(name);
-            if (result) closeRecordingSaveModal();
+            if (_savingLoggerSessionId) {
+                const sid = _savingLoggerSessionId;
+                _savingLoggerSessionId = null;
+                const track = tracks.find(t => t.deviceSessionId === sid);
+                if (track) {
+                    track.name = name;
+                    track.deviceSyncedAt = Date.now();
+                    track.localUpdatedAt = Date.now();
+                    try {
+                        await persistTrackNow(track, { force: true });
+                        const storedTrack = await loadStoredTrack(track.localFileId);
+                        const verified = storedTrack &&
+                            String(storedTrack.deviceSessionId || '') === String(sid) &&
+                            countTrackPoints(storedTrack) >= countTrackPoints(track);
+                        if (!verified) {
+                            showToast("Salvataggio telefono non verificato: sessione tenuta sul logger", "error");
+                            return;
+                        }
+                        if (_updateMapData) _updateMapData(true);
+                        if (_updateActiveTracksHeader) _updateActiveTracksHeader();
+                        renderGisTree();
+                        showToast("Registrazione salvata sul telefono", "success");
+                        if (window.deleteDeviceSession) {
+                            const deleted = await window.deleteDeviceSession(sid, { silent: true, refresh: false });
+                            if (deleted) showToast("Sessione eliminata dal logger (spazio liberato)", "success");
+                            else showToast("Sessione salvata: logger non raggiungibile per liberare spazio", "info");
+                        }
+                        if (_schedulePersistTracks) _schedulePersistTracks(tracks);
+                    } catch (err) {
+                        console.warn("Salvataggio logger non verificato:", err);
+                        showToast("Salvataggio telefono non verificato: sessione tenuta sul logger", "error");
+                        return;
+                    }
+                } else {
+                    showToast("Traccia del logger non trovata in memoria", "error");
+                }
+                closeRecordingSaveModal();
+            } else {
+                const result = await _finishDeviceRecording?.(name);
+                if (result) closeRecordingSaveModal();
+            }
         } finally {
             btn?.removeAttribute('disabled');
         }
@@ -4853,7 +5209,7 @@ export function setupEvents() {
                     size: file.size
                 }).catch(err => console.warn(err));
                 const reader = new FileReader();
-                reader.onload = function(evt) {
+                reader.onload = function (evt) {
                     _importGPX(evt.target.result, file.name);
                 };
                 reader.readAsText(file);

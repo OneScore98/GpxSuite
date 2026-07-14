@@ -45,6 +45,10 @@ function isSupabaseConfigured() {
     return cleanString(SUPABASE_URL) !== '' && cleanString(SUPABASE_PUBLISHABLE_KEY) !== '';
 }
 
+function isLoggerLocalHost(host = window.location.hostname) {
+    return host === 'gpx.local' || host === 'gpx.local.' || host === '192.168.4.1';
+}
+
 function adminUsersFunctionUrl() {
     const configured = cleanString(ADMIN_USERS_FUNCTION_URL);
     if (configured) return configured;
@@ -174,17 +178,38 @@ function updateAccountPanel() {
     const profile = _authState.profile;
     const identity = document.getElementById('auth-current-user');
     const adminButton = document.getElementById('btn-open-admin-dashboard');
+    const logoutButton = document.getElementById('btn-logout');
+    
+    const host = window.location.hostname;
+    const isLoggerHost = isLoggerLocalHost(host);
+
     if (identity) {
-        identity.innerHTML = profile ? `
-            <div class="flex items-center gap-2 min-w-0">
-              <span class="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
-              <div class="min-w-0">
-                <div class="text-xs text-white font-semibold truncate">${escapeHtml(profile.username || profile.email || 'Utente')}</div>
-                <div class="text-[10px] text-gray-500 truncate">${escapeHtml(profile.email || '')}</div>
-              </div>
-            </div>` : `<span class="text-xs text-gray-500">Sessione non attiva</span>`;
+        if (isLoggerHost) {
+            identity.innerHTML = `
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
+                  <div class="min-w-0">
+                    <div class="text-xs text-white font-semibold truncate">Modalità Logger (Locale)</div>
+                    <div class="text-[10px] text-gray-500 truncate">${host}</div>
+                  </div>
+                </div>`;
+        } else {
+            identity.innerHTML = profile ? `
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
+                  <div class="min-w-0">
+                    <div class="text-xs text-white font-semibold truncate">${escapeHtml(profile.username || profile.email || 'Utente')}</div>
+                    <div class="text-[10px] text-gray-500 truncate">${escapeHtml(profile.email || '')}</div>
+                  </div>
+                </div>` : `<span class="text-xs text-gray-500">Sessione non attiva</span>`;
+        }
     }
-    if (adminButton) adminButton.classList.toggle('hidden', profile ?.role !== 'admin');
+    if (adminButton) {
+        adminButton.classList.toggle('hidden', isLoggerHost || profile ?.role !== 'admin');
+    }
+    if (logoutButton) {
+        logoutButton.classList.toggle('hidden', isLoggerHost);
+    }
 }
 
 function bindAuthForm() {
@@ -432,8 +457,23 @@ async function finishAuthorizedBoot() {
 
 export async function initAuthGate({ onAuthorized } = {}) {
     _onAuthorized = onAuthorized || null;
-    if (!AUTH_REQUIRED) {
+    
+    const host = window.location.hostname;
+    const isLoggerHost = isLoggerLocalHost(host);
+    const bypassAuth = !AUTH_REQUIRED || isLoggerHost;
+
+    if (bypassAuth) {
         hideAuthGate();
+        if (isLoggerHost) {
+            _authState = {
+                ready: true,
+                allowed: true,
+                session: null,
+                profile: { username: 'Logger Locale', email: host, role: 'user' },
+                device: null,
+                status: 'bypass'
+            };
+        }
         if (_onAuthorized && !_authorizedStarted) {
             _authorizedStarted = true;
             await _onAuthorized(_authState);

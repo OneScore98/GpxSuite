@@ -37,10 +37,10 @@ import {
 } from './state.js';
 
 import { renderGisTree, showToast, isGisTreeVisible, setSegmentActive, setTrackActive } from './ui.js';
-import { updateStatsAndProfile, haversineDistance } from './stats.js';
+import { updateStatsAndProfile, haversineDistance, selectTrackPoint, clearSelectedTrackPoint } from './stats.js?v=logger-chart-focus-map-point-20260714';
 import { setupWaypointLayers, updateWaypointsOnMap, bindWaypointInteractions, refreshPinImages } from './waypoints.js';
 import { schedulePersistAppSession, schedulePersistTracks } from './storage.js';
-import { loadScriptOnce, loadStylesheetOnce } from './utils.js';
+import { loadScriptOnce, loadStylesheetOnce, vibrationLevelColor } from './utils.js';
 
 // ─── RDP iterativo (no ricorsione, no stack overflow) ─────────────────────────
 function rdpIterative(points, tolerance) {
@@ -1654,7 +1654,9 @@ function buildColoredTrackGeoJSON(metric) {
                     edges.push({
                         lon1: prevPt.lon, lat1: prevPt.lat,
                         lon2: pt.lon, lat2: pt.lat,
-                        value, width
+                        value, width,
+                        trackId: track.id,
+                        segmentId: seg.id
                     });
                 }
                 prevPt = pt;
@@ -1674,6 +1676,10 @@ function buildColoredTrackGeoJSON(metric) {
             if (v > vMax) vMax = v;
         }
     }
+    if (metric === 'vibration') {
+        vMin = 1;
+        vMax = 20;
+    }
     const range = (vMax > vMin) ? (vMax - vMin) : 1;
 
     // Aggiorna DOM legenda
@@ -1687,7 +1693,7 @@ function buildColoredTrackGeoJSON(metric) {
     if (legendMin) legendMin.textContent = Number.isFinite(vMin) ? `${Math.round(vMin * 10) / 10}${unit}` : '—';
     if (legendMax) legendMax.textContent = Number.isFinite(vMax) ? `${Math.round(vMax * 10) / 10}${unit}` : '—';
     if (legendLabel) {
-        const names = { altitude: 'Altitudine', speed: 'Velocità', slope: 'Pendenza', tilt: 'Inclinazione', pitch: 'Beccheggio', vibration: 'Vibrazioni' };
+        const names = { altitude: 'Altitudine', speed: 'Velocità', slope: 'Pendenza', tilt: 'Rollio', pitch: 'Pitch', vibration: 'Vibrazioni' };
         legendLabel.textContent = names[metric] || metric;
     }
 
@@ -1695,11 +1701,18 @@ function buildColoredTrackGeoJSON(metric) {
     for (let i = 0; i < edges.length; i++) {
         const edge = edges[i];
         const color = (edge.value !== null && Number.isFinite(edge.value))
-            ? metricToHsl((edge.value - vMin) / range)
+            ? (metric === 'vibration' ?
+                vibrationLevelColor(edge.value, {
+                    max: 20,
+                    lowColor: 'rgba(148, 163, 184, 0.52)',
+                    saturation: 92,
+                    lightness: 54
+                }) :
+                metricToHsl((edge.value - vMin) / range))
             : '#6b7280'; // grigio per dati mancanti
         features.push({
             type: 'Feature',
-            properties: { color, width: edge.width },
+            properties: { color, width: edge.width, trackId: edge.trackId, segmentId: edge.segmentId },
             geometry: {
                 type: 'LineString',
                 coordinates: [[edge.lon1, edge.lat1], [edge.lon2, edge.lat2]]
@@ -2211,6 +2224,50 @@ function _doUpdateMapData() {
     }
 }
 
+function findNearestTrackPointOnScreen(trackId, segmentId, lngLat) {
+    const track = tracks.find(t => t.id === trackId);
+    const segment = track?.segments?.find(s => s.id === segmentId);
+    const points = segment?.points || [];
+    if (!mapLoaded || !map || points.length === 0 || !lngLat) return null;
+
+    const clickPoint = map.project(lngLat);
+    let bestIndex = -1;
+    let bestDistSq = Infinity;
+    for (let i = 0; i < points.length; i++) {
+        const point = points[i];
+        if (!Number.isFinite(point.lon) || !Number.isFinite(point.lat)) continue;
+        const screenPoint = map.project([point.lon, point.lat]);
+        const dx = screenPoint.x - clickPoint.x;
+        const dy = screenPoint.y - clickPoint.y;
+        const distSq = dx * dx + dy * dy;
+        if (distSq < bestDistSq) {
+            bestDistSq = distSq;
+            bestIndex = i;
+        }
+    }
+    return bestIndex >= 0 ? { track, segment, pointIndex: bestIndex, distSq: bestDistSq } : null;
+}
+
+function trackClickTolerancePx() {
+    const coarsePointer = typeof window !== 'undefined' &&
+        window.matchMedia &&
+        window.matchMedia('(pointer: coarse)').matches;
+    const zoom = map?.getZoom?.() || 0;
+    const base = coarsePointer ? 30 : 18;
+    return zoom < 9 ? base + 8 : base;
+}
+
+function queryTrackFeaturesNearPoint(point) {
+    if (!map || !point) return [];
+    const tolerance = trackClickTolerancePx();
+    const layers = ['gpx-lines-colored-layer', 'gpx-lines-layer'].filter(id => map.getLayer(id));
+    if (!layers.length) return [];
+    return map.queryRenderedFeatures([
+        [point.x - tolerance, point.y - tolerance],
+        [point.x + tolerance, point.y + tolerance]
+    ], { layers });
+}
+
 export function setupLayers() {
     let initialGpxData = { type: 'FeatureCollection', features: [] };
     if (mapLoaded) {
@@ -2269,32 +2326,67 @@ export function setupLayers() {
         });
     }
 
+    initColoredTrackLayers();
+
     if (!_trackInteractionsBound) {
         _trackInteractionsBound = true;
 
-        map.on('click', 'gpx-lines-layer', (e) => {
-            const feature = e.features && e.features[0];
+        const handleTrackFeatureClick = (e, feature) => {
             const trackId = feature && feature.properties ? feature.properties.trackId : null;
             const segmentId = feature && feature.properties ? feature.properties.segmentId : null;
             if (!trackId || isDrawing || isCutting || isBoxDeleting || isAddingWaypoint) return;
             if (segmentId) {
                 setSegmentActive(trackId, segmentId);
+                const nearest = findNearestTrackPointOnScreen(trackId, segmentId, e.lngLat);
+                if (nearest) {
+                    selectTrackPoint(trackId, segmentId, nearest.pointIndex, { source: 'map' });
+                }
                 return;
             }
             setTrackActive(trackId);
+        };
+
+        map.on('click', (e) => {
+            if (isDrawing || isCutting || isBoxDeleting || isAddingWaypoint) return;
+            const features = queryTrackFeaturesNearPoint(e.point);
+            if (!features.length) {
+                clearSelectedTrackPoint();
+                return;
+            }
+
+            let best = null;
+            for (const feature of features) {
+                const props = feature.properties || {};
+                if (!props.trackId || !props.segmentId) continue;
+                const nearest = findNearestTrackPointOnScreen(props.trackId, props.segmentId, e.lngLat);
+                if (!nearest) continue;
+                if (!best || nearest.distSq < best.nearest.distSq) {
+                    best = { feature, nearest };
+                }
+            }
+            if (best) {
+                handleTrackFeatureClick(e, best.feature);
+            } else {
+                clearSelectedTrackPoint();
+            }
         });
 
-        map.on('mouseenter', 'gpx-lines-layer', () => {
+        const handleTrackLineEnter = () => {
             if (!isDrawing && !isCutting && !isBoxDeleting && !isAddingWaypoint) {
                 map.getCanvas().style.cursor = 'pointer';
             }
-        });
+        };
 
-        map.on('mouseleave', 'gpx-lines-layer', () => {
+        const handleTrackLineLeave = () => {
             if (!isDrawing && !isCutting && !isBoxDeleting && !isAddingWaypoint) {
                 map.getCanvas().style.cursor = '';
             }
-        });
+        };
+
+        map.on('mouseenter', 'gpx-lines-layer', handleTrackLineEnter);
+        map.on('mouseenter', 'gpx-lines-colored-layer', handleTrackLineEnter);
+        map.on('mouseleave', 'gpx-lines-layer', handleTrackLineLeave);
+        map.on('mouseleave', 'gpx-lines-colored-layer', handleTrackLineLeave);
     }
 
     let initialEditData = { type: 'FeatureCollection', features: [] };
@@ -2346,7 +2438,6 @@ export function setupLayers() {
     setupWaypointLayers();
     bindWaypointInteractions();
     setupMapillaryLayers();
-    initColoredTrackLayers();
 
     if (!map.getSource('box-delete-preview')) {
         map.addSource('box-delete-preview', {

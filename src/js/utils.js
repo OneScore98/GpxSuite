@@ -95,6 +95,31 @@ export function ensureLucideIcons() {
         });
 }
 
+export function vibrationLevelRatio(level, max = 20) {
+    const numeric = Number(level);
+    const upper = Math.max(1, Number(max) || 20);
+    if (!Number.isFinite(numeric)) return 0;
+    return Math.max(0, Math.min(1, (numeric - 1) / (upper - 1 || 1)));
+}
+
+export function vibrationLevelColor(level, options = {}) {
+    const ratio = vibrationLevelRatio(level, options.max || 20);
+    const saturation = options.saturation ?? 92;
+    const lightness = options.lightness ?? 56;
+    if (ratio <= 0.18) {
+        return options.lowColor || 'rgba(148, 163, 184, 0.22)';
+    }
+    if (ratio <= 0.58) {
+        const warmRatio = (ratio - 0.18) / 0.4;
+        const hue = Math.round(52 - warmRatio * 28);
+        return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+    }
+    const alarmRatio = (ratio - 0.58) / 0.42;
+    const hue = Math.round(24 - alarmRatio * 24);
+    const alarmLightness = Math.max(48, lightness - alarmRatio * 6);
+    return `hsl(${hue}, ${saturation}%, ${alarmLightness}%)`;
+}
+
 export function perpendicularDistance(p, p1, p2) {
     const x = p.lon, y = p.lat;
     const x1 = p1.lon, y1 = p1.lat;

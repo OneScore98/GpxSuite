@@ -19,7 +19,7 @@ import {
 import { updateMapData, updateBoxDeletePreview } from './map.js';
 import { queryElevation } from './map.js';
 import { showToast, updateActiveTracksHeader, createNewTrack, renderGisTree, updateGisTreeCounters, updateToolButtons, updateMapToolCursor } from './ui.js';
-import { haversineDistance } from './stats.js';
+import { haversineDistance } from './stats.js?v=logger-chart-focus-map-point-20260714';
 import { schedulePersistAppSession, schedulePersistTracks } from './storage.js';
 import { trackAnalyticsEvent } from './auth.js';
 
