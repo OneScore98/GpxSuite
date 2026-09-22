@@ -2,7 +2,7 @@
 // La publishable/anon key e l'URL progetto sono pubblici per design; non
 // inserire mai service_role key o segreti in questo file.
 
-export const AUTH_REQUIRED = true;
+export const AUTH_REQUIRED = false;
 export const SUPABASE_URL = 'https://cnndckqocciwepgdruun.supabase.co';
 export const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_3VSrBd5Jqy3w_BLp5vx_Nw_TxDsjpCN';
 

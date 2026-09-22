@@ -59,12 +59,14 @@ let _lastConnectionError = '';
 let _syncing = false;           // backlog della sessione attiva
 let _autoSyncing = false;       // sessioni storiche verso memoria telefono
 let _autoSyncRerun = false;
+const _sessionFinalizations = new Map(); // una sola sostituzione live -> flash per sessione
 let _syncStats = createEmptySyncStats();
 let _settingsFormDirty = false;
 let _settingsFormFocused = false;
 let _pendingSettingsFromDevice = null;
 let _settingsSaveBusy = false;
 let _settingsSaveFeedback = { kind: 'idle', message: '' };
+let _sessionImportingId = null;
 
 function esc(value) {
     return String(value ?? '').replace(/[&<>"']/g, c => ({
@@ -328,7 +330,10 @@ async function fetchWithTimeout(path, options = {}, timeoutMs = 4000) {
         const xhr = new XMLHttpRequest();
         const method = options.method || 'GET';
         xhr.open(method, deviceHttpUrl(path), true);
-        xhr.timeout = timeoutMs;
+        // Il timeout misura l'inattivita', non la durata totale. Le sessioni
+        // lunghe possono richiedere minuti, ma finche' arrivano dati il
+        // trasferimento e' sano e non deve essere interrotto.
+        xhr.timeout = 0;
         xhr.responseType = 'arraybuffer';
         xhr.setRequestHeader('Cache-Control', 'no-cache');
         const headers = options.headers || {};
@@ -343,10 +348,39 @@ async function fetchWithTimeout(path, options = {}, timeoutMs = 4000) {
             xhr.setRequestHeader('Content-Type', 'text/plain;charset=UTF-8');
         }
 
+        let settled = false;
+        let timeoutId = null;
+        const clearRequestTimeout = () => {
+            if (timeoutId) clearTimeout(timeoutId);
+            timeoutId = null;
+        };
+        const resolveOnce = value => {
+            if (settled) return;
+            settled = true;
+            clearRequestTimeout();
+            resolve(value);
+        };
+        const rejectOnce = error => {
+            if (settled) return;
+            settled = true;
+            clearRequestTimeout();
+            reject(error);
+        };
+        const armRequestTimeout = () => {
+            clearRequestTimeout();
+            if (!(timeoutMs > 0) || settled) return;
+            timeoutId = setTimeout(() => {
+                const err = new Error('timeout');
+                err.name = 'AbortError';
+                rejectOnce(err);
+                try { xhr.abort(); } catch (abortError) { }
+            }, timeoutMs);
+        };
+
         xhr.onload = () => {
             const buffer = xhr.response || new ArrayBuffer(0);
             const decodeText = () => new TextDecoder().decode(buffer);
-            resolve({
+            resolveOnce({
                 ok: xhr.status >= 200 && xhr.status < 300,
                 status: xhr.status,
                 json: async () => JSON.parse(decodeText() || '{}'),
@@ -354,12 +388,10 @@ async function fetchWithTimeout(path, options = {}, timeoutMs = 4000) {
                 arrayBuffer: async () => buffer
             });
         };
-        xhr.onerror = () => reject(new Error('rete non raggiungibile'));
-        xhr.ontimeout = () => {
-            const err = new Error('timeout');
-            err.name = 'AbortError';
-            reject(err);
-        };
+        xhr.onprogress = armRequestTimeout;
+        xhr.onerror = () => rejectOnce(new Error('rete non raggiungibile'));
+        xhr.onabort = () => rejectOnce(new Error('richiesta annullata'));
+        armRequestTimeout();
         xhr.send(body);
     });
 }
@@ -384,6 +416,14 @@ function describeConnectionError(err) {
 }
 
 export function openLoggerInterface(targetUrl = '') {
+    if (window.__GPXSUITE_ANDROID__ === true) {
+        if (!_connected && !_connecting) {
+            connectDevice('', { silent: false, auto: true });
+        } else {
+            notify('Interfaccia logger già integrata nell’app', 'info');
+        }
+        return;
+    }
     const target = targetUrl ?
         normalizeUrl(targetUrl) + '/' :
         (isLoggerHost() ? location.origin.replace(/\/+$/, '') + '/' : LOGGER_INTERFACE_URL + '/');
@@ -419,6 +459,14 @@ export async function connectDevice(rawUrl, options = {}) {
         if (!options.silent) notify('Dispositivo non raggiungibile', 'error');
         renderDevicePanel({ force: true, allowSettingsRender: true });
         updateToolbarIndicator();
+        if (window.__GPXSUITE_ANDROID__ === true) {
+            _deps.setExternalSensorFeed?.(false);
+            _deps.setExternalFixProvider?.(false);
+            if (_deps.isDeviceLocationActive && !_deps.isDeviceLocationActive()) {
+                _deps.startDeviceLocation?.();
+            }
+        }
+        dispatchDeviceUiStatus();
         return;
     }
 
@@ -452,6 +500,7 @@ export async function connectDevice(rawUrl, options = {}) {
     notify('Strumento collegato: sensori del telefono disattivati', 'success');
     renderDevicePanel();
     updateToolbarIndicator();
+    dispatchDeviceUiStatus();
 }
 
 export function disconnectDevice(options = {}) {
@@ -487,6 +536,7 @@ export function disconnectDevice(options = {}) {
     if (!options.silent) notify('Strumento scollegato: sensori del telefono riattivati', 'info');
     renderDevicePanel();
     updateToolbarIndicator();
+    dispatchDeviceUiStatus();
 }
 
 function onUnreachable() {
@@ -496,6 +546,14 @@ function onUnreachable() {
         notify('Dispositivo non raggiungibile: riconnessione in corso...', 'error');
         renderDevicePanel();
         updateToolbarIndicator();
+        if (window.__GPXSUITE_ANDROID__ === true) {
+            _deps.setExternalSensorFeed?.(false);
+            _deps.setExternalFixProvider?.(false);
+            if (_deps.isDeviceLocationActive && !_deps.isDeviceLocationActive()) {
+                _deps.startDeviceLocation?.();
+            }
+        }
+        dispatchDeviceUiStatus();
     }
 }
 
@@ -506,6 +564,11 @@ function onReachable() {
         syncBacklog();
         scheduleAutoSync('reconnect');
         updateToolbarIndicator();
+        if (window.__GPXSUITE_ANDROID__ === true) {
+            _deps.setExternalFixProvider?.(true);
+            _deps.setExternalSensorFeed?.(true);
+        }
+        dispatchDeviceUiStatus();
     }
 }
 
@@ -534,6 +597,8 @@ function stopPolling() {
 
 function applyStatus(status) {
     if (!status || typeof status !== 'object') return;
+    const previousSessionId = _sessionId || (_status?.rec ? _status.session : null);
+    const recordingJustStopped = Boolean(_status?.rec && !status.rec && previousSessionId);
     _status = status;
 
     if (status.rec && status.session) {
@@ -544,6 +609,12 @@ function applyStatus(status) {
         }
     } else if (!status.rec) {
         _sessionId = null;
+        if (recordingJustStopped) {
+            finalizeDeviceSession(previousSessionId).catch(err => {
+                console.warn('Finalizzazione dopo polling non riuscita:', err);
+                scheduleAutoSync('status_stopped_retry');
+            });
+        }
     }
 
     if (_deps.updateDeviceRecordingUi) {
@@ -596,6 +667,23 @@ function applyStatus(status) {
     if (!isDeviceSettingsEditing()) renderDevicePanel();
     else updateToolbarIndicator();
     updateToolbarIndicator();
+    dispatchDeviceUiStatus();
+}
+
+function dispatchDeviceUiStatus() {
+    if (window.__GPXSUITE_ANDROID__ !== true) return;
+    window.dispatchEvent(new CustomEvent('gpxsuite-device-status', { detail: {
+        connected: Boolean(_connected && _online),
+        intended: Boolean(_connected),
+        online: Boolean(_online),
+        batteryPct: Number.isFinite(Number(_status?.batt)) ? Number(_status.batt) : null,
+        charging: _status?.charging === true,
+        sessionId: _sessionId || null,
+        recordingState: _status?.rec ? (_status?.paused ? 'paused' : 'recording') : 'idle',
+        recordingElapsedMs: _status?.rec && Number.isFinite(Number(_status?.startEpoch)) ?
+            Math.max(0, Date.now() - Number(_status.startEpoch) * 1000) : 0,
+        imu: _status?.imu || null
+    }}));
 }
 
 // ---------------------------------------------------------------------------
@@ -637,10 +725,20 @@ function openWebSocket() {
             fetchStatus().then(applyStatus).catch(() => { });
         } else if (msg.ev === 'rec_stopped') {
             notify('Registrazione fermata sul dispositivo', 'info');
+            const stoppedSessionId = msg.session || _sessionId;
             flushLiveTrackPersist();
             _sessionId = null;
             fetchStatus().then(applyStatus).catch(() => { });
-            loadDeviceSessions({ scheduleSync: false }).then(() => scheduleAutoSync('rec_stopped')).catch(() => { });
+            if (stoppedSessionId) {
+                finalizeDeviceSession(stoppedSessionId).catch(err => {
+                    console.warn('Finalizzazione sessione logger non riuscita:', err);
+                    scheduleAutoSync('rec_stopped_retry');
+                });
+            } else {
+                loadDeviceSessions({ scheduleSync: false })
+                    .then(() => scheduleAutoSync('rec_stopped'))
+                    .catch(() => { });
+            }
         } else if (msg.ev === 'flash_warning') {
             notify('Flash del dispositivo quasi piena: scarica le sessioni', 'error');
         } else if (msg.ev === 'battery_low') {
@@ -689,6 +787,77 @@ function countTrackPoints(track) {
         total += (segments[i].points || []).length;
     }
     return total;
+}
+
+const POSITION_BASE_TOLERANCE_KM = 0.10;
+const POSITION_MAX_SPEED_KMH = 300;
+const POSITION_REACQUIRE_AFTER_MS = 60000;
+
+function pointTimeMs(point, fallbackIndex) {
+    if (Number.isFinite(point?.time)) return Number(point.time);
+    const parsed = typeof point?.time === 'string' ? Date.parse(point.time) : NaN;
+    return Number.isFinite(parsed) ? parsed : fallbackIndex * 1000;
+}
+
+function pointCoordinatesValid(point) {
+    return Number.isFinite(point?.lat) && Number.isFinite(point?.lon) &&
+        point.lat >= -90 && point.lat <= 90 && point.lon >= -180 && point.lon <= 180;
+}
+
+function pointDistanceKm(first, second) {
+    const toRad = Math.PI / 180;
+    const dLat = (second.lat - first.lat) * toRad;
+    const dLon = (second.lon - first.lon) * toRad;
+    const sinLat = Math.sin(dLat / 2);
+    const sinLon = Math.sin(dLon / 2);
+    const value = sinLat * sinLat +
+        Math.cos(first.lat * toRad) * Math.cos(second.lat * toRad) * sinLon * sinLon;
+    return 6371.0088 * 2 * Math.asin(Math.sqrt(Math.min(1, value)));
+}
+
+function pointTransitionPlausible(first, firstTime, second, secondTime) {
+    if (!pointCoordinatesValid(first) || !pointCoordinatesValid(second)) return false;
+    const elapsedMs = secondTime - firstTime;
+    if (elapsedMs < 0) return false;
+    if (elapsedMs >= POSITION_REACQUIRE_AFTER_MS) return true;
+    const allowedKm = POSITION_BASE_TOLERANCE_KM +
+        POSITION_MAX_SPEED_KMH * elapsedMs / 3600000;
+    return pointDistanceKm(first, second) <= allowedKm;
+}
+
+function repairIsolatedPositionSpikes(track) {
+    let repaired = 0;
+    for (const segment of track?.segments || []) {
+        const points = segment?.points || [];
+        const repairs = [];
+        for (let i = 1; i + 1 < points.length; i++) {
+            const prev = points[i - 1];
+            const curr = points[i];
+            const next = points[i + 1];
+            const prevTime = pointTimeMs(prev, i - 1);
+            const currTime = pointTimeMs(curr, i);
+            const nextTime = pointTimeMs(next, i + 1);
+            const bridgeMs = nextTime - prevTime;
+            if (bridgeMs < 0 || bridgeMs >= POSITION_REACQUIRE_AFTER_MS) continue;
+            if (pointTransitionPlausible(prev, prevTime, curr, currTime) ||
+                pointTransitionPlausible(curr, currTime, next, nextTime) ||
+                !pointTransitionPlausible(prev, prevTime, next, nextTime)) continue;
+            const ratio = bridgeMs > 0 ? Math.max(0, Math.min(1, (currTime - prevTime) / bridgeMs)) : 0.5;
+            repairs.push({
+                index: i,
+                lat: prev.lat + (next.lat - prev.lat) * ratio,
+                lon: prev.lon + (next.lon - prev.lon) * ratio
+            });
+        }
+        for (const repair of repairs) {
+            points[repair.index].lat = repair.lat;
+            points[repair.index].lon = repair.lon;
+            points[repair.index].positionRepaired = true;
+            repaired++;
+        }
+    }
+    if (repaired) track.localUpdatedAt = Date.now();
+    return repaired;
 }
 
 function getDeviceTrackBySessionId(sessionId) {
@@ -848,6 +1017,7 @@ function getCurrentDeviceTrack() {
 
 async function persistDeviceTrackVerified(track, expectedPoints = 0) {
     if (!track) return false;
+    repairIsolatedPositionSpikes(track);
     await persistTrackNow(track, { force: true });
     const storedTrack = await loadStoredTrack(track.localFileId);
     return Boolean(storedTrack &&
@@ -900,31 +1070,26 @@ async function readStoredDeviceSessionMap() {
 }
 
 async function verifyStoredSessionMeta(meta, sessionId, expectedPoints = 0) {
-    if (!meta?.id) return false;
+    if (!meta?.id) return { verified: false, repaired: 0 };
     const storedTrack = await loadStoredTrack(meta.id);
-    return Boolean(storedTrack &&
+    const repaired = repairIsolatedPositionSpikes(storedTrack);
+    if (repaired) await persistTrackNow(storedTrack, { force: true });
+    const finalizedRecords = Number(storedTrack?.deviceFinalizedRecords) || 0;
+    return { verified: Boolean(storedTrack &&
         String(storedTrack.deviceSessionId || '') === String(sessionId) &&
-        countTrackPoints(storedTrack) >= expectedPoints);
+        storedTrack.deviceSyncState === 'finalized' &&
+        finalizedRecords >= expectedPoints &&
+        countTrackPoints(storedTrack) >= expectedPoints), repaired };
 }
 
 function isTrackCompleteForSession(track, expectedPoints = 0) {
     if (!track) return false;
     if (expectedPoints <= 0) return true;
-    return countTrackPoints(track) >= expectedPoints || getTrackDeviceSeq(track) >= expectedPoints;
-}
-
-async function deleteVerifiedDeviceSession(sessionId, options = {}) {
-    if (isCurrentDeviceSession(sessionId)) return false;
-    const res = await fetchWithTimeout('/delete?id=' + encodeURIComponent(sessionId), { method: 'POST' }, 8000);
-    if (!res.ok) {
-        const message = await res.text();
-        throw new Error(message || ('delete ' + res.status));
-    }
-    if (options.refresh !== false) {
-        loadDeviceSessions({ scheduleSync: false }).catch(() => { });
-    }
-    _syncStats.deleted++;
-    return true;
+    // Il numero di sequenza indica solo quanto avanti e arrivato lo stream live:
+    // se il telefono si collega a registrazione gia iniziata puo raggiungere
+    // l'ultimo seq pur avendo in memoria soltanto la coda della traccia.
+    // Per dichiarare completa una sessione serve quindi il numero reale di punti.
+    return countTrackPoints(track) >= expectedPoints;
 }
 
 async function downloadDeviceSessionToPhone(item, targetTrack = null) {
@@ -952,10 +1117,52 @@ async function downloadDeviceSessionToPhone(item, targetTrack = null) {
     track.deviceSessionId = sessionId;
     track.deviceLastSeq = Math.max(getTrackDeviceSeq(track), expectedPoints);
     track.deviceSyncedAt = Date.now();
+    track.deviceFinalizedRecords = expectedPoints;
+    track.deviceFinalizedAt = Date.now();
+    track.deviceSyncState = 'finalized';
     track.localUpdatedAt = Date.now();
     const verified = await persistDeviceTrackVerified(track, expectedPoints);
     if (!verified) throw new Error('verify failed');
     return track;
+}
+
+// La traccia WebSocket e' soltanto una preview. Quando la sessione si chiude,
+// la copia autorevole viene sempre riscaricata dalla flash e sostituisce i
+// segmenti del live mantenendo identita', nome e stile del track locale.
+export function finalizeDeviceSession(sessionId, options = {}) {
+    const sid = String(sessionId || '').trim();
+    if (!sid) return Promise.resolve(null);
+
+    const running = _sessionFinalizations.get(sid);
+    if (running) return running;
+
+    const task = (async () => {
+        if (!_connected) throw new Error('logger non collegato');
+        if (!options.silent) notify('Finalizzo la registrazione dalla copia originale del logger...', 'info');
+
+        const sessions = await fetchDeviceSessions();
+        _sessions = Array.isArray(sessions) ? sessions : [];
+        const item = _sessions.find(candidate => String(candidate?.id || '') === sid);
+        if (!item) throw new Error(`sessione ${sid} non disponibile sul logger`);
+        if (item.active) throw new Error(`sessione ${sid} ancora attiva`);
+
+        const liveTrack = getDeviceTrackBySessionId(sid);
+        const finalizedTrack = await downloadDeviceSessionToPhone(item, liveTrack);
+        _deps.updateMapData?.(true);
+        _deps.renderGisTree?.();
+        _deps.updateActiveTracksHeader?.();
+        renderDevicePanel();
+
+        if (!options.silent) {
+            notify(`Sessione ${sid} finalizzata: il live e' stato sostituito dalla copia completa`, 'success');
+        }
+        return finalizedTrack;
+    })().finally(() => {
+        _sessionFinalizations.delete(sid);
+    });
+
+    _sessionFinalizations.set(sid, task);
+    return task;
 }
 
 function scheduleAutoSync(reason = 'auto', delayMs = AUTO_SYNC_DELAY_MS) {
@@ -993,22 +1200,44 @@ async function runAutoSync(reason = 'auto') {
         _syncStats.loggerSessions = _sessions.length;
         _syncStats.queued = _sessions.filter(item => !isSessionItemActive(item)).length;
 
+        let repairedPositions = 0;
         for (const item of _sessions) {
             if (!_connected) break;
             if (!item?.id || isSessionItemActive(item)) continue;
 
             const sessionId = String(item.id);
+            const pendingFinalization = _sessionFinalizations.get(sessionId);
+            if (pendingFinalization) {
+                await pendingFinalization;
+                _syncStats.skipped++;
+                changedTracks = true;
+                continue;
+            }
             const expectedPoints = sessionRecordCount(item);
             const localTrack = getDeviceTrackBySessionId(sessionId);
             const storedMeta = storedMap.get(sessionId);
 
-            if (storedMeta && await verifyStoredSessionMeta(storedMeta, sessionId, expectedPoints)) {
+            const storedCheck = storedMeta ?
+                await verifyStoredSessionMeta(storedMeta, sessionId, expectedPoints) :
+                null;
+            const localFinalizedRecords = Number(localTrack?.deviceFinalizedRecords) || 0;
+            const localIsFinalized = Boolean(localTrack &&
+                localTrack.deviceSyncState === 'finalized' &&
+                localFinalizedRecords >= expectedPoints &&
+                isTrackCompleteForSession(localTrack, expectedPoints));
+            if (storedCheck?.verified && (!localTrack || localIsFinalized)) {
+                const repairedLocal = repairIsolatedPositionSpikes(localTrack);
+                if (repairedLocal) {
+                    await persistDeviceTrackVerified(localTrack, expectedPoints);
+                    changedTracks = true;
+                }
+                repairedPositions += Math.max(storedCheck.repaired, repairedLocal);
                 _syncStats.skipped++;
-                await deleteVerifiedDeviceSession(sessionId, { refresh: false });
                 continue;
             }
 
-            if (localTrack && isTrackCompleteForSession(localTrack, expectedPoints)) {
+            if (localIsFinalized) {
+                repairedPositions += repairIsolatedPositionSpikes(localTrack);
                 localTrack.deviceLastSeq = Math.max(getTrackDeviceSeq(localTrack), expectedPoints);
                 localTrack.deviceSyncedAt = Date.now();
                 const verified = await persistDeviceTrackVerified(localTrack, expectedPoints);
@@ -1019,14 +1248,12 @@ async function runAutoSync(reason = 'auto') {
                     deviceSessionId: sessionId,
                     pointsCount: countTrackPoints(localTrack)
                 });
-                await deleteVerifiedDeviceSession(sessionId, { refresh: false });
                 continue;
             }
 
             await downloadDeviceSessionToPhone(item, localTrack);
             _syncStats.saved++;
             changedTracks = true;
-            await deleteVerifiedDeviceSession(sessionId, { refresh: false });
         }
 
         if (changedTracks) {
@@ -1037,8 +1264,11 @@ async function runAutoSync(reason = 'auto') {
         _syncStats.state = 'idle';
         _syncStats.lastError = '';
         loadDeviceSessions({ scheduleSync: false }).catch(() => { });
-        if (_syncStats.saved > 0 || _syncStats.deleted > 0) {
-            notify(`Sync telefono completata: ${_syncStats.saved} salvate, ${_syncStats.deleted} liberate`, 'success');
+        if (_syncStats.saved > 0) {
+            notify(`Sync telefono completata: ${_syncStats.saved} salvate; sessioni mantenute sul logger`, 'success');
+        }
+        if (repairedPositions > 0) {
+            notify(`Corretti ${repairedPositions} fix GPS isolati nella copia locale`, 'info');
         }
     } catch (err) {
         _syncStats.state = 'error';
@@ -1124,8 +1354,16 @@ export function resumeLoggerRecording() {
     return sendCommand('RESUME', 'Registrazione ripresa sul dispositivo');
 }
 
-export function stopLoggerRecording() {
-    return sendCommand('STOP', 'Registrazione fermata dal telecomando');
+export async function stopLoggerRecording() {
+    const stoppedSessionId = _sessionId || (_status?.rec ? _status.session : null);
+    const result = await sendCommand('STOP', 'Registrazione fermata dal telecomando');
+    if (result && stoppedSessionId) {
+        finalizeDeviceSession(stoppedSessionId).catch(err => {
+            console.warn('Finalizzazione dopo comando STOP non riuscita:', err);
+            scheduleAutoSync('command_stopped_retry');
+        });
+    }
+    return result;
 }
 
 export function setDeviceRate(hz) {
@@ -1273,24 +1511,52 @@ export async function loadDeviceSessions(options = {}) {
 
 export async function importDeviceSession(sessionId) {
     if (!_connected) return;
-    notify('Scarico la sessione dal dispositivo...', 'info');
+    const sid = String(sessionId || '').trim();
+    if (!sid || _sessionImportingId) return;
+    _sessionImportingId = sid;
+    renderDevicePanel();
     try {
-        const res = await fetchWithTimeout('/download?id=' + encodeURIComponent(sessionId), {}, 30000);
-        if (!res.ok) { notify('Download non riuscito', 'error'); return; }
-        const xml = await res.text();
-        const track = await _deps.importGPX?.(xml, sessionId + '.gpx', {
-            source: 'device',
-            deviceSessionId: sessionId,
-            trackName: 'Logger ' + sessionId
-        });
-        if (track) {
-            track.deviceLastSeq = Math.max(getTrackDeviceSeq(track), countTrackPoints(track));
-            track.deviceSyncedAt = Date.now();
-            persistDeviceTrackVerified(track, 0).catch(err => console.warn('Persistenza import logger fallita', err));
-        }
+        const track = await finalizeDeviceSession(sid, { silent: true });
+        if (!track) throw new Error('import failed');
+        track.visible = true;
+        setActiveTrackId(track.id);
+        setActiveSegmentId(track.segments?.[0]?.id || null);
+        _deps.updateMapData?.(true);
+        _deps.renderGisTree?.();
+        _deps.updateActiveTracksHeader?.();
+        notify(`Sessione ${sid} importata in GPXSuite (${countTrackPoints(track).toLocaleString('it-IT')} punti)`, 'success');
     } catch (err) {
         notify('Download non riuscito', 'error');
+    } finally {
+        _sessionImportingId = null;
+        renderDevicePanel();
     }
+}
+
+// Salvataggio esplicito del GPX nel browser. E' distinto dall'importazione
+// nella libreria locale di GPXSuite, che non produce un file visibile.
+export function downloadDeviceSessionFile(sessionId) {
+    if (!_connected) {
+        notify('Logger non collegato', 'error');
+        return false;
+    }
+    const sid = String(sessionId || '').trim();
+    const item = _sessions?.find(candidate => String(candidate?.id || '') === sid);
+    if (!sid || item?.active) {
+        notify('Ferma la registrazione prima di scaricare il file GPX', 'error');
+        return false;
+    }
+
+    const link = document.createElement('a');
+    link.href = deviceHttpUrl('/download?id=' + encodeURIComponent(sid));
+    link.download = `${sid}.gpx`;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    notify(`Download del file ${sid}.gpx avviato`, 'success');
+    return true;
 }
 
 export async function deleteDeviceSession(sessionId, options = {}) {
@@ -1301,7 +1567,7 @@ export async function deleteDeviceSession(sessionId, options = {}) {
     }
     if (!options.silent && !confirm(`Eliminare la sessione ${sessionId} dalla flash del dispositivo?`)) return false;
     try {
-        const res = await fetchWithTimeout('/delete?id=' + encodeURIComponent(sessionId), { method: 'POST' }, 8000);
+        const res = await fetchWithTimeout('/delete?id=' + encodeURIComponent(sessionId) + '&confirm=1', { method: 'POST' }, 8000);
         if (res.ok) {
             if (!options.silent) notify('Sessione eliminata dal dispositivo', 'success');
             if (options.refresh !== false) loadDeviceSessions({ scheduleSync: false }).catch(() => { });
@@ -1809,14 +2075,17 @@ function renderDevicePanel(options = {}) {
     if (Array.isArray(_sessions) && _sessions.length) {
         sessioniInner = _sessions.slice().reverse().map(item => {
             const sid = esc(item.id);
+            const importing = _sessionImportingId === String(item.id);
             return `<div class="flex items-center justify-between gap-2 py-1.5 border-b border-gray-800/60 last:border-0">
                 <div class="min-w-0">
                     <div class="text-sm font-semibold ${item.active ? 'text-red-400' : 'text-gray-100'} truncate">${sid}${item.active ? ' · REC' : ''}</div>
                     <div class="text-[11px] text-gray-500">${Number(item.records).toLocaleString('it-IT')} punti</div>
                 </div>
                 <div class="flex gap-1 shrink-0">
-                    <button onclick="window.importDeviceSession('${sid}')" title="Importa in GPXSuite"
-                        class="w-7 h-7 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 flex items-center justify-center text-cyan-300"><i data-lucide="download" class="w-3.5 h-3.5"></i></button>
+                    ${item.active ? '' : `<button onclick="window.importDeviceSession('${sid}')" title="Importa e seleziona in GPXSuite" ${importing ? 'disabled' : ''}
+                        class="w-7 h-7 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 flex items-center justify-center text-cyan-300 disabled:opacity-60 disabled:cursor-wait"><i data-lucide="${importing ? 'loader-circle' : 'folder-down'}" class="w-3.5 h-3.5 ${importing ? 'animate-spin' : ''}"></i></button>
+                    <button onclick="window.downloadDeviceSessionFile('${sid}')" title="Scarica il file ${sid}.gpx"
+                        class="w-7 h-7 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 flex items-center justify-center text-emerald-300"><i data-lucide="file-down" class="w-3.5 h-3.5"></i></button>`}
                     ${item.active ? '' : `<button onclick="window.deleteDeviceSession('${sid}')" title="Elimina dalla flash"
                         class="w-7 h-7 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 flex items-center justify-center text-red-400"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>`}
                 </div></div>`;

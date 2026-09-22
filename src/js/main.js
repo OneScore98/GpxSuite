@@ -14,10 +14,10 @@ import {
     closeMapillaryViewer,
     createBaseMapStyle,
     setStyleRestoredHook
-} from './map.js?v=logger-chart-focus-map-point-20260714';
-import { importGPX, exportGPX } from './gpx.js?v=logger-auto-chart-20260713';
-import { addPointToActiveSegment, cutTrackAtPoint, handleBoxDeleteClick, saveHistoryState, triggerUndo, setSnapProfile } from './tracks.js';
-import { addWaypointAtCoords, saveWaypointModifications, openWaypointEditor, updateWaypointsOnMap } from './waypoints.js';
+} from './map.js?v=robust-slope3-20260720';
+import { importGPX, exportGPX } from './gpx.js?v=vibration-tooltip-units-20260715';
+import { addPointToActiveSegment, cutTrackAtPoint, handleBoxDeleteClick, saveHistoryState, triggerUndo, setSnapProfile } from './tracks.js?v=vibration-tooltip-units-20260715';
+import { addWaypointAtCoords, saveWaypointModifications, openWaypointEditor, updateWaypointsOnMap } from './waypoints.js?v=vibration-tooltip-units-20260715';
 import { flushPersistedStateNow, schedulePersistAppSession, schedulePersistTracks } from './storage.js';
 import {
     initDeviceLocation,
@@ -42,7 +42,7 @@ import {
     setExternalFixProvider,
     feedExternalFix,
     startDeviceLocation
-} from './location.js?v=device-logger-20260707';
+} from './location.js?v=vibration-mps2-20260715';
 import {
     initDeviceModule,
     toggleDeviceRecording,
@@ -55,6 +55,8 @@ import {
     saveDeviceSettings,
     loadDeviceSessions,
     importDeviceSession,
+    downloadDeviceSessionFile,
+    finalizeDeviceSession,
     deleteDeviceSession,
     isDeviceConnected,
     getDeviceSessionId,
@@ -63,7 +65,7 @@ import {
     resumeLoggerRecording,
     stopLoggerRecording,
     openLoggerInterface
-} from './device.js?v=logger-simple-xhr-20260713';
+} from './device.js?v=logger-session-recovery-download-20260914';
 import {
     togglePrintPlanning,
     disablePrintPlanning,
@@ -73,7 +75,8 @@ import {
     setPrintPlanningOrientation,
     generateHighResPrintPreview,
     syncPrintOutputFromPreview
-} from './print.js';
+} from './print.js?v=vibration-tooltip-units-20260715';
+import { AUTH_REQUIRED } from './auth-config.js';
 import { initAuthGate, bindAuthUi, trackAnalyticsEvent } from './auth.js?v=logger-auth-bypass-20260713';
 import {
     injectDeps,
@@ -148,7 +151,7 @@ import {
     // creerebbe UNA SECONDA ISTANZA del modulo con stato interno duplicato
     // (selezione GIS tree, dipendenze iniettate, job offroad). Il cache-busting
     // avviene tramite la versione di main.js in index.html.
-} from './ui.js';
+} from './ui.js?v=vibration-tooltip-units-20260715';
 
 initDeviceLocation({
     showToast,
@@ -278,6 +281,8 @@ window.loadDeviceSettings = loadDeviceSettings;
 window.saveDeviceSettings = saveDeviceSettings;
 window.loadDeviceSessions = loadDeviceSessions;
 window.importDeviceSession = importDeviceSession;
+window.downloadDeviceSessionFile = downloadDeviceSessionFile;
+window.finalizeDeviceSession = finalizeDeviceSession;
 window.deleteDeviceSession = deleteDeviceSession;
 window.getDeviceSessionId = getDeviceSessionId;
 window.openLoggerInterface = openLoggerInterface;
@@ -350,7 +355,7 @@ function initApp() {
         feedExternalDashboardMeta,
         setDeviceDashboardVisualSettings,
         updateDeviceRecordingUi
-    });
+    }, { deferConnect: true });
 
     const mapInstance = new maplibregl.Map({
         container: 'map',
@@ -364,6 +369,10 @@ function initApp() {
 
     setMap(mapInstance);
     configureMapInteractions(mapInstance);
+    mapInstance.addControl(new maplibregl.ScaleControl({
+        maxWidth: 92,
+        unit: 'metric'
+    }), 'bottom-left');
     mapInstance.on('moveend', schedulePersistAppSession);
     setupPrintUiEvents();
     setupPrintDragEvents();
@@ -419,6 +428,20 @@ function initApp() {
             createNewTrack("Traccia 1");
         }
 
+        // La shell, la mappa e l'archivio locale sono ora utilizzabili. Solo da
+        // questo punto avviamo rete, status e autosync del logger, cosi' non
+        // competono con il percorso critico di bootstrap.
+        if (window.__GPXSUITE_APP_READY__ !== true) {
+            window.__GPXSUITE_APP_READY__ = true;
+            try { performance.mark('gpxsuite-app-ready'); } catch (_) { }
+            window.dispatchEvent(new CustomEvent('gpxsuite-app-ready', {
+                detail: { restoredTracks: tracks.length }
+            }));
+            try { window.AndroidOfflineMaps?.onWebAppReady?.(); } catch (err) {
+                console.warn('[android] segnale app pronta non inviato:', err);
+            }
+        }
+
         // Strumento esterno (GPXSuite Logger): parte dopo il ripristino locale,
         // cosi' una sessione live gia' salvata riprende dall'ultimo seq noto.
         initDeviceModule({
@@ -439,7 +462,8 @@ function initApp() {
             setDeviceDashboardVisualSettings,
             updateDeviceRecordingUi
         });
-        trackAnalyticsEvent('app_ready', { restoredTracks: tracks.length }).catch(err => console.warn(err));
+        const readyAnalyticsEvent = 'app_ready';
+        trackAnalyticsEvent(readyAnalyticsEvent, { restoredTracks: tracks.length }).catch(err => console.warn(err));
     });
 }
 
@@ -448,7 +472,8 @@ function bootstrapApp() {
     let stopAuthMapBackground = () => {};
     const host = window.location.hostname;
     const isLoggerHost = host === 'gpx.local' || host === 'gpx.local.' || host === '192.168.4.1';
-    if (isLoggerHost) {
+    const isPackagedLoggerApp = window.__GPXSUITE_ANDROID__ === true;
+    if (!AUTH_REQUIRED || isLoggerHost || isPackagedLoggerApp) {
         document.getElementById('auth-gate')?.classList.add('hidden');
         document.body.classList.remove('auth-locked');
         initApp();

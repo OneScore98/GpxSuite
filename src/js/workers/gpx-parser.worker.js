@@ -23,7 +23,8 @@ function readSensorExtensions(node) {
     const fields = [
         { tags: ['tilt', 'roll'], key: 'tilt' },
         { tags: ['pitch'], key: 'pitch' },
-        { tags: ['vibration'], key: 'vibrationLevel' }
+        { tags: ['vibration'], key: 'vibrationLevel' },
+        { tags: ['vibration_mps2', 'vibrationMps2', 'acc_peak'], key: 'accPeak' }
     ];
     for (let i = 0; i < fields.length; i++) {
         const f = fields[i];
@@ -107,6 +108,7 @@ function parseGpx(xmlText, fileName) {
                 if (Number.isFinite(sensors.tilt)) parsedPoints[k].tilt = sensors.tilt;
                 if (Number.isFinite(sensors.pitch)) parsedPoints[k].pitch = sensors.pitch;
                 if (Number.isFinite(sensors.vibrationLevel)) parsedPoints[k].vibrationLevel = sensors.vibrationLevel;
+                if (Number.isFinite(sensors.accPeak)) parsedPoints[k].accPeak = sensors.accPeak;
 
                 if (firstPoint === null) firstPoint = { lat, lon };
             }

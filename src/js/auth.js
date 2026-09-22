@@ -46,7 +46,8 @@ function isSupabaseConfigured() {
 }
 
 function isLoggerLocalHost(host = window.location.hostname) {
-    return host === 'gpx.local' || host === 'gpx.local.' || host === '192.168.4.1';
+    return window.__GPXSUITE_ANDROID__ === true ||
+        host === 'gpx.local' || host === 'gpx.local.' || host === '192.168.4.1';
 }
 
 function adminUsersFunctionUrl() {

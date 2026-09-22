@@ -5,10 +5,15 @@
 // disponibile (es. apertura via file://) si ricade sul parsing inline a chunk.
 
 import { tracks, activeTrackId, map, setActiveTrackId, setActiveSegmentId } from './state.js';
-import { createNewTrack, showToast } from './ui.js';
-import { saveHistoryState } from './tracks.js';
-import { updateMapData } from './map.js';
-import { escapeXml, generateDistinctTrackColor } from './utils.js';
+import { createNewTrack, showToast } from './ui.js?v=vibration-tooltip-units-20260715';
+import { saveHistoryState } from './tracks.js?v=vibration-tooltip-units-20260715';
+import { updateMapData } from './map.js?v=robust-slope3-20260720';
+import {
+    escapeXml,
+    filterGpxExportPoints,
+    generateDistinctTrackColor,
+    isGpxCoordinateValid
+} from './utils.js';
 
 // Singleton del worker: lo creiamo lazy e lo riutilizziamo
 let _gpxWorker = null;
@@ -20,7 +25,7 @@ function getWorker() {
     try {
         // Path relativo al modulo: import.meta.url assicura risoluzione corretta
         _gpxWorker = new Worker(
-            new URL('./workers/gpx-parser.worker.js', import.meta.url),
+            new URL('./workers/gpx-parser.worker.js?v=vibration-mps2-20260715', import.meta.url),
             { type: 'classic' }
         );
         return _gpxWorker;
@@ -41,7 +46,8 @@ function readSensorExtensions(node) {
     const fields = [
         { tags: ['tilt', 'roll'], key: 'tilt' },
         { tags: ['pitch'], key: 'pitch' },
-        { tags: ['vibration'], key: 'vibrationLevel' }
+        { tags: ['vibration'], key: 'vibrationLevel' },
+        { tags: ['vibration_mps2', 'vibrationMps2', 'acc_peak'], key: 'accPeak' }
     ];
     for (let i = 0; i < fields.length; i++) {
         const f = fields[i];
@@ -239,6 +245,7 @@ async function parseInline(xmlText, fileName) {
                 if (Number.isFinite(sensors.tilt)) parsedPoints[k].tilt = sensors.tilt;
                 if (Number.isFinite(sensors.pitch)) parsedPoints[k].pitch = sensors.pitch;
                 if (Number.isFinite(sensors.vibrationLevel)) parsedPoints[k].vibrationLevel = sensors.vibrationLevel;
+                if (Number.isFinite(sensors.accPeak)) parsedPoints[k].accPeak = sensors.accPeak;
                 if (firstPoint === null) firstPoint = { lat, lon };
 
                 if (k > 0 && k % CHUNK === 0) await yieldToMain();
@@ -301,13 +308,18 @@ export function exportGPX(trackId = activeTrackId) {
 
     // Build con array di stringhe + join: molto più veloce di concatenazione su 100k+ punti
     const parts = [];
+    let filteredPoints = 0;
     parts.push(`<?xml version="1.0" encoding="UTF-8"?>\n`);
     parts.push(`<gpx version="1.1" creator="GpxSuite" xmlns="http://www.topografix.com/GPX/1/1" xmlns:gpxsuite="https://gpxsuite.app/extensions/1/0">\n`);
 
     exportTracks.forEach(track => {
         (track.waypoints || []).forEach(wp => {
+            if (!isGpxCoordinateValid(wp)) {
+                filteredPoints++;
+                return;
+            }
             parts.push(`  <wpt lat="${wp.lat.toFixed(6)}" lon="${wp.lon.toFixed(6)}">\n`);
-            parts.push(`    <ele>${wp.ele}</ele>\n`);
+            if (Number.isFinite(wp.ele)) parts.push(`    <ele>${wp.ele}</ele>\n`);
             parts.push(`    <name>${escapeXml(wp.name)}</name>\n`);
             parts.push(`    <desc>${escapeXml(wp.desc || '')}</desc>\n`);
             parts.push(`  </wpt>\n`);
@@ -320,34 +332,39 @@ export function exportGPX(trackId = activeTrackId) {
         parts.push(`    <desc>${escapeXml(track.desc || '')}</desc>\n`);
 
         (track.segments || []).forEach(seg => {
+            const cleanPoints = filterGpxExportPoints(seg.points || []);
+            filteredPoints += (seg.points || []).length - cleanPoints.length;
+            if (cleanPoints.length === 0) return;
+
             parts.push(`    <trkseg>\n`);
 
             // Sull'export usiamo la versione iterativa (non ricorsiva): la versione
             // ricorsiva esplode lo stack su tracce con decine di migliaia di punti.
-            const hasPerPointExtensions = seg.points.some(point =>
+            const hasPerPointExtensions = cleanPoints.some(point =>
                 point.surfaceFromPrev || point.surface ||
                 Number.isFinite(point.tilt) ||
                 Number.isFinite(point.pitch) ||
-                Number.isFinite(point.vibrationLevel)
+                Number.isFinite(point.vibrationLevel) ||
+                Number.isFinite(point.accPeak)
             );
-            const exportPoints = seg.points.length > 150 && !hasPerPointExtensions
-                ? simplifyDouglasPeucker(seg.points, 0.00005)
-                : seg.points;
+            const exportPoints = cleanPoints;
 
             for (let i = 0; i < exportPoints.length; i++) {
                 const pt = exportPoints[i];
                 parts.push(`      <trkpt lat="${pt.lat.toFixed(6)}" lon="${pt.lon.toFixed(6)}">\n`);
-                if (pt.ele) parts.push(`        <ele>${pt.ele}</ele>\n`);
+                if (Number.isFinite(pt.ele)) parts.push(`        <ele>${pt.ele}</ele>\n`);
                 const timeMs = typeof pt.time === 'number' ? pt.time : Date.parse(pt.time);
                 if (Number.isFinite(timeMs)) parts.push(`        <time>${new Date(timeMs).toISOString()}</time>\n`);
                 const surface = pt.surfaceFromPrev || pt.surface;
-                const hasSensors = Number.isFinite(pt.tilt) || Number.isFinite(pt.pitch) || Number.isFinite(pt.vibrationLevel);
+                const hasSensors = Number.isFinite(pt.tilt) || Number.isFinite(pt.pitch) ||
+                    Number.isFinite(pt.vibrationLevel) || Number.isFinite(pt.accPeak);
                 if (surface || hasSensors) {
                     parts.push(`        <extensions>\n`);
-                    if (surface) parts.push(`          <surface>${escapeXml(surface)}</surface>\n`);
+                    if (surface) parts.push(`          <gpxsuite:surface>${escapeXml(surface)}</gpxsuite:surface>\n`);
                     if (Number.isFinite(pt.tilt)) parts.push(`          <gpxsuite:tilt>${pt.tilt}</gpxsuite:tilt>\n`);
                     if (Number.isFinite(pt.pitch)) parts.push(`          <gpxsuite:pitch>${pt.pitch}</gpxsuite:pitch>\n`);
                     if (Number.isFinite(pt.vibrationLevel)) parts.push(`          <gpxsuite:vibration>${pt.vibrationLevel}</gpxsuite:vibration>\n`);
+                    if (Number.isFinite(pt.accPeak)) parts.push(`          <gpxsuite:vibration_mps2>${pt.accPeak}</gpxsuite:vibration_mps2>\n`);
                     parts.push(`        </extensions>\n`);
                 }
                 parts.push(`      </trkpt>\n`);
@@ -370,7 +387,8 @@ export function exportGPX(trackId = activeTrackId) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    showToast("Traccia GPX esportata correttamente", "success");
+    const filterNote = filteredPoints > 0 ? ` (${filteredPoints} punti anomali esclusi)` : '';
+    showToast(`Traccia GPX esportata correttamente${filterNote}`, "success");
 }
 
 // Douglas-Peucker ITERATIVO (sostituisce la versione ricorsiva che faceva

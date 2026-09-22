@@ -1,0 +1,1242 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GPXSuite Logger — Interactive Design Studio</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700;800&family=JetBrains+Mono:wght@400;600;800&family=Inter:wght@400;600;700&display=swap');
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      user-select: none;
+    }
+
+    .font-num {
+      font-family: 'Chakra Petch', 'JetBrains Mono', monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .font-code {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .theme-rugged {
+      --bg-main: #0c100d;
+      --bg-panel: #141a15;
+      --bg-card: #1c241e;
+      --border-color: #384639;
+      --border-accent: #8da44f;
+      --text-main: #f0f4e8;
+      --text-dim: #9aa892;
+      --accent: #c9f33d;
+      --accent-glow: rgba(201, 243, 61, 0.25);
+      --rec-red: #ff3b30;
+      --rec-glow: rgba(255, 59, 48, 0.4);
+      --warn-amber: #ffb300;
+      --info-cyan: #00e5ff;
+    }
+
+    .theme-carbon {
+      --bg-main: #090b10;
+      --bg-panel: #11151f;
+      --bg-card: #182030;
+      --border-color: #223048;
+      --border-accent: #00d2ff;
+      --text-main: #f5f8ff;
+      --text-dim: #8ba2c7;
+      --accent: #00e5ff;
+      --accent-glow: rgba(0, 229, 255, 0.25);
+      --rec-red: #ff334b;
+      --rec-glow: rgba(255, 51, 75, 0.4);
+      --warn-amber: #ffaa00;
+      --info-cyan: #00ffaa;
+    }
+
+    .theme-sunlight {
+      --bg-main: #ffffff;
+      --bg-panel: #f1f3f0;
+      --bg-card: #e5e9e2;
+      --border-color: #111111;
+      --border-accent: #000000;
+      --text-main: #000000;
+      --text-dim: #444444;
+      --accent: #000000;
+      --accent-glow: rgba(0, 0, 0, 0.1);
+      --rec-red: #d32f2f;
+      --rec-glow: rgba(211, 47, 47, 0.25);
+      --warn-amber: #d97706;
+      --info-cyan: #0284c7;
+    }
+
+    @keyframes pulse-rec {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.92); }
+    }
+    .animate-rec {
+      animation: pulse-rec 1.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+
+    .inspect-active * {
+      cursor: crosshair !important;
+    }
+    .inspect-highlight {
+      outline: 2px dashed #00e5ff !important;
+      outline-offset: 2px !important;
+      background-color: rgba(0, 229, 255, 0.12) !important;
+    }
+    .inspect-annotated {
+      position: relative;
+    }
+    .inspect-annotated::after {
+      content: "★";
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      background: #ffb300;
+      color: #000;
+      font-size: 10px;
+      font-weight: 900;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 6px #ffb300;
+      z-index: 9999;
+      pointer-events: none;
+    }
+
+    .horizon-disc {
+      transition: transform 0.08s ease-out;
+    }
+
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4); }
+  </style>
+</head>
+<body class="bg-neutral-950 text-neutral-100 min-h-screen flex flex-col antialiased theme-rugged">
+
+  <!-- Top Global Toolbar -->
+  <header class="h-14 border-b border-neutral-800 bg-neutral-900/95 px-4 flex items-center justify-between shrink-0 z-40 backdrop-blur">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-lime-500/20 border border-lime-400/40 flex items-center justify-center text-lime-400 font-black text-sm">
+        🛰️
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="font-extrabold text-sm tracking-wide text-white">GPXSuite Logger</span>
+          <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-lime-400/10 text-lime-300 border border-lime-400/30">M5StickS3 Studio</span>
+          <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-neutral-800 text-neutral-400">Zero-Login Mode</span>
+        </div>
+        <div class="text-[11px] text-neutral-400 flex items-center gap-2">
+          <span>ESP32-S3 LittleFS · 10Hz GPS · BMI270 · ENV III</span>
+          <span class="text-neutral-600">•</span>
+          <span id="simulator-clock" class="font-code text-[10px] text-lime-400">12:34:56</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mode & Viewport Switchers -->
+    <div class="flex items-center gap-2">
+      <!-- Device Viewport Switcher -->
+      <div class="bg-neutral-800 p-1 rounded-lg border border-neutral-700/60 flex items-center gap-1 text-xs">
+        <button onclick="setViewport('mobile')" id="btn-vp-mobile" class="px-2.5 py-1 rounded font-semibold text-neutral-200 bg-neutral-700 shadow-sm flex items-center gap-1.5 transition">
+          <span>📱</span>
+          <span class="hidden sm:inline">Telefono (390px)</span>
+        </button>
+        <button onclick="setViewport('tablet')" id="btn-vp-tablet" class="px-2.5 py-1 rounded font-semibold text-neutral-400 hover:text-neutral-200 flex items-center gap-1.5 transition">
+          <span>📟</span>
+          <span class="hidden sm:inline">Cockpit / 4x4 (768px)</span>
+        </button>
+        <button onclick="setViewport('desktop')" id="btn-vp-desktop" class="px-2.5 py-1 rounded font-semibold text-neutral-400 hover:text-neutral-200 flex items-center gap-1.5 transition">
+          <span>💻</span>
+          <span class="hidden sm:inline">Desktop</span>
+        </button>
+      </div>
+
+      <!-- Theme Switcher -->
+      <div class="bg-neutral-800 p-1 rounded-lg border border-neutral-700/60 flex items-center gap-1 text-xs">
+        <button onclick="setTheme('rugged')" id="btn-theme-rugged" title="Rugged Overland" class="px-2 py-1 rounded font-bold text-lime-300 bg-neutral-700">🏕️ Overland</button>
+        <button onclick="setTheme('carbon')" id="btn-theme-carbon" title="Cyber Carbon" class="px-2 py-1 rounded text-neutral-400 hover:text-neutral-200">🏎️ Cockpit</button>
+        <button onclick="setTheme('sunlight')" id="btn-theme-sunlight" title="Sole Diretto High Contrast" class="px-2 py-1 rounded text-neutral-400 hover:text-neutral-200">☀️ Sole</button>
+      </div>
+
+      <!-- Inspector Mode Toggle Button -->
+      <button onclick="toggleInspectMode()" id="btn-inspect-mode" class="px-3 py-1.5 rounded-lg border font-bold text-xs flex items-center gap-2 transition-all bg-neutral-800 border-neutral-700 text-neutral-300 hover:border-cyan-400 hover:text-cyan-300">
+        <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+        <span>Mostrami cosa migliorare</span>
+        <span id="inspect-badge" class="px-1.5 py-0.2 rounded-full bg-cyan-500/20 text-cyan-300 text-[10px]">0</span>
+      </button>
+
+      <!-- Open Live App Button -->
+      <a href="http://localhost:8080/index.html" target="_blank" class="px-3 py-1.5 rounded-lg bg-lime-600 hover:bg-lime-500 text-neutral-950 font-bold text-xs flex items-center gap-1.5 transition">
+        <span>Apri Webapp Reale</span>
+        <span>↗</span>
+      </a>
+    </div>
+  </header>
+
+  <!-- Main Studio Layout -->
+  <div class="flex-1 flex overflow-hidden">
+    
+    <!-- LEFT PANEL: Hardware Telemetry Simulator Controls -->
+    <aside class="w-72 bg-neutral-900 border-r border-neutral-800 flex flex-col shrink-0 overflow-y-auto p-4 space-y-5 text-xs text-neutral-300">
+      <div class="flex items-center justify-between pb-2 border-b border-neutral-800">
+        <span class="font-bold text-neutral-200 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+          <span>🕹️</span> Simulatore Hardware
+        </span>
+        <span class="text-[10px] text-lime-400 font-mono">10 Hz LIVE</span>
+      </div>
+
+      <!-- Live Driving State -->
+      <div class="space-y-2">
+        <label class="text-neutral-400 font-semibold block text-[11px]">Stato Dispositivo (M5StickS3)</label>
+        <div class="grid grid-cols-2 gap-2">
+          <button onclick="simToggleRec()" id="sim-btn-rec" class="py-2 px-3 rounded-lg font-bold border flex items-center justify-center gap-2 transition bg-red-950/80 border-red-700 text-red-200 hover:bg-red-900">
+            <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-rec"></span>
+            <span id="sim-rec-label">REC ATTIVO</span>
+          </button>
+          <button onclick="simToggleDriving()" id="sim-btn-driving" class="py-2 px-3 rounded-lg font-bold border border-neutral-700 bg-neutral-800 text-neutral-200 hover:border-neutral-600 flex items-center justify-center gap-1.5">
+            <span>🚗</span>
+            <span id="sim-driving-label">In Movimento</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Speed Slider -->
+      <div class="space-y-1.5">
+        <div class="flex justify-between items-center">
+          <span class="text-neutral-400 font-semibold">Velocità GPS</span>
+          <span id="sim-val-speed" class="font-mono text-lime-400 font-bold">48.5 km/h</span>
+        </div>
+        <input type="range" id="sim-slider-speed" min="0" max="140" value="48" step="1" oninput="simUpdateTelemetry()" class="w-full accent-lime-400">
+        <div class="flex justify-between text-[10px] text-neutral-500 font-mono">
+          <span>0 (Fermo)</span>
+          <span>50</span>
+          <span>100</span>
+          <span>140 km/h</span>
+        </div>
+      </div>
+
+      <!-- Altitude & Climb Rate -->
+      <div class="space-y-1.5">
+        <div class="flex justify-between items-center">
+          <span class="text-neutral-400 font-semibold">Quota (GPS + Baro)</span>
+          <span id="sim-val-alt" class="font-mono text-cyan-300 font-bold">1420 m</span>
+        </div>
+        <input type="range" id="sim-slider-alt" min="0" max="3000" value="1420" step="10" oninput="simUpdateTelemetry()" class="w-full accent-cyan-400">
+      </div>
+
+      <!-- Inclinometer: Pitch & Roll (BMI270) -->
+      <div class="space-y-2 pt-1 border-t border-neutral-800">
+        <span class="font-bold text-neutral-300 block text-[11px]">Inclinometro BMI270 (Assetto 4x4)</span>
+        
+        <div class="space-y-1">
+          <div class="flex justify-between">
+            <span class="text-neutral-400">Pitch (Salita/Discesa)</span>
+            <span id="sim-val-pitch" class="font-mono text-amber-400 font-bold">+14°</span>
+          </div>
+          <input type="range" id="sim-slider-pitch" min="-45" max="45" value="14" step="1" oninput="simUpdateTelemetry()" class="w-full accent-amber-400">
+        </div>
+
+        <div class="space-y-1">
+          <div class="flex justify-between">
+            <span class="text-neutral-400">Roll (Inclinazione Laterale)</span>
+            <span id="sim-val-roll" class="font-mono text-amber-400 font-bold">-8°</span>
+          </div>
+          <input type="range" id="sim-slider-roll" min="-45" max="45" value="-8" step="1" oninput="simUpdateTelemetry()" class="w-full accent-amber-400">
+        </div>
+      </div>
+
+      <!-- Road Roughness / Vibration G-meter -->
+      <div class="space-y-1.5 pt-1 border-t border-neutral-800">
+        <div class="flex justify-between items-center">
+          <span class="text-neutral-400 font-semibold">Urti / Fondo Stradale</span>
+          <span id="sim-val-vib" class="font-mono text-lime-400 font-bold">Sterrato (8.2/20)</span>
+        </div>
+        <input type="range" id="sim-slider-vib" min="1" max="20" value="8" step="1" oninput="simUpdateTelemetry()" class="w-full accent-lime-400">
+        <div class="flex justify-between text-[10px] text-neutral-500">
+          <span>Asfalto</span>
+          <span>Sterrato</span>
+          <span>Off-road hard</span>
+        </div>
+      </div>
+
+      <!-- Battery & Storage -->
+      <div class="space-y-2 pt-1 border-t border-neutral-800">
+        <span class="font-bold text-neutral-300 block text-[11px]">Stato Batteria & Flash 8MB</span>
+        <div class="grid grid-cols-2 gap-2">
+          <div class="bg-neutral-800/80 p-2 rounded-lg border border-neutral-700">
+            <span class="text-[10px] text-neutral-400 block">Batteria M5Stick</span>
+            <span class="text-emerald-400 font-mono font-bold text-sm">88% ⚡</span>
+            <span class="text-[10px] text-neutral-500 block">USB 12V Auto</span>
+          </div>
+          <div class="bg-neutral-800/80 p-2 rounded-lg border border-neutral-700">
+            <span class="text-[10px] text-neutral-400 block">Flash LittleFS</span>
+            <span class="text-lime-400 font-mono font-bold text-sm">3.4 / 5.8 MB</span>
+            <span class="text-[10px] text-neutral-500 block">~18 ore libere</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Actions for Design Testing -->
+      <div class="pt-2 border-t border-neutral-800 space-y-1.5">
+        <span class="font-bold text-neutral-400 uppercase tracking-wider text-[10px] block">Test Rapidi Interfaccia</span>
+        <button onclick="triggerSimEvent('overspeed')" class="w-full py-1.5 px-2 text-left rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 flex items-center justify-between">
+          <span>Simula Allerta Pendenza >30°</span>
+          <span class="text-amber-400">⚠️</span>
+        </button>
+        <button onclick="triggerSimEvent('bump')" class="w-full py-1.5 px-2 text-left rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 flex items-center justify-between">
+          <span>Simula Buco / Urto Stradale</span>
+          <span class="text-red-400">💥</span>
+        </button>
+        <button onclick="triggerSimEvent('new_session')" class="w-full py-1.5 px-2 text-left rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 flex items-center justify-between">
+          <span>Aggiungi Nuova Sessione Flash</span>
+          <span class="text-lime-400">➕</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- CENTER CANVAS: The Simulated Device UI -->
+    <main class="flex-1 bg-neutral-950 flex flex-col items-center justify-center p-4 sm:p-6 overflow-auto relative">
+      
+      <!-- Screen Navigation Tabs -->
+      <div class="mb-4 bg-neutral-900 border border-neutral-800 rounded-xl p-1 flex items-center gap-1 z-20 shadow-lg">
+        <button onclick="switchScreen('hud')" id="tab-screen-hud" class="px-4 py-1.5 rounded-lg text-xs font-bold transition-all bg-lime-400/20 text-lime-300 border border-lime-400/30 flex items-center gap-2">
+          <span>🧭</span>
+          <span>Cockpit Live HUD</span>
+        </button>
+        <button onclick="switchScreen('sessions')" id="tab-screen-sessions" class="px-4 py-1.5 rounded-lg text-xs font-bold transition-all text-neutral-400 hover:text-neutral-200 flex items-center gap-2">
+          <span>💾</span>
+          <span>Sessioni su Flash (Zero-Login)</span>
+          <span class="px-1.5 py-0.2 rounded-full text-[10px] bg-neutral-800 text-neutral-300">4</span>
+        </button>
+        <button onclick="switchScreen('analysis')" id="tab-screen-analysis" class="px-4 py-1.5 rounded-lg text-xs font-bold transition-all text-neutral-400 hover:text-neutral-200 flex items-center gap-2">
+          <span>📊</span>
+          <span>Analisi Telemetria & Taglio</span>
+        </button>
+        <button onclick="switchScreen('settings')" id="tab-screen-settings" class="px-4 py-1.5 rounded-lg text-xs font-bold transition-all text-neutral-400 hover:text-neutral-200 flex items-center gap-2">
+          <span>⚙️</span>
+          <span>Calibrazione & Sensori</span>
+        </button>
+      </div>
+
+      <!-- DEVICE SHELL FRAME CONTAINER -->
+      <div id="device-container" class="w-[390px] h-[780px] bg-[var(--bg-main)] rounded-[38px] border-[10px] border-neutral-800 shadow-2xl relative flex flex-col overflow-hidden transition-all duration-300 shrink-0">
+        
+        <!-- Physical Device Notch -->
+        <div class="absolute top-2 left-1/2 -translate-x-1/2 w-28 h-5 bg-neutral-800 rounded-full z-50 flex items-center justify-center pointer-events-none">
+          <div class="w-2.5 h-2.5 rounded-full bg-neutral-900 mr-2"></div>
+          <div class="w-1.5 h-1.5 rounded-full bg-blue-900/60"></div>
+        </div>
+
+        <!-- APP TOP STATUS BAR -->
+        <div id="device-app-header" class="pt-8 px-4 pb-2 bg-[var(--bg-panel)] border-b border-[var(--border-color)] flex items-center justify-between text-xs z-30 shrink-0 select-none" data-inspect-name="App Header Bar">
+          <div class="flex items-center gap-2">
+            <div class="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"></div>
+            <span class="font-bold tracking-tight text-[var(--text-main)]">M5StickS3</span>
+            <span class="text-[10px] text-[var(--text-dim)] font-mono">10Hz FIX</span>
+          </div>
+
+          <!-- Quick REC Status Pill -->
+          <div id="hud-status-pill" class="px-2.5 py-0.5 rounded-full bg-red-500/20 border border-red-500/40 text-red-300 font-bold text-[10px] flex items-center gap-1.5" data-inspect-name="REC Status Pill">
+            <span class="w-2 h-2 rounded-full bg-red-500 animate-rec"></span>
+            <span id="hud-pill-text">REC · SESS_0042</span>
+          </div>
+
+          <div class="flex items-center gap-2 text-[var(--text-dim)] font-mono text-[11px]">
+            <span>🔋88%</span>
+            <span>🛰️14</span>
+          </div>
+        </div>
+
+        <!-- ==================== SCREEN 1: COCKPIT LIVE HUD ==================== -->
+        <div id="screen-hud" class="flex-1 flex flex-col overflow-hidden relative">
+          
+          <!-- Background Simulated Map Surface -->
+          <div class="absolute inset-0 z-0 bg-emerald-950/20 overflow-hidden pointer-events-none">
+            <svg class="w-full h-full opacity-30" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                  <path d="M 40 0 L 0 0 0 40" fill="none" stroke="currentColor" stroke-width="0.5" class="text-[var(--border-color)]"/>
+                </pattern>
+              </defs>
+              <rect width="100%" height="100%" fill="url(#grid)" />
+              <path d="M 40 600 Q 150 450 200 480 T 320 300 T 220 180 T 150 80" fill="none" stroke="#f97316" stroke-width="5" stroke-linecap="round" stroke-dasharray="8 4" />
+              <circle cx="200" cy="480" r="9" fill="#00e5ff" />
+              <circle cx="200" cy="480" r="18" fill="none" stroke="#00e5ff" stroke-width="2" class="animate-ping" opacity="0.6" />
+            </svg>
+            <div class="absolute bottom-24 right-3 bg-[var(--bg-card)]/80 backdrop-blur border border-[var(--border-color)] px-2 py-1 rounded text-[10px] font-mono text-[var(--text-dim)]">
+              Monte Ebro · 1.700m
+            </div>
+          </div>
+
+          <!-- Cockpit Overlay Widgets -->
+          <div class="flex-1 flex flex-col justify-between p-3 relative z-10">
+            
+            <!-- Top Metric Tiles Row -->
+            <div class="grid grid-cols-3 gap-2" data-inspect-name="Metric Tiles Grid">
+              
+              <!-- Altitude GPS+Baro -->
+              <div class="bg-[var(--bg-card)]/90 backdrop-blur p-2.5 rounded-xl border border-[var(--border-color)] text-center shadow-lg" data-inspect-name="Tile Quota Altitudine">
+                <span class="text-[10px] font-bold text-[var(--text-dim)] uppercase block">Quota Baro</span>
+                <div class="font-num font-extrabold text-xl text-[var(--text-main)]" id="hud-disp-alt">1.420</div>
+                <span class="text-[9px] text-cyan-400 font-mono">+1.2 m/s</span>
+              </div>
+
+              <!-- Compass / Course -->
+              <div class="bg-[var(--bg-card)]/90 backdrop-blur p-2.5 rounded-xl border border-[var(--border-color)] text-center shadow-lg" data-inspect-name="Tile Bussola Rotta">
+                <span class="text-[10px] font-bold text-[var(--text-dim)] uppercase block">Rotta GPS</span>
+                <div class="font-num font-extrabold text-xl text-[var(--text-main)]">042°</div>
+                <span class="text-[9px] text-[var(--text-dim)] font-bold">NORD-EST</span>
+              </div>
+
+              <!-- Road Vibration Level -->
+              <div class="bg-[var(--bg-card)]/90 backdrop-blur p-2.5 rounded-xl border border-[var(--border-color)] text-center shadow-lg" data-inspect-name="Tile Vibrazioni Fondo">
+                <span class="text-[10px] font-bold text-[var(--text-dim)] uppercase block">Vibrazioni</span>
+                <div class="font-num font-extrabold text-xl text-lime-400" id="hud-disp-vib">8.2</div>
+                <div class="w-full bg-neutral-800 h-1.5 rounded-full overflow-hidden mt-1">
+                  <div id="hud-bar-vib" class="bg-lime-400 h-full w-[41%]"></div>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- CENTER HERO: Giant Speedometer + Inclinometer Artificial Horizon -->
+            <div class="my-auto flex flex-col items-center justify-center space-y-3" data-inspect-name="Center Cockpit Gauges">
+              
+              <!-- SPEED GAUGE -->
+              <div class="text-center" data-inspect-name="Tachimetro Principale">
+                <div class="inline-flex items-baseline justify-center">
+                  <span id="hud-disp-speed" class="font-num font-extrabold text-7xl text-[var(--accent)] tracking-tighter drop-shadow-md">
+                    48.5
+                  </span>
+                  <span class="ml-1 text-sm font-bold uppercase text-[var(--text-dim)] font-mono">km/h</span>
+                </div>
+                <div class="text-[11px] text-[var(--text-dim)] font-semibold flex items-center justify-center gap-2">
+                  <span>Dist: <b class="text-[var(--text-main)] font-mono">14.8 km</b></span>
+                  <span>•</span>
+                  <span>Tempo: <b class="text-[var(--text-main)] font-mono">00:42:18</b></span>
+                </div>
+              </div>
+
+              <!-- INCLINOMETER ARTIFICIAL HORIZON (4x4 Pitch & Roll) -->
+              <div class="w-48 bg-[var(--bg-card)]/95 backdrop-blur rounded-2xl border border-[var(--border-color)] p-2.5 shadow-xl flex items-center justify-between" data-inspect-name="Inclinometro 4x4 Pitch Roll">
+                
+                <div class="w-14 h-14 rounded-full border-2 border-[var(--border-accent)] relative overflow-hidden bg-neutral-900 flex items-center justify-center">
+                  <div id="hud-horizon-line" class="horizon-disc w-16 h-0.5 bg-[var(--accent)] absolute -rotate-8 shadow-[0_0_6px_var(--accent)]"></div>
+                  <div class="w-1.5 h-1.5 rounded-full bg-white z-10"></div>
+                  <div class="absolute inset-0 flex items-center justify-between px-1 text-[8px] text-[var(--text-dim)] font-mono pointer-events-none">
+                    <span>-</span><span>+</span>
+                  </div>
+                </div>
+
+                <div class="flex-1 pl-3 space-y-1">
+                  <div class="flex justify-between items-center text-xs">
+                    <span class="text-[var(--text-dim)] font-bold">PITCH:</span>
+                    <span id="hud-disp-pitch" class="font-mono font-bold text-amber-400 text-sm">+14°</span>
+                  </div>
+                  <div class="flex justify-between items-center text-xs">
+                    <span class="text-[var(--text-dim)] font-bold">ROLL:</span>
+                    <span id="hud-disp-roll" class="font-mono font-bold text-amber-400 text-sm">-8°</span>
+                  </div>
+                  <div id="hud-slope-status" class="text-[9px] font-bold text-emerald-400 font-mono text-right">
+                    ASSETTO SICURO
+                  </div>
+                </div>
+
+              </div>
+
+            </div>
+
+            <!-- BOTTOM DOCK -->
+            <div class="space-y-2 pt-2" data-inspect-name="Pulsantiera Inferiore Cockpit">
+              <div class="grid grid-cols-2 gap-2">
+                <button onclick="simDropWaypoint()" class="py-3 px-3 rounded-xl bg-[var(--bg-card)] hover:bg-[var(--bg-panel)] border border-[var(--border-color)] text-[var(--text-main)] font-bold text-xs flex items-center justify-center gap-2 active:scale-95 transition shadow-lg" data-inspect-name="Pulsante Segna Waypoint Rapido">
+                  <span class="text-base">📍</span>
+                  <span>Segna POI</span>
+                </button>
+                <button onclick="simCenterMap()" class="py-3 px-3 rounded-xl bg-[var(--bg-card)] hover:bg-[var(--bg-panel)] border border-[var(--border-color)] text-[var(--text-main)] font-bold text-xs flex items-center justify-center gap-2 active:scale-95 transition shadow-lg" data-inspect-name="Pulsante Centra Mappa">
+                  <span class="text-base">🎯</span>
+                  <span>Centra Traccia</span>
+                </button>
+              </div>
+
+              <!-- MAIN GIANT REC / STOP BUTTON -->
+              <button onclick="simToggleRec()" id="hud-main-rec-btn" class="w-full py-4 rounded-2xl bg-red-600 hover:bg-red-500 active:scale-[0.98] text-white font-extrabold text-base tracking-wide flex items-center justify-center gap-3 transition shadow-xl border border-red-400/40" data-inspect-name="Pulsantone Principale REC">
+                <span class="w-3.5 h-3.5 rounded-sm bg-white"></span>
+                <span id="hud-main-rec-text">FERMA REGISTRAZIONE</span>
+              </button>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- ==================== SCREEN 2: FLASH SESSIONS ==================== -->
+        <div id="screen-sessions" class="flex-1 flex-col overflow-y-auto p-4 space-y-4 hidden bg-[var(--bg-main)]">
+          <div class="bg-[var(--bg-card)] p-4 rounded-2xl border border-[var(--border-color)] space-y-2" data-inspect-name="Scheda Memoria Flash LittleFS">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-sm text-[var(--text-main)]">Memoria Flash M5StickS3</span>
+              <span class="text-xs font-mono text-lime-400">58% Usata</span>
+            </div>
+            <div class="w-full bg-neutral-900 h-2.5 rounded-full overflow-hidden border border-neutral-700">
+              <div class="bg-gradient-to-r from-lime-500 to-amber-500 h-full w-[58%]"></div>
+            </div>
+            <div class="flex justify-between text-[11px] text-[var(--text-dim)] font-mono">
+              <span>3.4 MB / 5.8 MB LittleFS</span>
+              <span>~18.5 ore rimanenti</span>
+            </div>
+            <div class="pt-2 border-t border-[var(--border-color)] text-[11px] text-neutral-400">
+              ⚡ <b>Zero Login:</b> Le tracce sono salvate nel chip ESP32-S3 e sincronizzate istantaneamente offline su questo dispositivo.
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between pt-1">
+            <span class="font-bold text-xs uppercase tracking-wider text-[var(--text-dim)]">Sessioni Registrate (4)</span>
+            <button onclick="simDownloadAll()" class="text-xs font-bold text-[var(--accent)] hover:underline flex items-center gap-1" data-inspect-name="Scarica Tutte le Tracce">
+              <span>Scarica tutte sul telefono</span>
+              <span>⬇️</span>
+            </button>
+          </div>
+
+          <div class="space-y-2.5" id="sessions-container" data-inspect-name="Lista Sessioni Hardware">
+            <!-- Session 1 -->
+            <div class="bg-[var(--bg-card)] p-3.5 rounded-xl border border-red-500/40 space-y-2.5 shadow-md" data-inspect-name="Sessione Attiva SESS_0042">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-rec"></span>
+                  <span class="font-bold font-mono text-sm text-[var(--text-main)]">SESS_0042</span>
+                  <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-red-500/20 text-red-300">IN CORSO</span>
+                </div>
+                <span class="text-xs text-[var(--text-dim)] font-mono">Oggi, 11:45</span>
+              </div>
+              <div class="grid grid-cols-3 gap-1 text-[11px] font-mono text-[var(--text-dim)]">
+                <div>Dist: <b class="text-[var(--text-main)]">14.8 km</b></div>
+                <div>Punti: <b class="text-[var(--text-main)]">25.410</b></div>
+                <div>Dim: <b class="text-[var(--text-main)]">508 KB</b></div>
+              </div>
+              <div class="flex items-center gap-2 pt-1 border-t border-[var(--border-color)]">
+                <button onclick="simActionSession('download_phone', 'SESS_0042')" class="flex-1 py-2 rounded-lg bg-[var(--accent)] hover:opacity-90 text-neutral-950 font-bold text-xs flex items-center justify-center gap-1.5 transition">
+                  <span>📱 Salva sul Telefono</span>
+                </button>
+                <button onclick="simActionSession('export_gpx', 'SESS_0042')" class="px-3 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-xs border border-neutral-700 flex items-center gap-1">
+                  <span>GPX 10Hz</span>
+                  <span>💾</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Session 2 -->
+            <div class="bg-[var(--bg-card)] p-3.5 rounded-xl border border-[var(--border-color)] space-y-2.5 shadow-md" data-inspect-name="Sessione Salvata SESS_0041">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="text-neutral-400">📁</span>
+                  <span class="font-bold font-mono text-sm text-[var(--text-main)]">SESS_0041</span>
+                  <span class="px-1.5 py-0.2 rounded text-[10px] font-bold bg-neutral-800 text-neutral-400">COMPLETATA</span>
+                </div>
+                <span class="text-xs text-[var(--text-dim)] font-mono">Ieri, 16:30</span>
+              </div>
+              <div class="grid grid-cols-3 gap-1 text-[11px] font-mono text-[var(--text-dim)]">
+                <div>Dist: <b class="text-[var(--text-main)]">42.3 km</b></div>
+                <div>Punti: <b class="text-[var(--text-main)]">76.120</b></div>
+                <div>Dim: <b class="text-[var(--text-main)]">1.52 MB</b></div>
+              </div>
+              <div class="flex items-center gap-2 pt-1 border-t border-[var(--border-color)]">
+                <button onclick="simActionSession('download_phone', 'SESS_0041')" class="flex-1 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-lime-400 border border-lime-400/40 font-bold text-xs flex items-center justify-center gap-1.5 transition">
+                  <span>✓ Già su Telefono</span>
+                </button>
+                <button onclick="simActionSession('export_gpx', 'SESS_0041')" class="px-3 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-xs border border-neutral-700 flex items-center gap-1">
+                  <span>GPX</span>
+                  <span>💾</span>
+                </button>
+                <button onclick="simActionSession('delete', 'SESS_0041')" class="p-2 rounded-lg bg-neutral-800 hover:bg-red-950/60 text-neutral-400 hover:text-red-400 border border-neutral-700">
+                  <span>🗑️</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Session 3 -->
+            <div class="bg-[var(--bg-card)] p-3.5 rounded-xl border border-[var(--border-color)] space-y-2.5 shadow-md" data-inspect-name="Sessione Salvata SESS_0040">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="text-neutral-400">📁</span>
+                  <span class="font-bold font-mono text-sm text-[var(--text-main)]">SESS_0040</span>
+                </div>
+                <span class="text-xs text-[var(--text-dim)] font-mono">15 Lug, 09:12</span>
+              </div>
+              <div class="grid grid-cols-3 gap-1 text-[11px] font-mono text-[var(--text-dim)]">
+                <div>Dist: <b class="text-[var(--text-main)]">18.5 km</b></div>
+                <div>Punti: <b class="text-[var(--text-main)]">33.200</b></div>
+                <div>Dim: <b class="text-[var(--text-main)]">664 KB</b></div>
+              </div>
+              <div class="flex items-center gap-2 pt-1 border-t border-[var(--border-color)]">
+                <button onclick="simActionSession('download_phone', 'SESS_0040')" class="flex-1 py-2 rounded-lg bg-[var(--accent)] hover:opacity-90 text-neutral-950 font-bold text-xs flex items-center justify-center gap-1.5 transition">
+                  <span>📱 Salva sul Telefono</span>
+                </button>
+                <button onclick="simActionSession('export_gpx', 'SESS_0040')" class="px-3 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-xs border border-neutral-700 flex items-center gap-1">
+                  <span>GPX</span>
+                  <span>💾</span>
+                </button>
+                <button onclick="simActionSession('delete', 'SESS_0040')" class="p-2 rounded-lg bg-neutral-800 hover:bg-red-950/60 text-neutral-400 hover:text-red-400 border border-neutral-700">
+                  <span>🗑️</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================== SCREEN 3: TRACK ANALYSIS ==================== -->
+        <div id="screen-analysis" class="flex-1 flex-col overflow-y-auto p-4 space-y-4 hidden bg-[var(--bg-main)]">
+          <div class="bg-[var(--bg-card)] p-3.5 rounded-2xl border border-[var(--border-color)] space-y-2" data-inspect-name="Grafico Profilo Altimetrico e Pendenze">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-sm text-[var(--text-main)]">Profilo Quota & Pendenza</span>
+              <span class="text-xs font-mono text-cyan-300">D+ 920 m · D- 450 m</span>
+            </div>
+            <div class="h-28 bg-neutral-900 rounded-xl p-2 border border-neutral-800 relative overflow-hidden flex items-end">
+              <svg class="w-full h-full" viewBox="0 0 300 80" preserveAspectRatio="none">
+                <path d="M 0 70 Q 50 65 100 40 T 200 15 T 300 30 L 300 80 L 0 80 Z" fill="rgba(0, 229, 255, 0.15)"/>
+                <path d="M 0 70 Q 50 65 100 40 T 200 15 T 300 30" fill="none" stroke="#00e5ff" stroke-width="2.5"/>
+                <line x1="160" y1="0" x2="160" y2="80" stroke="#ffb300" stroke-width="1.5" stroke-dasharray="3 3"/>
+                <circle cx="160" cy="22" r="4" fill="#ffb300"/>
+              </svg>
+            </div>
+            <div class="flex justify-between text-[10px] text-[var(--text-dim)] font-mono">
+              <span>0 km (850 m)</span>
+              <span class="text-amber-400 font-bold">km 8.2 (1.420 m)</span>
+              <span>14.8 km (1.680 m)</span>
+            </div>
+          </div>
+
+          <div class="bg-[var(--bg-card)] p-3.5 rounded-2xl border border-[var(--border-color)] space-y-2" data-inspect-name="Mappa Termica Vibrazioni BMI270">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-sm text-[var(--text-main)]">Analisi Fondo Stradale (BMI270)</span>
+              <span class="text-xs font-mono text-lime-400">100 Hz Raw Peak</span>
+            </div>
+            <div class="h-10 w-full rounded-lg overflow-hidden flex">
+              <div class="bg-emerald-500 h-full w-[45%]"></div>
+              <div class="bg-amber-500 h-full w-[35%]"></div>
+              <div class="bg-red-500 h-full w-[20%]"></div>
+            </div>
+            <div class="flex justify-between text-[10px] text-[var(--text-dim)] font-semibold">
+              <span class="flex items-center gap-1"><span class="w-2 h-2 rounded bg-emerald-500"></span> 45% Scorrevole</span>
+              <span class="flex items-center gap-1"><span class="w-2 h-2 rounded bg-amber-500"></span> 35% Sterrato</span>
+              <span class="flex items-center gap-1"><span class="w-2 h-2 rounded bg-red-500"></span> 20% Molto mosso</span>
+            </div>
+          </div>
+
+          <div class="bg-[var(--bg-card)] p-3.5 rounded-2xl border border-[var(--border-color)] space-y-2" data-inspect-name="Strumento Taglio e Rifinitura Traccia">
+            <span class="font-bold text-sm text-[var(--text-main)] block">Rifinitura & Taglio Traccia</span>
+            <p class="text-xs text-[var(--text-dim)]">Taglia facilmente pause iniziali/finali o dividi la traccia in segmenti prima di esportarla.</p>
+            <div class="grid grid-cols-2 gap-2 pt-1">
+              <button onclick="simToast('Punto di taglio impostato al km 8.2')" class="py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-[var(--text-main)] font-bold text-xs border border-neutral-700">
+                ✂️ Taglia qui (km 8.2)
+              </button>
+              <button onclick="simToast('Traccia esportata in GPX pulito!')" class="py-2.5 rounded-xl bg-lime-600 hover:bg-lime-500 text-neutral-950 font-bold text-xs">
+                ⬇️ Esporta GPX Tagliato
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================== SCREEN 4: SETTINGS ==================== -->
+        <div id="screen-settings" class="flex-1 flex-col overflow-y-auto p-4 space-y-4 hidden bg-[var(--bg-main)]">
+          <div class="bg-[var(--bg-card)] p-4 rounded-2xl border border-[var(--border-color)] space-y-2.5" data-inspect-name="Calibrazione Assetto IMU">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-sm text-[var(--text-main)]">Calibrazione Orizzonte 4x4</span>
+              <span class="text-xs text-lime-400 font-mono">BMI270 OK</span>
+            </div>
+            <p class="text-xs text-[var(--text-dim)]">Con il veicolo fermo in piano, azzera gli offset di montaggio per avere l'inclinometro a 0°.</p>
+            <button onclick="simCalibrateIMU()" class="w-full py-3 rounded-xl bg-neutral-800 hover:bg-neutral-700 border border-lime-400/50 text-lime-300 font-bold text-xs flex items-center justify-center gap-2">
+              <span>🎯</span>
+              <span>AZZERA ORIZZONTE (VEICOLO IN PIANO)</span>
+            </button>
+          </div>
+
+          <div class="bg-[var(--bg-card)] p-4 rounded-2xl border border-[var(--border-color)] space-y-2.5" data-inspect-name="Configurazione GPS 10Hz">
+            <span class="font-bold text-sm text-[var(--text-main)] block">Frequenza Campionamento GPS</span>
+            <div class="grid grid-cols-4 gap-1.5">
+              <button onclick="simSetRate(1)" id="btn-rate-1" class="py-2 rounded-lg bg-neutral-800 text-neutral-400 font-mono font-bold text-xs">1 Hz</button>
+              <button onclick="simSetRate(2)" id="btn-rate-2" class="py-2 rounded-lg bg-neutral-800 text-neutral-400 font-mono font-bold text-xs">2 Hz</button>
+              <button onclick="simSetRate(5)" id="btn-rate-5" class="py-2 rounded-lg bg-neutral-800 text-neutral-400 font-mono font-bold text-xs">5 Hz</button>
+              <button onclick="simSetRate(10)" id="btn-rate-10" class="py-2 rounded-lg bg-lime-400 text-neutral-950 font-mono font-bold text-xs shadow-md">10 Hz</button>
+            </div>
+            <span class="text-[10px] text-[var(--text-dim)] block">10 Hz è la frequenza raccomandata per precisione fuoristrada.</span>
+          </div>
+
+          <div class="bg-[var(--bg-card)] p-4 rounded-2xl border border-[var(--border-color)] space-y-2" data-inspect-name="Auto Registrazione Movimento">
+            <div class="flex items-center justify-between">
+              <div>
+                <span class="font-bold text-xs text-[var(--text-main)] block">Auto-Start su Movimento</span>
+                <span class="text-[10px] text-[var(--text-dim)]">Avvia REC sopra i 5 km/h</span>
+              </div>
+              <input type="checkbox" checked class="w-5 h-5 accent-lime-400">
+            </div>
+          </div>
+        </div>
+
+        <!-- BOTTOM NAVIGATION TAB BAR -->
+        <nav class="h-16 bg-[var(--bg-panel)] border-t border-[var(--border-color)] grid grid-cols-4 items-center shrink-0 z-30 select-none text-center" data-inspect-name="Barra di Navigazione Inferiore">
+          <button onclick="switchScreen('hud')" id="bnav-hud" class="flex flex-col items-center justify-center text-[var(--accent)] font-bold text-[10px] gap-0.5">
+            <span class="text-base">🧭</span>
+            <span>Cockpit</span>
+          </button>
+          <button onclick="switchScreen('sessions')" id="bnav-sessions" class="flex flex-col items-center justify-center text-[var(--text-dim)] hover:text-[var(--text-main)] font-semibold text-[10px] gap-0.5">
+            <span class="text-base">💾</span>
+            <span>Sessioni</span>
+          </button>
+          <button onclick="switchScreen('analysis')" id="bnav-analysis" class="flex flex-col items-center justify-center text-[var(--text-dim)] hover:text-[var(--text-main)] font-semibold text-[10px] gap-0.5">
+            <span class="text-base">📊</span>
+            <span>Analisi</span>
+          </button>
+          <button onclick="switchScreen('settings')" id="bnav-settings" class="flex flex-col items-center justify-center text-[var(--text-dim)] hover:text-[var(--text-main)] font-semibold text-[10px] gap-0.5">
+            <span class="text-base">⚙️</span>
+            <span>Hardware</span>
+          </button>
+        </nav>
+
+      </div>
+
+    </main>
+
+    <!-- RIGHT PANEL: Interactive Feedback Inspector -->
+    <aside class="w-80 bg-neutral-900 border-l border-neutral-800 flex flex-col shrink-0 overflow-hidden text-xs">
+      
+      <div class="p-4 border-b border-neutral-800 flex items-center justify-between">
+        <div>
+          <span class="font-bold text-neutral-200 text-sm block flex items-center gap-1.5">
+            <span>💬</span> Note & Feedback UI
+          </span>
+          <span class="text-[11px] text-neutral-400">Dimmi cosa e come cambiare</span>
+        </div>
+        <span id="notes-counter" class="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-mono font-bold text-xs">0 note</span>
+      </div>
+
+      <div class="p-3 bg-cyan-950/40 border-b border-cyan-800/40 text-[11px] text-cyan-200 space-y-1">
+        <div class="font-bold flex items-center gap-1.5 text-cyan-300">
+          <span>💡</span> Come funziona:
+        </div>
+        <p>Attiva <b class="text-white">"Mostrami cosa migliorare"</b> e clicca su qualsiasi elemento dell'interfaccia a sinistra, oppure scrivi direttamente una richiesta qui sotto!</p>
+      </div>
+
+      <div id="inspector-selection-box" class="p-3 border-b border-neutral-800 bg-neutral-800/60 space-y-2 hidden">
+        <div class="flex items-center justify-between">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-cyan-400">Elemento Selezionato</span>
+          <button onclick="clearInspectorSelection()" class="text-neutral-400 hover:text-white text-xs">✕ Chiudi</button>
+        </div>
+        <div id="inspector-elem-title" class="font-bold text-neutral-100 text-xs">
+          Tachimetro Principale
+        </div>
+        <div class="space-y-1">
+          <label class="text-[10px] text-neutral-400 font-semibold block">Cosa vorresti migliorare qui?</label>
+          <textarea id="inspect-input-note" rows="2" class="w-full bg-neutral-900 border border-neutral-700 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-cyan-400" placeholder="Es: fallo più grande, sposta in alto, aumenta contrasto..."></textarea>
+        </div>
+        <div class="flex flex-wrap gap-1 pt-1">
+          <button onclick="addQuickSuggestion('Ingrandisci font per visibilità al sole')" class="px-2 py-0.5 rounded bg-neutral-700 text-[10px] text-neutral-300 hover:bg-neutral-600">+ Font più grande</button>
+          <button onclick="addQuickSuggestion('Pulsante più alto per guanti da moto/4x4')" class="px-2 py-0.5 rounded bg-neutral-700 text-[10px] text-neutral-300 hover:bg-neutral-600">+ Touch più grande</button>
+          <button onclick="addQuickSuggestion('Sposta in posizione più comoda')" class="px-2 py-0.5 rounded bg-neutral-700 text-[10px] text-neutral-300 hover:bg-neutral-600">+ Riposiziona</button>
+        </div>
+        <button onclick="saveAnnotation()" class="w-full py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center justify-center gap-1">
+          <span>✓ Aggiungi a Elenco Migliorie</span>
+        </button>
+      </div>
+
+      <div class="p-3 border-b border-neutral-800 space-y-2">
+        <label class="text-[11px] font-bold text-neutral-300 flex items-center gap-1.5">
+          <span>✏️</span> Aggiungi una nota generale:
+        </label>
+        <div class="flex gap-2">
+          <input type="text" id="manual-note-input" placeholder="Es: voglio scaricare il GPX con un tap..." class="flex-1 bg-neutral-800 border border-neutral-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-lime-400" onkeydown="if(event.key==='Enter') addManualNote()">
+          <button onclick="addManualNote()" class="px-3 py-1.5 rounded-lg bg-lime-600 hover:bg-lime-500 text-neutral-950 font-bold text-xs">
+            +
+          </button>
+        </div>
+      </div>
+
+      <div id="notes-list" class="flex-1 overflow-y-auto p-3 space-y-2.5">
+        <div class="bg-neutral-800/80 p-3 rounded-xl border border-neutral-700/80 space-y-1 relative group">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-lime-400 text-[11px]">Zero-Login & Velocità</span>
+            <span class="text-[9px] text-neutral-500">Pre-impostato</span>
+          </div>
+          <p class="text-neutral-300 text-[11px]">Nessun login richiesto, avvio immediato a freddo (<300ms) quando connesso al WiFi del logger.</p>
+        </div>
+        <div class="bg-neutral-800/80 p-3 rounded-xl border border-neutral-700/80 space-y-1 relative group">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-cyan-400 text-[11px]">10Hz GPS & IMU</span>
+            <span class="text-[9px] text-neutral-500">Pre-impostato</span>
+          </div>
+          <p class="text-neutral-300 text-[11px]">Salvataggio completo dei punti grezzi 10Hz senza decimazione forzata durante il salvataggio o esportazione.</p>
+        </div>
+      </div>
+
+      <div class="p-3 border-t border-neutral-800 bg-neutral-950/80 space-y-2">
+        <button onclick="copyFeedbackForAgent()" id="btn-copy-feedback" class="w-full py-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-neutral-950 font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg transition">
+          <span>📋</span>
+          <span id="copy-btn-text">COPIA FEEDBACK PER L'AGENTE</span>
+        </button>
+        <button onclick="clearAllNotes()" class="w-full py-1.5 text-neutral-500 hover:text-red-400 text-[10px] text-center">
+          Svuota elenco note
+        </button>
+      </div>
+
+    </aside>
+
+  </div>
+
+  <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2.5 rounded-xl bg-neutral-800 text-white font-bold text-xs border border-neutral-700 shadow-2xl opacity-0 pointer-events-none transition-all duration-300 z-50 flex items-center gap-2">
+    <span id="toast-icon">ℹ️</span>
+    <span id="toast-text">Messaggio</span>
+  </div>
+
+  <script>
+    let isRec = true;
+    let isDriving = true;
+    let currentScreen = 'hud';
+    let currentViewport = 'mobile';
+    let currentTheme = 'rugged';
+    let inspectMode = false;
+    let selectedElement = null;
+    let annotations = [];
+
+    let speed = 48.5;
+    let alt = 1420;
+    let pitch = 14;
+    let roll = -8;
+    let vib = 8.2;
+
+    setInterval(() => {
+      const now = new Date();
+      document.getElementById('simulator-clock').innerText = now.toTimeString().split(' ')[0];
+    }, 1000);
+
+    function setViewport(mode) {
+      currentViewport = mode;
+      const container = document.getElementById('device-container');
+      const btnMob = document.getElementById('btn-vp-mobile');
+      const btnTab = document.getElementById('btn-vp-tablet');
+      const btnDesk = document.getElementById('btn-vp-desktop');
+
+      [btnMob, btnTab, btnDesk].forEach(b => {
+        b.className = b.className.replace('bg-neutral-700 text-neutral-200', 'text-neutral-400');
+      });
+
+      if (mode === 'mobile') {
+        container.style.width = '390px';
+        container.style.height = '780px';
+        container.style.borderRadius = '38px';
+        container.style.borderWidth = '10px';
+        btnMob.className = btnMob.className.replace('text-neutral-400', 'bg-neutral-700 text-neutral-200');
+      } else if (mode === 'tablet') {
+        container.style.width = '640px';
+        container.style.height = '820px';
+        container.style.borderRadius = '24px';
+        container.style.borderWidth = '8px';
+        btnTab.className = btnTab.className.replace('text-neutral-400', 'bg-neutral-700 text-neutral-200');
+      } else {
+        container.style.width = '100%';
+        container.style.maxWidth = '960px';
+        container.style.height = '850px';
+        container.style.borderRadius = '16px';
+        container.style.borderWidth = '4px';
+        btnDesk.className = btnDesk.className.replace('text-neutral-400', 'bg-neutral-700 text-neutral-200');
+      }
+      simToast(`Dispositivo: ${mode.toUpperCase()}`);
+    }
+
+    function setTheme(theme) {
+      currentTheme = theme;
+      document.body.classList.remove('theme-rugged', 'theme-carbon', 'theme-sunlight');
+      document.body.classList.add(`theme-${theme}`);
+      
+      const btnR = document.getElementById('btn-theme-rugged');
+      const btnC = document.getElementById('btn-theme-carbon');
+      const btnS = document.getElementById('btn-theme-sunlight');
+      [btnR, btnC, btnS].forEach(b => b.className = b.className.replace('bg-neutral-700 font-bold text-lime-300 text-cyan-300 text-white', 'text-neutral-400'));
+
+      if (theme === 'rugged') btnR.className += ' bg-neutral-700 font-bold text-lime-300';
+      if (theme === 'carbon') btnC.className += ' bg-neutral-700 font-bold text-cyan-300';
+      if (theme === 'sunlight') btnS.className += ' bg-neutral-700 font-bold text-white';
+
+      simToast(`Tema: ${theme}`);
+    }
+
+    function switchScreen(screen) {
+      currentScreen = screen;
+      const screens = ['hud', 'sessions', 'analysis', 'settings'];
+      screens.forEach(s => {
+        const el = document.getElementById(`screen-${s}`);
+        const tab = document.getElementById(`tab-screen-${s}`);
+        const bnav = document.getElementById(`bnav-${s}`);
+        
+        if (s === screen) {
+          el.classList.remove('hidden');
+          el.classList.add('flex');
+          if (tab) {
+            tab.className = 'px-4 py-1.5 rounded-lg text-xs font-bold transition-all bg-lime-400/20 text-lime-300 border border-lime-400/30 flex items-center gap-2';
+          }
+          if (bnav) {
+            bnav.className = 'flex flex-col items-center justify-center text-[var(--accent)] font-bold text-[10px] gap-0.5';
+          }
+        } else {
+          el.classList.add('hidden');
+          el.classList.remove('flex');
+          if (tab) {
+            tab.className = 'px-4 py-1.5 rounded-lg text-xs font-bold transition-all text-neutral-400 hover:text-neutral-200 flex items-center gap-2';
+          }
+          if (bnav) {
+            bnav.className = 'flex flex-col items-center justify-center text-[var(--text-dim)] hover:text-[var(--text-main)] font-semibold text-[10px] gap-0.5';
+          }
+        }
+      });
+    }
+
+    function simUpdateTelemetry() {
+      speed = parseFloat(document.getElementById('sim-slider-speed').value);
+      alt = parseInt(document.getElementById('sim-slider-alt').value);
+      pitch = parseInt(document.getElementById('sim-slider-pitch').value);
+      roll = parseInt(document.getElementById('sim-slider-roll').value);
+      vib = parseFloat(document.getElementById('sim-slider-vib').value);
+
+      document.getElementById('sim-val-speed').innerText = `${speed.toFixed(1)} km/h`;
+      document.getElementById('sim-val-alt').innerText = `${alt} m`;
+      document.getElementById('sim-val-pitch').innerText = `${pitch > 0 ? '+' : ''}${pitch}°`;
+      document.getElementById('sim-val-roll').innerText = `${roll > 0 ? '+' : ''}${roll}°`;
+      document.getElementById('sim-val-vib').innerText = `${vib.toFixed(1)}/20`;
+
+      document.getElementById('hud-disp-speed').innerText = speed.toFixed(1);
+      document.getElementById('hud-disp-alt').innerText = alt.toLocaleString('it-IT');
+      document.getElementById('hud-disp-pitch').innerText = `${pitch > 0 ? '+' : ''}${pitch}°`;
+      document.getElementById('hud-disp-roll').innerText = `${roll > 0 ? '+' : ''}${roll}°`;
+      document.getElementById('hud-disp-vib').innerText = vib.toFixed(1);
+      document.getElementById('hud-bar-vib').style.width = `${(vib / 20) * 100}%`;
+
+      const horizonLine = document.getElementById('hud-horizon-line');
+      if (horizonLine) {
+        horizonLine.style.transform = `rotate(${roll}deg) translateY(${pitch * 0.5}px)`;
+      }
+
+      const slopeStatus = document.getElementById('hud-slope-status');
+      if (Math.abs(pitch) > 30 || Math.abs(roll) > 25) {
+        slopeStatus.innerText = 'ATTENZIONE PENDENZA';
+        slopeStatus.className = 'text-[9px] font-bold text-red-400 font-mono text-right animate-pulse';
+      } else {
+        slopeStatus.innerText = 'ASSETTO SICURO';
+        slopeStatus.className = 'text-[9px] font-bold text-emerald-400 font-mono text-right';
+      }
+    }
+
+    function simToggleRec() {
+      isRec = !isRec;
+      const recBtn = document.getElementById('hud-main-rec-btn');
+      const recText = document.getElementById('hud-main-rec-text');
+      const pill = document.getElementById('hud-status-pill');
+      const pillText = document.getElementById('hud-pill-text');
+      const simRecBtn = document.getElementById('sim-btn-rec');
+      const simRecLabel = document.getElementById('sim-rec-label');
+
+      if (isRec) {
+        recBtn.className = 'w-full py-4 rounded-2xl bg-red-600 hover:bg-red-500 active:scale-[0.98] text-white font-extrabold text-base tracking-wide flex items-center justify-center gap-3 transition shadow-xl border border-red-400/40';
+        recText.innerText = 'FERMA REGISTRAZIONE';
+        pill.className = 'px-2.5 py-0.5 rounded-full bg-red-500/20 border border-red-500/40 text-red-300 font-bold text-[10px] flex items-center gap-1.5';
+        pillText.innerText = 'REC · SESS_0042';
+        simRecBtn.className = 'py-2 px-3 rounded-lg font-bold border flex items-center justify-center gap-2 transition bg-red-950/80 border-red-700 text-red-200 hover:bg-red-900';
+        simRecLabel.innerText = 'REC ATTIVO';
+        simToast('Registrazione avviata su LittleFS (10 Hz)', '🔴');
+      } else {
+        recBtn.className = 'w-full py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-extrabold text-base tracking-wide flex items-center justify-center gap-3 transition shadow-xl border border-emerald-400/40';
+        recText.innerText = 'AVVIA REGISTRAZIONE';
+        pill.className = 'px-2.5 py-0.5 rounded-full bg-neutral-800 border border-neutral-700 text-neutral-400 font-bold text-[10px] flex items-center gap-1.5';
+        pillText.innerText = 'STANDBY · SESS_0042 SALVATA';
+        simRecBtn.className = 'py-2 px-3 rounded-lg font-bold border border-neutral-700 bg-neutral-800 text-neutral-400 hover:border-neutral-600 flex items-center justify-center gap-1.5';
+        simRecLabel.innerText = 'STANDBY';
+        simToast('Sessione chiusa e sincronizzata', '💾');
+      }
+    }
+
+    let driveInterval = null;
+    function simToggleDriving() {
+      isDriving = !isDriving;
+      const btn = document.getElementById('sim-btn-driving');
+      const lbl = document.getElementById('sim-driving-label');
+
+      if (isDriving) {
+        lbl.innerText = 'In Movimento';
+        btn.classList.add('border-lime-500', 'text-lime-300');
+        startDrivingOscillation();
+        simToast('Simulazione guida attiva');
+      } else {
+        lbl.innerText = 'Fermo';
+        btn.classList.remove('border-lime-500', 'text-lime-300');
+        clearInterval(driveInterval);
+        document.getElementById('sim-slider-speed').value = 0;
+        simUpdateTelemetry();
+        simToast('Veicolo fermo');
+      }
+    }
+
+    function startDrivingOscillation() {
+      clearInterval(driveInterval);
+      let t = 0;
+      driveInterval = setInterval(() => {
+        t += 0.1;
+        const currentSpd = 45 + Math.sin(t) * 12 + (Math.random() - 0.5) * 4;
+        const currentP = 12 + Math.sin(t * 0.7) * 8;
+        const currentR = -6 + Math.cos(t * 0.5) * 6;
+        
+        document.getElementById('sim-slider-speed').value = Math.max(0, currentSpd);
+        document.getElementById('sim-slider-pitch').value = currentP;
+        document.getElementById('sim-slider-roll').value = currentR;
+        simUpdateTelemetry();
+      }, 300);
+    }
+    startDrivingOscillation();
+
+    function triggerSimEvent(type) {
+      if (type === 'overspeed') {
+        document.getElementById('sim-slider-pitch').value = 34;
+        document.getElementById('sim-slider-roll').value = 28;
+        simUpdateTelemetry();
+        simToast('Allarme pendenza 4x4 attivato!', '⚠️');
+      } else if (type === 'bump') {
+        document.getElementById('sim-slider-vib').value = 19;
+        simUpdateTelemetry();
+        setTimeout(() => {
+          document.getElementById('sim-slider-vib').value = 8;
+          simUpdateTelemetry();
+        }, 1200);
+        simToast('Rilevato picco accelerometro BMI270!', '💥');
+      } else if (type === 'new_session') {
+        switchScreen('sessions');
+        simToast('Nuova sessione SESS_0043 creata su LittleFS', '➕');
+      }
+    }
+
+    function simActionSession(action, sessId) {
+      if (action === 'download_phone') {
+        simToast(`Sessione ${sessId} salvata nella memoria offline del telefono!`, '📱');
+      } else if (action === 'export_gpx') {
+        simToast(`Esportazione ${sessId}.gpx (10Hz raw) completata!`, '💾');
+      } else if (action === 'delete') {
+        if (confirm(`Eliminare definitivamente ${sessId} dalla flash del logger?`)) {
+          simToast(`Sessione ${sessId} rimossa`, '🗑️');
+        }
+      }
+    }
+
+    function simDownloadAll() {
+      simToast('Tutte le sessioni salvate offline su questo telefono!', '📱');
+    }
+
+    function simDropWaypoint() {
+      simToast('📍 Waypoint salvato alle coordinate attuali!');
+    }
+
+    function simCenterMap() {
+      simToast('🎯 Mappa centrata sulla posizione GPS 10Hz');
+    }
+
+    function simCalibrateIMU() {
+      document.getElementById('sim-slider-pitch').value = 0;
+      document.getElementById('sim-slider-roll').value = 0;
+      simUpdateTelemetry();
+      simToast('Assetto veicolo azzerato a 0°/0° con successo!', '🎯');
+    }
+
+    function simSetRate(hz) {
+      [1, 2, 5, 10].forEach(r => {
+        const b = document.getElementById(`btn-rate-${r}`);
+        b.className = r === hz ?
+          'py-2 rounded-lg bg-lime-400 text-neutral-950 font-mono font-bold text-xs shadow-md' :
+          'py-2 rounded-lg bg-neutral-800 text-neutral-400 font-mono font-bold text-xs';
+      });
+      simToast(`Frequenza GPS impostata a ${hz} Hz`, '🛰️');
+    }
+
+    function toggleInspectMode() {
+      inspectMode = !inspectMode;
+      const btn = document.getElementById('btn-inspect-mode');
+      const device = document.getElementById('device-container');
+
+      if (inspectMode) {
+        btn.classList.add('bg-cyan-500', 'text-neutral-950', 'border-cyan-300');
+        btn.classList.remove('bg-neutral-800', 'text-neutral-300', 'border-neutral-700');
+        device.classList.add('inspect-active');
+        simToast('Modalità annotazione attiva: clicca su un elemento', '🔍');
+      } else {
+        btn.classList.remove('bg-cyan-500', 'text-neutral-950', 'border-cyan-300');
+        btn.classList.add('bg-neutral-800', 'text-neutral-300', 'border-neutral-700');
+        device.classList.remove('inspect-active');
+        clearInspectorSelection();
+      }
+    }
+
+    document.getElementById('device-container').addEventListener('click', function(e) {
+      if (!inspectMode) return;
+      e.stopPropagation();
+
+      const target = e.target.closest('[data-inspect-name]') || e.target;
+      const name = target.getAttribute('data-inspect-name') || target.tagName.toLowerCase();
+      
+      document.querySelectorAll('.inspect-highlight').forEach(el => el.classList.remove('inspect-highlight'));
+      target.classList.add('inspect-highlight');
+      selectedElement = target;
+
+      const box = document.getElementById('inspector-selection-box');
+      box.classList.remove('hidden');
+      document.getElementById('inspector-elem-title').innerText = name;
+      document.getElementById('inspect-input-note').value = '';
+      document.getElementById('inspect-input-note').focus();
+    });
+
+    function clearInspectorSelection() {
+      document.querySelectorAll('.inspect-highlight').forEach(el => el.classList.remove('inspect-highlight'));
+      document.getElementById('inspector-selection-box').classList.add('hidden');
+      selectedElement = null;
+    }
+
+    function addQuickSuggestion(text) {
+      const input = document.getElementById('inspect-input-note');
+      input.value = input.value ? `${input.value}; ${text}` : text;
+    }
+
+    function saveAnnotation() {
+      const noteText = document.getElementById('inspect-input-note').value.trim();
+      const elemTitle = document.getElementById('inspector-elem-title').innerText;
+      
+      if (!noteText) {
+        alert('Inserisci una breve nota o suggerimento.');
+        return;
+      }
+
+      annotations.push({
+        id: Date.now(),
+        element: elemTitle,
+        note: noteText,
+        screen: currentScreen,
+        time: new Date().toLocaleTimeString()
+      });
+
+      if (selectedElement) {
+        selectedElement.classList.add('inspect-annotated');
+      }
+
+      renderNotes();
+      clearInspectorSelection();
+      simToast('Nota aggiunta con successo!', '✓');
+    }
+
+    function addManualNote() {
+      const input = document.getElementById('manual-note-input');
+      const text = input.value.trim();
+      if (!text) return;
+
+      annotations.push({
+        id: Date.now(),
+        element: `Schermata ${currentScreen.toUpperCase()}`,
+        note: text,
+        screen: currentScreen,
+        time: new Date().toLocaleTimeString()
+      });
+
+      input.value = '';
+      renderNotes();
+      simToast('Nota aggiunta all\'elenco', '✓');
+    }
+
+    function deleteNote(id) {
+      annotations = annotations.filter(a => a.id !== id);
+      renderNotes();
+    }
+
+    function clearAllNotes() {
+      if (confirm('Svuotare tutte le note raccolte?')) {
+        annotations = [];
+        document.querySelectorAll('.inspect-annotated').forEach(el => el.classList.remove('inspect-annotated'));
+        renderNotes();
+      }
+    }
+
+    function renderNotes() {
+      const list = document.getElementById('notes-list');
+      const counter = document.getElementById('notes-counter');
+      const badge = document.getElementById('inspect-badge');
+
+      counter.innerText = `${annotations.length} note`;
+      badge.innerText = annotations.length;
+
+      if (annotations.length === 0) {
+        list.innerHTML = `
+          <div class="text-center text-neutral-500 py-8 px-2 space-y-2">
+            <span class="text-2xl">📝</span>
+            <p>Nessuna nota ancora inserita.</p>
+            <p class="text-[10px]">Clicca su un elemento a sinistra o aggiungi una nota per dirmi cosa migliorare.</p>
+          </div>`;
+        return;
+      }
+
+      list.innerHTML = annotations.map(a => `
+        <div class="bg-neutral-800/90 p-3 rounded-xl border border-neutral-700 space-y-1.5 relative group">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-cyan-300 text-[11px]">${a.element}</span>
+            <div class="flex items-center gap-1.5">
+              <span class="text-[9px] text-neutral-500 font-mono">${a.time}</span>
+              <button onclick="deleteNote(${a.id})" class="text-neutral-500 hover:text-red-400 px-1 font-bold">✕</button>
+            </div>
+          </div>
+          <p class="text-neutral-200 text-xs leading-relaxed">${a.note}</p>
+        </div>
+      `).join('');
+    }
+
+    function copyFeedbackForAgent() {
+      if (annotations.length === 0) {
+        alert('Aggiungi almeno una nota o suggerimento prima di copiare.');
+        return;
+      }
+
+      const report = [
+        '### Feedback & Richieste di Miglioramento UI Hardware Logger',
+        `Data: ${new Date().toLocaleString()}`,
+        `Viewport testato: ${currentViewport}`,
+        `Tema preferito: ${currentTheme}`,
+        '',
+        '#### Elenco interventi richiesti:',
+        ...annotations.map((a, i) => `${i + 1}. **${a.element}** (${a.screen}): ${a.note}`)
+      ].join('\n');
+
+      navigator.clipboard.writeText(report).then(() => {
+        const btnText = document.getElementById('copy-btn-text');
+        btnText.innerText = 'COPIATO NEGLI APPUNTI! ✓';
+        simToast('Feedback copiato negli appunti! Incollalo in chat.', '📋');
+        setTimeout(() => {
+          btnText.innerText = 'COPIA FEEDBACK PER L\'AGENTE';
+        }, 2500);
+      }).catch(err => {
+        prompt('Copia il seguente feedback:', report);
+      });
+    }
+
+    function simToast(msg, icon = 'ℹ️') {
+      const toast = document.getElementById('toast');
+      const toastText = document.getElementById('toast-text');
+      const toastIcon = document.getElementById('toast-icon');
+
+      toastText.innerText = msg;
+      toastIcon.innerText = icon;
+      toast.classList.remove('opacity-0', 'pointer-events-none');
+      toast.classList.add('opacity-100');
+
+      clearTimeout(window._toastTimeout);
+      window._toastTimeout = setTimeout(() => {
+        toast.classList.remove('opacity-100');
+        toast.classList.add('opacity-0', 'pointer-events-none');
+      }, 2200);
+    }
+  </script>
+</body>
+</html>

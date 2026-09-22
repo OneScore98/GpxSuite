@@ -8,7 +8,7 @@ import {
     setActiveTrackId,
     setActiveSegmentId
 } from './state.js';
-import { escapeXml, generateDistinctTrackColor } from './utils.js';
+import { escapeXml, filterGpxExportPoints, generateDistinctTrackColor } from './utils.js';
 
 const INITIAL_LOCATION_ZOOM = 16.5;
 const MOVEMENT_MIN_DISTANCE_M = 5;
@@ -1287,22 +1287,30 @@ function finalizeRecordingTrack(recording, recordedPoints, trackName) {
         if (Number.isFinite(point.tilt)) p.tilt = point.tilt;
         if (Number.isFinite(point.pitch)) p.pitch = point.pitch;
         if (Number.isFinite(point.vibrationLevel)) p.vibrationLevel = point.vibrationLevel;
+        if (Number.isFinite(point.accPeak)) p.accPeak = point.accPeak;
         return p;
     });
     track.segments = [segment];
     return track;
 }
 
-function updateLocationMarker(fix, moving, heading) {
+function updateLocationMarker(fix, moving, heading, options = {}) {
     purgeLegacyDomLocationMarkers();
-    ensureLocationMarkerLayers();
+    ensureLocationMarkerLayers(options);
     const source = mapLoaded && map ? map.getSource(LOCATION_SOURCE_ID) : null;
     if (!source) return;
     source.setData(buildLocationFeatureCollection(fix, moving, heading));
 }
 
-function ensureLocationMarkerLayers() {
-    if (!mapLoaded || !map || (typeof map.isStyleLoaded === 'function' && !map.isStyleLoaded())) return;
+function ensureLocationMarkerLayers(options = {}) {
+    if (!mapLoaded || !map) return;
+    // Durante il flusso GPS ordinario evitiamo di toccare uno stile che MapLibre
+    // sta ancora sostituendo. Il ripristino invocato da map.js avviene invece
+    // DOPO style.load: a quel punto addSource/addLayer sono sicuri, anche se
+    // isStyleLoaded() e' temporaneamente false perché le nuove sorgenti della
+    // basemap stanno ancora caricando metadata o tile.
+    if (!options.allowDuringStyleLoad &&
+            typeof map.isStyleLoaded === 'function' && !map.isStyleLoaded()) return;
 
     ensureHeadingIcon();
 
@@ -1623,10 +1631,9 @@ function resolveStatusHeading() {
 }
 
 function emitStatus(extra = {}) {
-    if (!_onStatusChange) return;
     const fix = buildStatusFix();
     const heading = resolveStatusHeading();
-    _onStatusChange({
+    const detail = {
         active: _watchId !== null,
         waiting: _waitingForFirstFix,
         moving: _isMoving,
@@ -1641,7 +1648,11 @@ function emitStatus(extra = {}) {
         orientationPermission: getOrientationPermissionStatus(),
         updatedAt: fix?.timestamp ?? null,
         ...extra
-    });
+    };
+    if (_onStatusChange) _onStatusChange(detail);
+    if (window.__GPXSUITE_ANDROID__ === true) {
+        window.dispatchEvent(new CustomEvent('gpxsuite-location-status', { detail }));
+    }
 }
 
 function getOrientationPermissionStatus() {
@@ -1651,11 +1662,31 @@ function getOrientationPermissionStatus() {
 }
 
 function emitRecordingStatus(extra = {}) {
-    if (!_onRecordingStatusChange) return;
-    _onRecordingStatusChange({
+    const detail = {
         ...buildRecordingStatus(),
         ...extra
-    });
+    };
+    if (_onRecordingStatusChange) _onRecordingStatusChange(detail);
+    if (window.__GPXSUITE_ANDROID__ === true) {
+        window.dispatchEvent(new CustomEvent('gpxsuite-recording-status', { detail }));
+    }
+}
+
+function recordingDistanceAndAscent(points) {
+    let distanceM = 0;
+    let ascentM = 0;
+    for (let index = 1; index < points.length; index++) {
+        const previous = points[index - 1];
+        const current = points[index];
+        distanceM += distanceMeters(previous, current);
+        const previousElevation = Number(previous?.ele);
+        const currentElevation = Number(current?.ele);
+        if (Number.isFinite(previousElevation) && Number.isFinite(currentElevation)) {
+            const gain = currentElevation - previousElevation;
+            if (gain >= 2 && gain <= 80) ascentM += gain;
+        }
+    }
+    return { distanceM, ascentM };
 }
 
 function buildRecordingStatus() {
@@ -1665,6 +1696,7 @@ function buildRecordingStatus() {
         _recording.totalPausedMs -
         (_recording.state === 'paused' && _recording.pausedAt ? Date.now() - _recording.pausedAt : 0)
     );
+    const metrics = recordingDistanceAndAscent(_recording.points);
     return {
         state: _recording.state,
         recording: _recording.state === 'recording',
@@ -1672,6 +1704,8 @@ function buildRecordingStatus() {
         pointsCount: _recording.points.length,
         skippedCount: _recording.skipped,
         elapsedMs,
+        distanceM: metrics.distanceM,
+        ascentM: metrics.ascentM,
         settings: getRecordingSettings()
     };
 }
@@ -1958,7 +1992,9 @@ export function resumePendingRecordingSnapshot() {
 export function restoreDeviceOverlays() {
     if (!mapLoaded || !map) return;
     if (_lastFix) {
-        updateLocationMarker(_lastFix, _isMoving, resolveStatusHeading());
+        updateLocationMarker(_lastFix, _isMoving, resolveStatusHeading(), {
+            allowDuringStyleLoad: true
+        });
     }
     if (_recording.state !== 'idle') {
         refreshRecordingTrackData(true);
@@ -2058,8 +2094,10 @@ function buildGpxForTrack(track) {
     parts.push(`    <name>${escapeXml(track.name || 'Registrazione')}</name>\n`);
     parts.push(`    <desc>${escapeXml(track.desc || '')}</desc>\n`);
     for (const segment of track.segments || []) {
+        const exportPoints = filterGpxExportPoints(segment.points || []);
+        if (exportPoints.length === 0) continue;
         parts.push(`    <trkseg>\n`);
-        for (const point of segment.points || []) {
+        for (const point of exportPoints) {
             parts.push(`      <trkpt lat="${point.lat.toFixed(6)}" lon="${point.lon.toFixed(6)}">\n`);
             if (Number.isFinite(point.ele) && Math.abs(point.ele) > 0.01) {
                 parts.push(`        <ele>${point.ele}</ele>\n`);
@@ -2067,11 +2105,13 @@ function buildGpxForTrack(track) {
             if (point.time) {
                 parts.push(`        <time>${new Date(point.time).toISOString()}</time>\n`);
             }
-            if (Number.isFinite(point.tilt) || Number.isFinite(point.pitch) || Number.isFinite(point.vibrationLevel)) {
+            if (Number.isFinite(point.tilt) || Number.isFinite(point.pitch) ||
+                Number.isFinite(point.vibrationLevel) || Number.isFinite(point.accPeak)) {
                 parts.push(`        <extensions>\n`);
                 if (Number.isFinite(point.tilt)) parts.push(`          <gpxsuite:tilt>${point.tilt}</gpxsuite:tilt>\n`);
                 if (Number.isFinite(point.pitch)) parts.push(`          <gpxsuite:pitch>${point.pitch}</gpxsuite:pitch>\n`);
                 if (Number.isFinite(point.vibrationLevel)) parts.push(`          <gpxsuite:vibration>${point.vibrationLevel}</gpxsuite:vibration>\n`);
+                if (Number.isFinite(point.accPeak)) parts.push(`          <gpxsuite:vibration_mps2>${point.accPeak}</gpxsuite:vibration_mps2>\n`);
                 parts.push(`        </extensions>\n`);
             }
             parts.push(`      </trkpt>\n`);

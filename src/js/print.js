@@ -9,7 +9,7 @@ import {
     printGrid, updatePrintGridProp
 } from './state.js';
 
-import { showToast, syncMobileBackdrop } from './ui.js';
+import { showToast, syncMobileBackdrop } from './ui.js?v=vibration-tooltip-units-20260715';
 
 let generazioneAnteprimaStampaInCorso = false;
 const PRINT_RENDER_LONG_EDGE = 2800;

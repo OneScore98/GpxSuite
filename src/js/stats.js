@@ -11,6 +11,7 @@
 
 import { chart, setChart, tracks, activeTrackId, map } from './state.js';
 import { loadScriptOnce, vibrationLevelColor } from './utils.js';
+import { computeSlopeProfile } from './slope.js?v=robust-slope3-20260720';
 
 const CHART_JS_URL = 'https://cdn.jsdelivr.net/npm/chart.js';
 let _chartLoadPromise = null;
@@ -322,7 +323,8 @@ function pointCardRows(detail) {
     return [
         { label: 'Alt', value: formatOptionalInt(detail.ele, ' m'), raw: detail.ele, field: 'ele' },
         { label: 'Vel', value: formatOptionalNumber(detail.speedKmh, 1, ' km/h'), raw: detail.speedKmh, field: 'speedKmh' },
-        { label: 'Pend', value: formatOptionalNumber(detail.slope, 1, '%'), raw: detail.slope, field: 'slope' },
+        { label: detail.slopeSource === 'imu' ? 'Pend. IMU*' : 'Pend', value: formatOptionalNumber(detail.slope, 1, '%'), raw: detail.slope, field: 'slope' },
+        { label: 'Pend. IMU', value: detail.slopeSource === 'imu' ? null : formatOptionalNumber(detail.pitchGrade, 1, '%'), raw: detail.pitchGrade, field: 'slope' },
         { label: 'HDOP', value: formatOptionalNumber(detail.hdop, 1, ''), raw: detail.hdop, field: 'hdop' },
         { label: 'Seq', value: formatOptionalInt(detail.seq, ''), raw: detail.seq, field: 'seq' },
         { label: 'Pitch', value: formatOptionalNumber(detail.pitch, 1, ' deg'), raw: detail.pitch, field: 'pitch' },
@@ -1075,6 +1077,11 @@ function createChart() {
             animation: false,           // animazioni disabilitate per dataset grandi
             parsing: false,             // Chart.js skip parsing — i dati arrivano già in formato {x,y}
             normalized: true,           // i dati sono ordinati: skip ulteriori ordinamenti interni
+            interaction: {
+                mode: 'nearest',
+                axis: 'x',
+                intersect: false
+            },
             onHover: (event, _elements, chartInstance) => {
                 if (!event?.native) return;
                 const rect = chartInstance.canvas.getBoundingClientRect();
@@ -1106,9 +1113,13 @@ function createChart() {
                     labels: { color: '#cbd5e1', boxWidth: 10, boxHeight: 2, font: { size: 10 } }
                 },
                 tooltip: {
+                    mode: 'nearest',
+                    axis: 'x',
+                    intersect: false,
                     callbacks: {
-                        title: items => formatChartTooltipTitle(items?.[0]?.parsed?.x),
-                        label: context => formatChartTooltipLabel(context.parsed?.y, context.dataset?.label)
+                        title: () => '',
+                        label: context => formatChartTooltipLabel(context.parsed?.y, context.dataset?.label, context.raw),
+                        afterBody: items => additionalChartTooltipLabels(items)
                     }
                 }
             },
@@ -1288,19 +1299,74 @@ function formatChartTooltipTitle(value) {
         : `Distanza: ${numeric.toFixed(2)} km`;
 }
 
-function formatChartTooltipLabel(value, datasetLabel = '') {
+function formatChartTooltipLabel(value, datasetLabel = '', rawPoint = null) {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return '';
-    if (datasetLabel === 'Rollio' || datasetLabel === 'Pitch') {
-        return `${datasetLabel}: ${numeric.toFixed(1)} deg`;
+    if (String(datasetLabel).startsWith('Pitch')) {
+        const grade = Math.abs(numeric) <= 45 ? Math.tan(numeric * Math.PI / 180) * 100 : NaN;
+        return Number.isFinite(grade)
+            ? `Pitch: ${numeric.toFixed(1)}° · ≈ ${grade.toFixed(1)}%`
+            : `Pitch: ${numeric.toFixed(1)}°`;
     }
-    if (datasetLabel === 'Vibrazioni') {
-        return `${datasetLabel}: ${Math.round(numeric)}`;
+    if (String(datasetLabel).startsWith('Rollio')) {
+        return `Rollio: ${numeric.toFixed(1)}°`;
+    }
+    if (String(datasetLabel).startsWith('Vibrazioni')) {
+        const acceleration = Number(rawPoint?.accPeak);
+        const physicalValue = Number.isFinite(acceleration) ? ` · ${acceleration.toFixed(1)} m/s²` : '';
+        return `Vibr: ${Math.round(numeric)}${physicalValue}`;
     }
     const metric = CHART_METRICS[_chartMetric] || CHART_METRICS.altitude;
     if (_chartMetric === 'altitude') return `${metric.label}: ${Math.round(numeric)} ${metric.unit}`;
-    if (_chartMetric === 'vibration') return `${metric.label}: ${Math.round(numeric)}`;
+    if (_chartMetric === 'vibration') {
+        const acceleration = Number(rawPoint?.accPeak);
+        const physicalValue = Number.isFinite(acceleration) ? ` · ${acceleration.toFixed(1)} m/s²` : '';
+        return `Vibr: ${Math.round(numeric)}${physicalValue}`;
+    }
+    if (_chartMetric === 'slope' && rawPoint?.slopeSource === 'imu') {
+        return `Pendenza IMU stimata: ${numeric.toFixed(1)}%`;
+    }
     return `${metric.label}: ${numeric.toFixed(1)} ${metric.unit}`;
+}
+
+// Trova il punto della serie esattamente sulla stessa coordinata X del punto
+// attivo. Non usa dataIndex: dataset con buchi o separatori hanno indici diversi.
+function findDatasetPointAtX(data, x) {
+    if (!Array.isArray(data) || !Number.isFinite(x)) return null;
+    const tolerance = Math.max(1e-7, Math.abs(x) * 1e-10);
+    let nearestPoint = null;
+    let nearestDistance = Infinity;
+    for (let i = 0; i < data.length; i++) {
+        const rawX = data[i]?.x;
+        const rawY = data[i]?.y;
+        if (rawX === null || rawX === undefined || rawY === null || rawY === undefined || rawY === '') continue;
+        const pointX = Number(rawX);
+        const pointY = Number(rawY);
+        if (!Number.isFinite(pointX) || !Number.isFinite(pointY)) continue;
+        const distance = Math.abs(pointX - x);
+        if (distance < nearestDistance) {
+            nearestDistance = distance;
+            nearestPoint = data[i];
+        }
+    }
+    return nearestDistance <= tolerance ? nearestPoint : null;
+}
+
+function additionalChartTooltipLabels(items) {
+    const anchor = items?.[0];
+    const x = Number(anchor?.parsed?.x);
+    const chartInstance = anchor?.chart;
+    if (!Number.isFinite(x) || !chartInstance?.data?.datasets) return [];
+
+    const activeDatasetIndex = anchor.datasetIndex;
+    const labels = [];
+    chartInstance.data.datasets.forEach((dataset, index) => {
+        if (index === activeDatasetIndex || dataset?.hidden === true) return;
+        const point = findDatasetPointAtX(dataset?.data, x);
+        if (!Number.isFinite(Number(point?.y))) return;
+        labels.push(formatChartTooltipLabel(point.y, dataset?.label || '', point));
+    });
+    return labels;
 }
 
 function readPointTimeMs(point) {
@@ -1354,7 +1420,8 @@ function buildPointDetail(trackId, segmentId, pointIndex) {
 
     let cumulativeDist = 0;
     let selectedLegDistance = 0;
-    let selectedSlope = null;
+    const slopeProfile = computeSlopeProfile(points);
+    let selectedSlope = Number.isFinite(slopeProfile.slopes[index]) ? slopeProfile.slopes[index] : null;
     let computedSpeed = null;
     let selectedTimeMs = readPointTimeMs(point);
 
@@ -1371,10 +1438,6 @@ function buildPointDetail(trackId, segmentId, pointIndex) {
 
                 if (currentSegment.id === segmentId && pi === index) {
                     selectedLegDistance = d;
-                    const distM = d * 1000;
-                    const deltaH = (Number(currentPoint.ele) || 0) - (Number(prevPoint.ele) || 0);
-                    if (distM > 15) selectedSlope = (deltaH / distM) * 100;
-
                     const currentTime = readPointTimeMs(currentPoint);
                     const prevTime = readPointTimeMs(prevPoint);
                     if (currentTime !== null && prevTime !== null && currentTime > prevTime) {
@@ -1402,10 +1465,14 @@ function buildPointDetail(trackId, segmentId, pointIndex) {
                     lat: point.lat,
                     lon: point.lon,
                     x,
-                    ele: Number(point.ele),
+                    ele: Number.isFinite(slopeProfile.elevations[index])
+                        ? slopeProfile.elevations[index]
+                        : Number(point.ele),
                     timeMs: selectedTimeMs,
                     speedKmh: Number.isFinite(pointSpeedKmh) ? pointSpeedKmh : null,
                     slope: selectedSlope,
+                    slopeSource: slopeProfile.slopeSources[index] === 2 ? 'imu' : 'altimetry',
+                    pitchGrade: Number.isFinite(slopeProfile.pitchGrades[index]) ? slopeProfile.pitchGrades[index] : null,
                     hdop: Number.isFinite(point.hdop) ? point.hdop : null,
                     seq: Number.isFinite(point.seq) ? point.seq : null,
                     pitch: Number.isFinite(point.pitch) ? point.pitch : null,
@@ -1627,7 +1694,7 @@ function updateChartAppearance(currentChart, overlayData = {}) {
         ds.yAxisID = def.yAxisID;
         ds.borderColor = def.color;
         ds.borderDash = def.dash;
-        ds.hidden = !_chartOverlays[def.key] || !(overlayData[def.key]?.length > 0);
+        ds.hidden = def.key === _chartMetric || !_chartOverlays[def.key] || !(overlayData[def.key]?.length > 0);
         ds.segment = def.key === 'vibration' ? {
             borderColor: context => chartVibrationColor(context.p1?.parsed?.y ?? context.p0?.parsed?.y)
         } : {};
@@ -1722,6 +1789,8 @@ function _doUpdateStats() {
     let totalDescent  = 0;
     let maxElevation  = -Infinity;
     let maxSlope      = 0;
+    let uphillSlopeDistanceM = 0;
+    let uphillSlopeGainM = 0;
     let maxSpeed      = 0;
     let timedDistance = 0;
     let timedHours    = 0;
@@ -1730,6 +1799,9 @@ function _doUpdateStats() {
     let maxVibration  = 0;
     let totalVibration = 0;
     let vibrationCount = 0;
+    let maxVibrationMps2 = 0;
+    let totalVibrationMps2 = 0;
+    let vibrationMps2Count = 0;
     let hasTiltData    = false;
     let hasVibrationData = false;
     const surfaceKm = { paved: 0, offroad: 0, unknown: 0 };
@@ -1807,6 +1879,7 @@ function _doUpdateStats() {
 
             const pts = seg.points;
             const n = pts.length;
+            const slopeProfile = computeSlopeProfile(pts);
             const segmentSurface = resolveSegmentSurface(track, seg);
             // Traccia l'indice iniziale in chartData per inserire il separatore
             const segChartStartIndex = chartData.length;
@@ -1814,13 +1887,16 @@ function _doUpdateStats() {
 
             for (let i = 0; i < n; i++) {
                 const pt = pts[i];
-                const ele = Number(pt.ele) || 0;
+                const ele = Number.isFinite(slopeProfile.elevations[i])
+                    ? slopeProfile.elevations[i]
+                    : (Number(pt.ele) || 0);
                 const timeMs = readPointTimeMs(pt);
                 let currentSpeed = null;
-                let currentSlope = null;
+                let currentSlope = Number.isFinite(slopeProfile.slopes[i]) ? slopeProfile.slopes[i] : null;
                 let currentTilt = null;
                 let currentPitch = null;
                 let currentVibration = null;
+                let currentVibrationMps2 = null;
 
                 if (prevPt !== null) {
                     const startDist = cumulativeDist;
@@ -1828,16 +1904,21 @@ function _doUpdateStats() {
                     totalDistance  += d;
                     cumulativeDist += d;
 
-                    const deltaH = ele - (Number(prevPt.ele) || 0);
+                    const previousElevation = Number.isFinite(slopeProfile.elevations[i - 1])
+                        ? slopeProfile.elevations[i - 1]
+                        : (Number(prevPt.ele) || 0);
+                    const deltaH = ele - previousElevation;
                     if (deltaH > 0) totalAscent  += deltaH;
                     else            totalDescent  += -deltaH;
 
-                    // Pendenza: ignora passi troppo corti (rumore GPS)
                     const distM = d * 1000;
-                    if (distM > 15) {
-                        currentSlope = (deltaH / distM) * 100;
+                    if (Number.isFinite(currentSlope)) {
                         const absSlope = Math.abs(currentSlope);
                         if (absSlope > maxSlope) maxSlope = absSlope;
+                        if (currentSlope > 0.5) {
+                            uphillSlopeDistanceM += distM;
+                            uphillSlopeGainM += (currentSlope / 100) * distM;
+                        }
                     }
 
                     if (timeMs !== null && prevTimeMs !== null) {
@@ -1888,6 +1969,13 @@ function _doUpdateStats() {
                     vibrationCount++;
                     if (pt.vibrationLevel > maxVibration) maxVibration = pt.vibrationLevel;
                     hasVibrationData = true;
+                }
+                if (Number.isFinite(pt.accPeak)) {
+                    const vibrationMps2 = Math.max(0, pt.accPeak);
+                    currentVibrationMps2 = vibrationMps2;
+                    totalVibrationMps2 += vibrationMps2;
+                    vibrationMps2Count++;
+                    if (vibrationMps2 > maxVibrationMps2) maxVibrationMps2 = vibrationMps2;
                 }
 
                 const pointX = useTimeAxis && timeMs !== null
@@ -1941,10 +2029,23 @@ function _doUpdateStats() {
                     };
                     _chartPointsGeo.push(meta);
                     _chartPointLookup.set(meta.key, meta);
-                    if (Number.isFinite(pointY)) chartData.push({ x: pointX, y: pointY });
+                    if (Number.isFinite(pointY)) {
+                        const chartPoint = { x: pointX, y: pointY };
+                        if (_chartMetric === 'vibration' && Number.isFinite(currentVibrationMps2)) {
+                            chartPoint.accPeak = currentVibrationMps2;
+                        }
+                        if (_chartMetric === 'slope' && slopeProfile.slopeSources[i] === 2) {
+                            chartPoint.slopeSource = 'imu';
+                        }
+                        chartData.push(chartPoint);
+                    }
                     if (Number.isFinite(currentTilt)) overlayData.tilt.push({ x: pointX, y: currentTilt });
                     if (Number.isFinite(currentPitch)) overlayData.pitch.push({ x: pointX, y: currentPitch });
-                    if (Number.isFinite(currentVibration)) overlayData.vibration.push({ x: pointX, y: currentVibration });
+                    if (Number.isFinite(currentVibration)) {
+                        const vibrationPoint = { x: pointX, y: currentVibration };
+                        if (Number.isFinite(currentVibrationMps2)) vibrationPoint.accPeak = currentVibrationMps2;
+                        overlayData.vibration.push(vibrationPoint);
+                    }
                 }
                 pointIndex++;
                 prevPt = pt;
@@ -1983,8 +2084,8 @@ function _doUpdateStats() {
     setText('stat-avg-speed', formatSpeed(avgSpeed));
     setText('stat-max-speed', formatSpeed(maxSpeed));
     setText('stat-segments-count', totalSegments);
-    setText('stat-avg-slope', totalDistance > 0
-        ? `${((totalAscent / (totalDistance * 1000)) * 100).toFixed(1)}%`
+    setText('stat-avg-slope', uphillSlopeDistanceM > 0
+        ? `${((uphillSlopeGainM / uphillSlopeDistanceM) * 100).toFixed(1)}%`
         : '0%');
     setText('stat-max-slope', `${maxSlope.toFixed(1)}%`);
     setText('stat-surface-summary', surfaceSummary);
@@ -1996,6 +2097,8 @@ function _doUpdateStats() {
     setText('stat-max-tilt', hasTiltData ? `${maxTilt.toFixed(1)}°` : '--');
     setText('stat-avg-vibration', hasVibrationData ? `${(totalVibration / vibrationCount).toFixed(1)}` : '--');
     setText('stat-max-vibration', hasVibrationData ? `${maxVibration}` : '--');
+    setText('stat-avg-vibration-mps2', vibrationMps2Count ? `${(totalVibrationMps2 / vibrationMps2Count).toFixed(1)}` : '--');
+    setText('stat-max-vibration-mps2', vibrationMps2Count ? `${maxVibrationMps2.toFixed(1)}` : '--');
 
     // ── Aggiorna il grafico selezionato ──────────────────────────────────────
     const applyChartData = (currentChart) => {

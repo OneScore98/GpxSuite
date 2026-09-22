@@ -36,11 +36,12 @@ import {
     isAddingWaypoint
 } from './state.js';
 
-import { renderGisTree, showToast, isGisTreeVisible, setSegmentActive, setTrackActive } from './ui.js';
-import { updateStatsAndProfile, haversineDistance, selectTrackPoint, clearSelectedTrackPoint } from './stats.js?v=logger-chart-focus-map-point-20260714';
+import { renderGisTree, showToast, isGisTreeVisible, setSegmentActive, setTrackActive } from './ui.js?v=vibration-tooltip-units-20260715';
+import { updateStatsAndProfile, haversineDistance, selectTrackPoint, clearSelectedTrackPoint } from './stats.js?v=robust-slope3-20260720';
 import { setupWaypointLayers, updateWaypointsOnMap, bindWaypointInteractions, refreshPinImages } from './waypoints.js';
 import { schedulePersistAppSession, schedulePersistTracks } from './storage.js';
 import { loadScriptOnce, loadStylesheetOnce, vibrationLevelColor } from './utils.js';
+import { computeSlopeProfile } from './slope.js?v=robust-slope3-20260720';
 
 // ─── RDP iterativo (no ricorsione, no stack overflow) ─────────────────────────
 function rdpIterative(points, tolerance) {
@@ -191,6 +192,21 @@ const MAPILLARY_JS_URL = 'https://unpkg.com/mapillary-js@4.1.2/dist/mapillary.js
 const MAPILLARY_CSS_URL = 'https://unpkg.com/mapillary-js@4.1.2/dist/mapillary.css';
 const BASE_MAP_STYLES = ['osm', 'sat', 'topo', 'acqua', 'outdoor'];
 
+function openMapTilesSource() {
+    if (window.__GPXSUITE_ANDROID__ === true) {
+        return {
+            type: 'vector',
+            // Il wrapper Android sceglie per ogni tile: prima i pacchetti locali,
+            // poi la rete. La UI non deve quindi attivare manualmente una mappa.
+            tiles: [`${location.origin}/__apk_tiles/{z}/{x}/{y}.pbf`],
+            minzoom: 0,
+            maxzoom: 14,
+            attribution: 'OpenFreeMap © OpenMapTiles Data from OpenStreetMap'
+        };
+    }
+    return { type: 'vector', url: 'https://tiles.openfreemap.org/planet' };
+}
+
 function normalizeBaseMapStyle(style) {
     return BASE_MAP_STYLES.includes(style) ? style : 'osm';
 }
@@ -207,10 +223,7 @@ function createHydroBaseMapStyle() {
                 tileSize: 256,
                 maxzoom: 6
             },
-            'openmaptiles': {
-                type: 'vector',
-                url: 'https://tiles.openfreemap.org/planet'
-            }
+            'openmaptiles': openMapTilesSource()
         },
         layers: [
             {
@@ -1610,21 +1623,25 @@ function buildColoredTrackGeoJSON(metric) {
             if (seg.visible === false) continue;
             const pts = seg.points;
             if (pts.length < 2) continue;
+            const slopeProfile = computeSlopeProfile(pts);
 
             let prevPt = null, prevTimeMs = null;
             for (let i = 0; i < pts.length; i++) {
                 const pt = pts[i];
-                const ele = Number(pt.ele) || 0;
+                const ele = Number.isFinite(slopeProfile.elevations[i])
+                    ? slopeProfile.elevations[i]
+                    : (Number(pt.ele) || 0);
                 const timeMs = _readPointTimeMs(pt);
 
                 if (prevPt !== null) {
                     let value = null;
                     const d = haversineDistance(prevPt.lon, prevPt.lat, pt.lon, pt.lat);
-                    const distM = d * 1000;
 
                     switch (metric) {
                         case 'altitude':
-                            value = (ele + (Number(prevPt.ele) || 0)) / 2;
+                            value = (ele + (Number.isFinite(slopeProfile.elevations[i - 1])
+                                ? slopeProfile.elevations[i - 1]
+                                : (Number(prevPt.ele) || 0))) / 2;
                             break;
                         case 'speed':
                             if (timeMs !== null && prevTimeMs !== null) {
@@ -1636,9 +1653,7 @@ function buildColoredTrackGeoJSON(metric) {
                             }
                             break;
                         case 'slope':
-                            if (distM > 15) {
-                                value = ((ele - (Number(prevPt.ele) || 0)) / distM) * 100;
-                            }
+                            if (Number.isFinite(slopeProfile.slopes[i])) value = slopeProfile.slopes[i];
                             break;
                         case 'tilt':
                             if (Number.isFinite(pt.tilt)) value = Math.abs(pt.tilt);
@@ -3352,6 +3367,11 @@ export function closeMapillaryViewer() {
 
 export function createBaseMapStyle(style, isHybrid) {
     const normalizedStyle = normalizeBaseMapStyle(style);
+    // Nell'APK la base MAPPA usa sempre la sorgente vettoriale instradata dal
+    // wrapper, così passa automaticamente da rete a pacchetti offline.
+    if (window.__GPXSUITE_ANDROID__ === true && normalizedStyle === 'osm') {
+        return createHydroBaseMapStyle();
+    }
     if (normalizedStyle === 'acqua') {
         return createHydroBaseMapStyle();
     }

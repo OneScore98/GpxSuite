@@ -777,6 +777,28 @@ body.auth-locked #print-drag-grid {
     color: #1f2937;
 }
 
+/* Scala metrica dinamica: leggibile allo zoom corrente senza coprire la mappa. */
+#map .maplibregl-ctrl-bottom-left .maplibregl-ctrl-scale {
+    min-width: 0;
+    height: 0.72rem;
+    margin: 0 0 calc(var(--safe-bottom) + 0.08rem) calc(var(--safe-left) + 0.45rem);
+    padding: 0 0.18rem;
+    border: 0 solid rgba(15, 23, 42, 0.68);
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-left-width: 1px;
+    border-radius: 0 0 2px 2px;
+    background: rgba(248, 250, 252, 0.58);
+    color: rgba(15, 23, 42, 0.78);
+    font-size: 0.5rem;
+    font-weight: 600;
+    line-height: 0.65rem;
+    text-align: center;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.72);
+    box-shadow: none;
+    pointer-events: none;
+}
+
 #panel-main-menu:not(.-translate-x-80) {
     transform: translateX(0) !important;
     transition-duration: 0s !important;

@@ -3,8 +3,17 @@
 const _resourcePromises = new Map();
 const LUCIDE_URL = 'https://unpkg.com/lucide@1.16.0/dist/umd/lucide.min.js';
 
+// Profilo prudente per l'export GPX: una tolleranza di 100 m assorbe il
+// normale rumore del fix, mentre 300 km/h evita di scartare percorsi registrati
+// su mezzi veloci. Dopo 60 s un punto puo' rappresentare una riacquisizione GPS.
+const GPX_EXPORT_BASE_TOLERANCE_M = 100;
+const GPX_EXPORT_MAX_SPEED_MPS = 300 / 3.6;
+const GPX_EXPORT_REACQUIRE_AFTER_MS = 60000;
+const GPX_EXPORT_GEOMETRIC_SPIKE_M = 5000;
+const GPX_EXPORT_GEOMETRIC_BRIDGE_M = 1000;
+
 export function escapeXml(unsafe) {
-    return unsafe.replace(/[<>&'"]/g, function(c) {
+    return String(unsafe ?? '').replace(/[<>&'"]/g, function(c) {
         switch (c) {
             case '<': return '&lt;';
             case '>': return '&gt;';
@@ -13,6 +22,111 @@ export function escapeXml(unsafe) {
             case '"': return '&quot;';
         }
     });
+}
+
+export function isGpxCoordinateValid(point) {
+    const lat = Number(point?.lat);
+    const lon = Number(point?.lon);
+    return Number.isFinite(lat) && Number.isFinite(lon) &&
+        lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
+}
+
+function gpxPointTimeMs(point) {
+    if (typeof point?.time === 'number') return Number.isFinite(point.time) ? point.time : NaN;
+    if (point?.time instanceof Date) return point.time.getTime();
+    const parsed = typeof point?.time === 'string' ? Date.parse(point.time) : NaN;
+    return Number.isFinite(parsed) ? parsed : NaN;
+}
+
+function gpxPointDistanceMeters(first, second) {
+    const toRad = Math.PI / 180;
+    const firstLat = Number(first.lat) * toRad;
+    const secondLat = Number(second.lat) * toRad;
+    const dLat = secondLat - firstLat;
+    const dLon = (Number(second.lon) - Number(first.lon)) * toRad;
+    const sinLat = Math.sin(dLat / 2);
+    const sinLon = Math.sin(dLon / 2);
+    const value = sinLat * sinLat + Math.cos(firstLat) * Math.cos(secondLat) * sinLon * sinLon;
+    return 6371008.8 * 2 * Math.asin(Math.sqrt(Math.min(1, value)));
+}
+
+// true/false quando i timestamp permettono il controllo; null se manca il tempo.
+function gpxTimedTransitionPlausible(first, second) {
+    const firstTime = gpxPointTimeMs(first);
+    const secondTime = gpxPointTimeMs(second);
+    if (!Number.isFinite(firstTime) || !Number.isFinite(secondTime)) return null;
+    const elapsedMs = secondTime - firstTime;
+    if (elapsedMs < 0) return false;
+    if (elapsedMs >= GPX_EXPORT_REACQUIRE_AFTER_MS) return true;
+    const allowedMeters = GPX_EXPORT_BASE_TOLERANCE_M +
+        GPX_EXPORT_MAX_SPEED_MPS * elapsedMs / 1000;
+    return gpxPointDistanceMeters(first, second) <= allowedMeters;
+}
+
+function gpxGeometricSpike(prev, curr, next) {
+    const before = gpxPointDistanceMeters(prev, curr);
+    const after = gpxPointDistanceMeters(curr, next);
+    const bridge = gpxPointDistanceMeters(prev, next);
+    return before > GPX_EXPORT_GEOMETRIC_SPIKE_M &&
+        after > GPX_EXPORT_GEOMETRIC_SPIKE_M &&
+        bridge <= Math.max(GPX_EXPORT_GEOMETRIC_BRIDGE_M, Math.min(before, after) * 0.1);
+}
+
+function gpxIsolatedSpike(prev, curr, next) {
+    const before = gpxTimedTransitionPlausible(prev, curr);
+    const after = gpxTimedTransitionPlausible(curr, next);
+    const bridge = gpxTimedTransitionPlausible(prev, next);
+    if (before !== null && after !== null && bridge !== null) {
+        return before === false && after === false && bridge === true;
+    }
+    return gpxGeometricSpike(prev, curr, next);
+}
+
+/**
+ * Restituisce i punti esportabili senza modificare la traccia in memoria.
+ * Scarta coordinate non finite/fuori WGS84, picchi GPS isolati e transizioni
+ * temporalmente impossibili. Senza timestamp applica solo il controllo
+ * geometrico molto conservativo, così non danneggia percorsi disegnati a mano.
+ */
+export function filterGpxExportPoints(points = []) {
+    const valid = Array.isArray(points) ? points.filter(isGpxCoordinateValid) : [];
+    if (valid.length < 2) return valid;
+
+    let start = 0;
+    let end = valid.length;
+    if (valid.length >= 3) {
+        const firstJump = gpxTimedTransitionPlausible(valid[0], valid[1]);
+        const followingStep = gpxTimedTransitionPlausible(valid[1], valid[2]);
+        if ((firstJump === false && followingStep === true) ||
+            (firstJump === null && followingStep === null &&
+                gpxPointDistanceMeters(valid[0], valid[1]) > GPX_EXPORT_GEOMETRIC_SPIKE_M &&
+                gpxPointDistanceMeters(valid[1], valid[2]) <= GPX_EXPORT_GEOMETRIC_BRIDGE_M)) {
+            start = 1;
+        }
+
+        const previousStep = gpxTimedTransitionPlausible(valid[valid.length - 3], valid[valid.length - 2]);
+        const lastJump = gpxTimedTransitionPlausible(valid[valid.length - 2], valid[valid.length - 1]);
+        if ((previousStep === true && lastJump === false) ||
+            (previousStep === null && lastJump === null &&
+                gpxPointDistanceMeters(valid[valid.length - 3], valid[valid.length - 2]) <= GPX_EXPORT_GEOMETRIC_BRIDGE_M &&
+                gpxPointDistanceMeters(valid[valid.length - 2], valid[valid.length - 1]) > GPX_EXPORT_GEOMETRIC_SPIKE_M)) {
+            end--;
+        }
+    }
+
+    const withoutSpikes = [];
+    for (let i = start; i < end; i++) {
+        if (i > start && i + 1 < end && gpxIsolatedSpike(valid[i - 1], valid[i], valid[i + 1])) continue;
+        withoutSpikes.push(valid[i]);
+    }
+
+    const filtered = [];
+    for (const point of withoutSpikes) {
+        const previous = filtered[filtered.length - 1];
+        const plausible = previous ? gpxTimedTransitionPlausible(previous, point) : true;
+        if (plausible !== false) filtered.push(point);
+    }
+    return filtered;
 }
 
 export function loadScriptOnce(url, options = {}) {

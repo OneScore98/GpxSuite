@@ -14,9 +14,9 @@ import {
     map
 } from './state.js';
 
-import { saveHistoryState } from './tracks.js';
-import { updateMapData, queryElevation } from './map.js';
-import { showToast, updateToolButtons, updateMapToolCursor } from './ui.js';
+import { saveHistoryState } from './tracks.js?v=vibration-tooltip-units-20260715';
+import { updateMapData, queryElevation } from './map.js?v=robust-slope3-20260720';
+import { showToast, updateToolButtons, updateMapToolCursor } from './ui.js?v=vibration-tooltip-units-20260715';
 import { trovaTipoWaypoint } from './waypointTypes.js';
 
 let _waypointInteractionsBound = false;
@@ -50,6 +50,18 @@ function disegnaPittogrammaWaypoint(ctx, tipo) {
     ctx.fillStyle = '#ffffff';
 
     switch (tipo.chiave) {
+        case 'sleep':
+            ctx.strokeRect(-8, 0, 16, 6);
+            ctx.beginPath();
+            ctx.moveTo(-8, -7);
+            ctx.lineTo(-8, 7);
+            ctx.moveTo(-7, -1);
+            ctx.lineTo(7, -1);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(-4, -4, 2.2, 0, Math.PI * 2);
+            ctx.fill();
+            break;
         case 'bivacco':
             ctx.beginPath();
             ctx.moveTo(-7, 5);
@@ -104,6 +116,42 @@ function disegnaPittogrammaWaypoint(ctx, tipo) {
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText('!', 0, 1);
+            break;
+        case 'divieto':
+            ctx.beginPath();
+            ctx.arc(0, 0, 8, 0, Math.PI * 2);
+            ctx.moveTo(-5.5, 5.5);
+            ctx.lineTo(5.5, -5.5);
+            ctx.stroke();
+            break;
+        case 'guado':
+            [-5, 0, 5].forEach(y => {
+                ctx.beginPath();
+                ctx.moveTo(-8, y);
+                ctx.bezierCurveTo(-4, y - 3, -1, y + 3, 3, y);
+                ctx.bezierCurveTo(5, y - 1.5, 7, y - 1.5, 9, y);
+                ctx.stroke();
+            });
+            break;
+        case 'ostacolo':
+            [[-4, 3, 4], [3, 3, 4], [0, -3, 4]].forEach(([x, y, r]) => {
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, Math.PI * 2);
+                ctx.stroke();
+            });
+            break;
+        case 'pendenza':
+            ctx.beginPath();
+            ctx.moveTo(-9, 7);
+            ctx.lineTo(8, 7);
+            ctx.lineTo(-1, -7);
+            ctx.closePath();
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(-5, 3);
+            ctx.lineTo(3, -3);
+            ctx.lineTo(3, 1);
+            ctx.stroke();
             break;
         default:
             ctx.beginPath();

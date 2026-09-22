@@ -23,7 +23,7 @@ import {
     generateDistinctTrackColor,
     refreshLucideIcons
 } from './utils.js';
-import { forceUpdateStats, haversineDistance } from './stats.js?v=logger-chart-focus-map-point-20260714';
+import { forceUpdateStats, haversineDistance } from './stats.js?v=robust-slope3-20260720';
 import { trackAnalyticsEvent } from './auth.js';
 import { trovaTipoWaypoint } from './waypointTypes.js';
 import {
@@ -120,6 +120,7 @@ const DEVICE_DASHBOARD_SENSOR_RENDER_MS = 250;
 // 60Hz ma per inclinometro e registrazione bastano 15 campioni/s, con un
 // quarto del lavoro CPU per la normalizzazione/smoothing.
 const DEVICE_DASHBOARD_ORIENTATION_SAMPLE_MS = 66;
+const DEVICE_DASHBOARD_MOTION_SAMPLE_MS = 66;
 const DEVICE_DASHBOARD_TILT_MAX_DEG = 35;
 const DEVICE_DASHBOARD_VIBRATION_MAX = 20;
 const DEVICE_DASHBOARD_ZERO_HOLD_MS = 620;
@@ -164,6 +165,7 @@ let _deviceLocationPermissionEnabled = readPersistedDeviceLocationEnabled();
 let _deviceDashboardSettings = readDeviceDashboardSettings();
 let _deviceDashboardSensorListeners = { orientation: false, motion: false };
 let _deviceDashboardSensorRenderTimer = null;
+let _deviceDashboardSensorRenderFrame = null;
 let _lastDeviceDashboardSensorRenderAt = 0;
 let _deviceDashboardTiltZero = readDeviceDashboardTiltZero();
 let _deviceDashboardTiltState = {
@@ -196,6 +198,7 @@ let _deviceDashboardMotionEnabled = readPersistedDashboardMotionEnabled();
 // gli eventi 'deviceorientation' duplicati (doppio lavoro a 60Hz su alcuni browser).
 let _dashboardSawAbsoluteOrientation = false;
 let _lastDashboardOrientationProcessedAt = 0;
+let _lastDashboardMotionProcessedAt = 0;
 // Ultimo stato registrazione noto: usato per attivare i sensori solo quando servono.
 let _lastRecordingSensorStatus = null;
 let _dashboardSensorVisibilityBound = false;
@@ -649,20 +652,18 @@ async function ensureDashboardTiltPermissionIfEnabled(fromGesture = false) {
 function scheduleDeviceDashboardSensorRender() {
     const now = Date.now();
     const elapsed = now - _lastDeviceDashboardSensorRenderAt;
-    if (elapsed >= DEVICE_DASHBOARD_SENSOR_RENDER_MS) {
-        _lastDeviceDashboardSensorRenderAt = now;
-        if (_deviceDashboardSensorRenderTimer) {
-            clearTimeout(_deviceDashboardSensorRenderTimer);
-            _deviceDashboardSensorRenderTimer = null;
-        }
-        renderDeviceDashboard();
-        return;
-    }
-    if (_deviceDashboardSensorRenderTimer) return;
+    if (_deviceDashboardSensorRenderTimer || _deviceDashboardSensorRenderFrame) return;
+    const renderOnNextFrame = () => {
+        _deviceDashboardSensorRenderFrame = requestAnimationFrame(() => {
+            _deviceDashboardSensorRenderFrame = null;
+            _lastDeviceDashboardSensorRenderAt = Date.now();
+            renderDeviceDashboard();
+        });
+    };
+    if (elapsed >= DEVICE_DASHBOARD_SENSOR_RENDER_MS) return renderOnNextFrame();
     _deviceDashboardSensorRenderTimer = setTimeout(() => {
         _deviceDashboardSensorRenderTimer = null;
-        _lastDeviceDashboardSensorRenderAt = Date.now();
-        renderDeviceDashboard();
+        renderOnNextFrame();
     }, DEVICE_DASHBOARD_SENSOR_RENDER_MS - elapsed);
 }
 
@@ -703,6 +704,9 @@ function handleDeviceDashboardOrientation(event) {
 }
 
 function handleDeviceDashboardMotion(event) {
+    const nowSample = Date.now();
+    if (nowSample - _lastDashboardMotionProcessedAt < DEVICE_DASHBOARD_MOTION_SAMPLE_MS) return;
+    _lastDashboardMotionProcessedAt = nowSample;
     const acceleration = event?.acceleration || event?.accelerationIncludingGravity;
     if (!acceleration) return;
 
@@ -5078,8 +5082,16 @@ export function setupEvents() {
         try {
             if (_savingLoggerSessionId) {
                 const sid = _savingLoggerSessionId;
-                _savingLoggerSessionId = null;
-                const track = tracks.find(t => t.deviceSessionId === sid);
+                let track = null;
+                try {
+                    track = window.finalizeDeviceSession ?
+                        await window.finalizeDeviceSession(sid, { silent: true }) :
+                        tracks.find(t => t.deviceSessionId === sid);
+                } catch (err) {
+                    console.warn("Finalizzazione logger non riuscita:", err);
+                    showToast("Sessione non ancora finalizzata: copia originale mantenuta sul logger", "error");
+                    return;
+                }
                 if (track) {
                     track.name = name;
                     track.deviceSyncedAt = Date.now();
@@ -5089,7 +5101,9 @@ export function setupEvents() {
                         const storedTrack = await loadStoredTrack(track.localFileId);
                         const verified = storedTrack &&
                             String(storedTrack.deviceSessionId || '') === String(sid) &&
-                            countTrackPoints(storedTrack) >= countTrackPoints(track);
+                            storedTrack.deviceSyncState === 'finalized' &&
+                            Number(storedTrack.deviceFinalizedRecords) >= 0 &&
+                            countTrackPoints(storedTrack) >= Number(storedTrack.deviceFinalizedRecords);
                         if (!verified) {
                             showToast("Salvataggio telefono non verificato: sessione tenuta sul logger", "error");
                             return;
@@ -5098,11 +5112,8 @@ export function setupEvents() {
                         if (_updateActiveTracksHeader) _updateActiveTracksHeader();
                         renderGisTree();
                         showToast("Registrazione salvata sul telefono", "success");
-                        if (window.deleteDeviceSession) {
-                            const deleted = await window.deleteDeviceSession(sid, { silent: true, refresh: false });
-                            if (deleted) showToast("Sessione eliminata dal logger (spazio liberato)", "success");
-                            else showToast("Sessione salvata: logger non raggiungibile per liberare spazio", "info");
-                        }
+                        showToast("Copia originale mantenuta sul logger", "info");
+                        _savingLoggerSessionId = null;
                         if (_schedulePersistTracks) _schedulePersistTracks(tracks);
                     } catch (err) {
                         console.warn("Salvataggio logger non verificato:", err);

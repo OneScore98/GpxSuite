@@ -16,10 +16,10 @@ import {
     map
 } from './state.js';
 
-import { updateMapData, updateBoxDeletePreview } from './map.js';
-import { queryElevation } from './map.js';
-import { showToast, updateActiveTracksHeader, createNewTrack, renderGisTree, updateGisTreeCounters, updateToolButtons, updateMapToolCursor } from './ui.js';
-import { haversineDistance } from './stats.js?v=logger-chart-focus-map-point-20260714';
+import { updateMapData, updateBoxDeletePreview } from './map.js?v=robust-slope3-20260720';
+import { queryElevation } from './map.js?v=robust-slope3-20260720';
+import { showToast, updateActiveTracksHeader, createNewTrack, renderGisTree, updateGisTreeCounters, updateToolButtons, updateMapToolCursor } from './ui.js?v=vibration-tooltip-units-20260715';
+import { haversineDistance } from './stats.js?v=robust-slope3-20260720';
 import { schedulePersistAppSession, schedulePersistTracks } from './storage.js';
 import { trackAnalyticsEvent } from './auth.js';
 
