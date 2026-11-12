@@ -30,9 +30,11 @@ import { trackAnalyticsEvent } from './auth.js';
 import { trovaTipoWaypoint } from './waypointTypes.js';
 import {
     appendTracksAtIngress,
+    assignTrackAtIngress,
     captureTrackIngressGisTabId,
     createGisTab as createGisTabDomain,
     getSelectedGisTabTracks,
+    inheritTrackGisTab,
     initializeGisTabs,
     isTrackEffectivelyVisible,
     rememberActiveTrackForSelectedGisTab,
@@ -2294,22 +2296,24 @@ function cloneSegmentForPaste(segment, suffix = ' copia') {
     };
 }
 
-function cloneTrackForPaste(track, suffix = ' copia') {
+function cloneTrackForPaste(track, suffix = ' copia', preserveIdentity = false) {
     const cloned = JSON.parse(JSON.stringify(track));
-    cloned.id = uid('track');
-    cloned.localFileId = uid('local');
-    cloned.localCreatedAt = Date.now();
     cloned.localUpdatedAt = Date.now();
-    cloned.localSource = 'created';
     cloned.name = `${track.name || 'Traccia'}${suffix}`;
-    cloned.segments = (cloned.segments || []).map(seg => ({
-        ...seg,
-        id: uid('seg')
-    }));
-    cloned.waypoints = (cloned.waypoints || []).map(wp => ({
-        ...wp,
-        id: uid('wp')
-    }));
+    if (!preserveIdentity) {
+        cloned.id = uid('track');
+        cloned.localFileId = uid('local');
+        cloned.localCreatedAt = Date.now();
+        cloned.localSource = 'created';
+        cloned.segments = (cloned.segments || []).map(seg => ({
+            ...seg,
+            id: uid('seg')
+        }));
+        cloned.waypoints = (cloned.waypoints || []).map(wp => ({
+            ...wp,
+            id: uid('wp')
+        }));
+    }
     return cloned;
 }
 
@@ -2334,6 +2338,7 @@ function refreshAfterTreeClipboardMutation(message) {
     updateActiveTracksHeader();
     renderGisTree();
     renderLocalGpxLibrary();
+    schedulePersistTracks(tracks);
     schedulePersistAppSession();
     if (message) showToast(message, 'success');
 }
@@ -2375,11 +2380,16 @@ function pasteTreeClipboard(target = {}) {
     }
 
     const pastedKeys = [];
-    const trackTargetIndex = target.trackId ? tracks.findIndex(track => track.id === target.trackId) : -1;
+    const destinationGisTabId = captureTrackIngressGisTabId();
+    const trackTargetIndex = target.trackId
+        ? tracks.findIndex(track => track.id === target.trackId && track.gisTabId === destinationGisTabId)
+        : -1;
     let insertTrackIndex = trackTargetIndex === -1 ? tracks.length : trackTargetIndex + 1;
 
     (_treeClipboard.tracks || []).forEach(trackData => {
-        const cloned = cloneTrackForPaste(trackData, _treeClipboard.mode === 'cut' ? '' : ' copia');
+        const isCut = _treeClipboard.mode === 'cut';
+        const cloned = cloneTrackForPaste(trackData, isCut ? '' : ' copia', isCut);
+        assignTrackAtIngress(cloned, { destinationGisTabId });
         tracks.splice(insertTrackIndex, 0, cloned);
         insertTrackIndex++;
         pastedKeys.push(makeTreeKey('track', cloned.id));
@@ -2389,9 +2399,10 @@ function pasteTreeClipboard(target = {}) {
     });
 
     if ((_treeClipboard.segments || []).length > 0) {
-        const targetTrack = tracks.find(track => track.id === target.trackId)
-            || tracks.find(track => track.id === activeTrackId)
-            || tracks[0];
+        const destinationTracks = getSelectedGisTabTracks(tracks);
+        const targetTrack = destinationTracks.find(track => track.id === target.trackId)
+            || destinationTracks.find(track => track.id === activeTrackId)
+            || destinationTracks[0];
         if (!targetTrack) return;
 
         let insertSegmentIndex = target.segId
@@ -3510,9 +3521,12 @@ function createOffroadTrack(sourceTrack, extractedRanges, nameBase, summary) {
         waypoints: []
     };
 
+    const destinationGisTabId = inheritTrackGisTab(newTrack, sourceTrack);
     tracks.push(newTrack);
-    setActiveTrackId(newTrack.id);
-    setActiveSegmentId(newTrack.segments[0]?.id || null);
+    if (destinationGisTabId === captureTrackIngressGisTabId()) {
+        setActiveTrackId(newTrack.id);
+        setActiveSegmentId(newTrack.segments[0]?.id || null);
+    }
     return newTrack;
 }
 

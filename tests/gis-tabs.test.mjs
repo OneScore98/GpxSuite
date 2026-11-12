@@ -11,6 +11,7 @@ import {
     getGisTabsState,
     getSelectedGisTabTracks,
     getTracksForGisTab,
+    inheritTrackGisTab,
     initializeGisTabs,
     isSegmentEffectivelyVisible,
     isTrackEffectivelyVisible,
@@ -139,6 +140,66 @@ test('assegna la proprietà attraverso il modulo e usa Principale per destinazio
     assert.equal(assignTrackToGisTab(recoveredTrack, 'gis-tab-missing'), PRIMARY_GIS_TAB_ID);
     assert.equal(selectedTrack.gisTabId, 'gis-tab-alpi');
     assert.equal(recoveredTrack.gisTabId, PRIMARY_GIS_TAB_ID);
+});
+
+test('la destinazione catturata all\'avvio di un flusso live resta stabile dopo il cambio scheda', () => {
+    initializeGisTabs([], {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true },
+            { id: 'gis-tab-live', name: 'Live', visible: true }
+        ],
+        selectedGisTabId: 'gis-tab-live'
+    });
+
+    const destinationId = captureTrackIngressGisTabId();
+    selectGisTab(PRIMARY_GIS_TAB_ID, []);
+    const liveTrack = track('track-live');
+
+    assignTrackToGisTab(liveTrack, destinationId);
+
+    assert.equal(liveTrack.gisTabId, 'gis-tab-live');
+});
+
+test('una traccia derivata eredita il proprietario della sorgente e recupera gli orfani in Principale', () => {
+    initializeGisTabs([], {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true },
+            { id: 'gis-tab-sorgente', name: 'Sorgente', visible: true }
+        ],
+        selectedGisTabId: PRIMARY_GIS_TAB_ID
+    });
+    const derivedTrack = track('track-derived');
+    const recoveredTrack = track('track-recovered');
+
+    inheritTrackGisTab(derivedTrack, track('track-source', 'gis-tab-sorgente'));
+    inheritTrackGisTab(recoveredTrack, track('track-orphan', 'gis-tab-missing'));
+
+    assert.equal(derivedTrack.gisTabId, 'gis-tab-sorgente');
+    assert.equal(recoveredTrack.gisTabId, PRIMARY_GIS_TAB_ID);
+});
+
+test('l\'incolla usa la scheda di destinazione catturata e sovrascrive il proprietario copiato', () => {
+    initializeGisTabs([], {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true },
+            { id: 'gis-tab-a', name: 'A', visible: true },
+            { id: 'gis-tab-b', name: 'B', visible: true }
+        ],
+        selectedGisTabId: 'gis-tab-a'
+    });
+    const copiedTrack = track('track-copy', 'gis-tab-a');
+
+    selectGisTab('gis-tab-b', []);
+    const pasteDestinationId = captureTrackIngressGisTabId();
+    const pastedTrack = JSON.parse(JSON.stringify(copiedTrack));
+    pastedTrack.id = 'track-pasted';
+    assignTrackToGisTab(pastedTrack, pasteDestinationId);
+
+    assert.equal(pastedTrack.gisTabId, 'gis-tab-b');
+    assert.equal(copiedTrack.gisTabId, 'gis-tab-a');
 });
 
 test('crea in coda una scheda vuota con il primo nome disponibile e la seleziona', () => {

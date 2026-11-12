@@ -124,6 +124,10 @@ export function assignTrackToGisTab(track, requestedGisTabId = selectedGisTabId)
     return destinationId;
 }
 
+export function inheritTrackGisTab(track, sourceTrack) {
+    return assignTrackToGisTab(track, sourceTrack?.gisTabId);
+}
+
 export function captureTrackIngressGisTabId() {
     return gisTabs.some(tab => tab.id === selectedGisTabId)
         ? selectedGisTabId

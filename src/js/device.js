@@ -11,6 +11,7 @@
 // Dipendenze iniettate da main.js (initDeviceModule): nessun import circolare.
 
 import { tracks, setActiveTrackId, setActiveSegmentId } from './state.js';
+import { assignTrackToGisTab, captureTrackIngressGisTabId } from './gis-tabs.js';
 import { ensureLucideIcons } from './utils.js';
 import { listStoredTracks, loadStoredTrack, persistTrackNow } from './storage.js';
 
@@ -38,6 +39,8 @@ let _status = null;             // ultimo /status
 let _settings = null;           // ultimo /settings
 let _sessions = null;           // ultima lista /sessions
 let _sessionId = null;          // sessione REC corrente
+let _pendingSessionGisTabId = null;
+const _sessionGisTabIds = new Map();
 let _lastSeq = 0;
 let _ws = null;
 let _pollTimer = null;
@@ -75,6 +78,14 @@ function esc(value) {
 }
 
 function notify(msg, kind = 'info') { _deps.showToast?.(msg, kind); }
+
+function captureLoggerSessionGisTab(sessionId, requestedGisTabId = null) {
+    const sid = String(sessionId || '').trim();
+    const destinationId = requestedGisTabId || _pendingSessionGisTabId || captureTrackIngressGisTabId();
+    if (sid && !_sessionGisTabIds.has(sid)) _sessionGisTabIds.set(sid, destinationId);
+    if (sid) _pendingSessionGisTabId = null;
+    return sid ? _sessionGisTabIds.get(sid) : destinationId;
+}
 
 function syncDashboardVisualSettings() {
     _deps.setDeviceDashboardVisualSettings?.(_settings?.visual || null);
@@ -478,6 +489,7 @@ export async function connectDevice(rawUrl, options = {}) {
     _pollFailures = 0;
     _lastSeq = 0;
     _sessionId = null;
+    _pendingSessionGisTabId = null;
     _syncStats = createEmptySyncStats();
     try {
         if (_baseUrl !== SAME_ORIGIN_DEVICE_URL) localStorage.setItem(DEVICE_URL_KEY, _baseUrl);
@@ -517,6 +529,7 @@ export function disconnectDevice(options = {}) {
     syncDashboardVisualSettings();
     _sessions = null;
     _sessionId = null;
+    _pendingSessionGisTabId = null;
     clearTimeout(_autoSyncTimer); _autoSyncTimer = null;
     clearTimeout(_livePersistTimer); _livePersistTimer = null;
     _autoSyncing = false;
@@ -604,6 +617,7 @@ function applyStatus(status) {
     if (status.rec && status.session) {
         if (status.session !== _sessionId) {
             _sessionId = status.session;
+            captureLoggerSessionGisTab(status.session);
             _lastSeq = getKnownDeviceSessionSeq(status.session);
             syncBacklog();
         }
@@ -714,6 +728,7 @@ function openWebSocket() {
         } else if (msg.ev === 'rec_started') {
             notify(`Registrazione avviata sul dispositivo (${msg.source === 'button' ? 'pulsante' : 'app'})`, 'success');
             _sessionId = msg.session || null;
+            captureLoggerSessionGisTab(_sessionId);
             _lastSeq = getKnownDeviceSessionSeq(_sessionId);
             fetchStatus().then(applyStatus).catch(() => { });
             scheduleAutoSync('rec_started');
@@ -914,6 +929,7 @@ function ensureSessionTrack() {
     const sid = _sessionId || (_status && _status.session) || 'SESS';
     let track = tracks.find(t => t.deviceSessionId === sid);
     if (track) {
+        assignTrackToGisTab(track, track.gisTabId || captureLoggerSessionGisTab(sid));
         _lastSeq = Math.max(_lastSeq, getTrackDeviceSeq(track));
         return track;
     }
@@ -943,9 +959,12 @@ function ensureSessionTrack() {
         }],
         waypoints: []
     };
+    const destinationGisTabId = assignTrackToGisTab(track, captureLoggerSessionGisTab(sid));
     tracks.push(track);
-    setActiveTrackId(track.id);
-    setActiveSegmentId(track.segments[0].id);
+    if (destinationGisTabId === captureTrackIngressGisTabId()) {
+        setActiveTrackId(track.id);
+        setActiveSegmentId(track.segments[0].id);
+    }
     _deps.renderGisTree?.();
     _deps.updateActiveTracksHeader?.();
     return track;
@@ -1094,6 +1113,8 @@ function isTrackCompleteForSession(track, expectedPoints = 0) {
 
 async function downloadDeviceSessionToPhone(item, targetTrack = null) {
     const sessionId = String(item.id);
+    const destinationGisTabId = targetTrack?.gisTabId ||
+        captureLoggerSessionGisTab(sessionId);
     const expectedPoints = sessionRecordCount(item);
     const res = await fetchWithTimeout('/download?id=' + encodeURIComponent(sessionId), {}, 30000);
     if (!res.ok) throw new Error('download ' + res.status);
@@ -1108,11 +1129,13 @@ async function downloadDeviceSessionToPhone(item, targetTrack = null) {
         deviceSessionId: sessionId,
         deviceLastSeq: expectedPoints,
         targetTrackId: targetTrack?.id || null,
+        destinationGisTabId,
         trackName: targetTrack?.name || ('Logger ' + sessionId),
         color: targetTrack?.color || LOGGER_TRACK_COLOR,
         width: targetTrack?.width || 4
     });
     if (!track) throw new Error('import failed');
+    assignTrackToGisTab(track, destinationGisTabId);
     track.localSource = 'device';
     track.deviceSessionId = sessionId;
     track.deviceLastSeq = Math.max(getTrackDeviceSeq(track), expectedPoints);
@@ -1342,8 +1365,12 @@ export function toggleDeviceRecording() {
     else startLoggerRecording();
 }
 
-export function startLoggerRecording() {
-    return sendCommand('START', 'Registrazione avviata sul dispositivo');
+export async function startLoggerRecording() {
+    _pendingSessionGisTabId = captureTrackIngressGisTabId();
+    const result = await sendCommand('START', 'Registrazione avviata sul dispositivo');
+    if (_sessionId) captureLoggerSessionGisTab(_sessionId);
+    else if (!result) _pendingSessionGisTabId = null;
+    return result;
 }
 
 export function pauseLoggerRecording() {
