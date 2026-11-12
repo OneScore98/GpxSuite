@@ -5,9 +5,13 @@ import {
     GIS_TABS_SESSION_VERSION,
     PRIMARY_GIS_TAB_ID,
     assignTrackToGisTab,
+    createGisTab,
     getGisTabsState,
+    getSelectedGisTabTracks,
     getTracksForGisTab,
     initializeGisTabs,
+    rememberActiveTrackForSelectedGisTab,
+    selectGisTab,
     serializeGisTabsState
 } from '../src/js/gis-tabs.js';
 
@@ -129,4 +133,69 @@ test('assegna la proprietà attraverso il modulo e usa Principale per destinazio
     assert.equal(assignTrackToGisTab(recoveredTrack, 'gis-tab-missing'), PRIMARY_GIS_TAB_ID);
     assert.equal(selectedTrack.gisTabId, 'gis-tab-alpi');
     assert.equal(recoveredTrack.gisTabId, PRIMARY_GIS_TAB_ID);
+});
+
+test('crea in coda una scheda vuota con il primo nome disponibile e la seleziona', () => {
+    initializeGisTabs([], {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true },
+            { id: 'gis-tab-uno', name: 'Scheda 1', visible: true },
+            { id: 'gis-tab-tre', name: 'Scheda 3', visible: true }
+        ],
+        selectedGisTabId: PRIMARY_GIS_TAB_ID
+    });
+
+    const created = createGisTab();
+    const state = getGisTabsState();
+
+    assert.equal(created.name, 'Scheda 2');
+    assert.equal(created.activeTrackId, null);
+    assert.equal(state.gisTabs.at(-1).id, created.id);
+    assert.equal(state.selectedGisTabId, created.id);
+});
+
+test('seleziona la scheda con fallback alla prima traccia e ricorda l\'ultima attiva', () => {
+    const tracks = [
+        track('main-1', PRIMARY_GIS_TAB_ID),
+        track('main-2', PRIMARY_GIS_TAB_ID),
+        track('alpi-1', 'gis-tab-alpi')
+    ];
+    initializeGisTabs(tracks, {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true, activeTrackId: 'main-1' },
+            { id: 'gis-tab-alpi', name: 'Alpi', visible: true, activeTrackId: null }
+        ],
+        selectedGisTabId: PRIMARY_GIS_TAB_ID
+    });
+
+    rememberActiveTrackForSelectedGisTab('main-2', tracks);
+    assert.equal(selectGisTab('gis-tab-alpi', tracks), 'alpi-1');
+    assert.equal(selectGisTab(PRIMARY_GIS_TAB_ID, tracks), 'main-2');
+    const persisted = serializeGisTabsState();
+    assert.equal(persisted.selectedGisTabId, PRIMARY_GIS_TAB_ID);
+    assert.equal(persisted.gisTabs.find(tab => tab.id === PRIMARY_GIS_TAB_ID).activeTrackId, 'main-2');
+    assert.equal(persisted.gisTabs.find(tab => tab.id === 'gis-tab-alpi').activeTrackId, 'alpi-1');
+});
+
+test('una scheda vuota non mantiene tracce esterne e la selezione non cambia la visibilità', () => {
+    const tracks = [
+        { ...track('main-visible', PRIMARY_GIS_TAB_ID), visible: true },
+        { ...track('main-hidden', PRIMARY_GIS_TAB_ID), visible: false }
+    ];
+    initializeGisTabs(tracks, {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true, activeTrackId: 'main-visible' },
+            { id: 'gis-tab-vuota', name: 'Vuota', visible: true, activeTrackId: 'main-hidden' }
+        ],
+        selectedGisTabId: PRIMARY_GIS_TAB_ID
+    });
+    const visibilityBefore = tracks.map(item => item.visible);
+
+    assert.equal(selectGisTab('gis-tab-vuota', tracks), null);
+    assert.deepEqual(getSelectedGisTabTracks(tracks), []);
+    assert.deepEqual(tracks.map(item => item.visible), visibilityBefore);
+    assert.equal(getGisTabsState().gisTabs.find(tab => tab.id === 'gis-tab-vuota').activeTrackId, null);
 });

@@ -5,6 +5,8 @@ import {
     tracks, setTracks,
     activeTrackId, setActiveTrackId,
     activeSegmentId, setActiveSegmentId,
+    gisTabs,
+    selectedGisTabId,
     undoStack,
     isDrawing, setIsDrawing,
     isCutting, setIsCutting,
@@ -26,7 +28,14 @@ import {
 import { forceUpdateStats, haversineDistance } from './stats.js?v=robust-slope3-20260720';
 import { trackAnalyticsEvent } from './auth.js';
 import { trovaTipoWaypoint } from './waypointTypes.js';
-import { assignTrackToGisTab, initializeGisTabs } from './gis-tabs.js';
+import {
+    assignTrackToGisTab,
+    createGisTab as createGisTabDomain,
+    getSelectedGisTabTracks,
+    initializeGisTabs,
+    rememberActiveTrackForSelectedGisTab,
+    selectGisTab as selectGisTabDomain
+} from './gis-tabs.js';
 import {
     listStoredTracks,
     loadStoredTrack,
@@ -1992,6 +2001,61 @@ export function setupPrintUiEvents() {
     };
 }
 
+function applySelectedGisTabContext(gisTabId, options = {}) {
+    if (!gisTabs.some(tab => tab.id === gisTabId)) return null;
+    const previousGisTabId = selectedGisTabId;
+    const nextActiveTrackId = selectGisTabDomain(gisTabId, tracks);
+    if (previousGisTabId === gisTabId && options.force !== true) return nextActiveTrackId;
+
+    const activeTrack = getSelectedGisTabTracks(tracks)
+        .find(track => track.id === nextActiveTrackId) || null;
+    setActiveTrackId(activeTrack?.id || null);
+    const activeSegment = activeTrack?.segments.find(segment => segment.id === activeSegmentId)
+        || activeTrack?.segments[0]
+        || null;
+    setActiveSegmentId(activeSegment?.id || null);
+    if (activeTrack) setTrackExpanded(activeTrack.id, true);
+    setTreeSelection([]);
+
+    renderGisTabsBar();
+    updateActiveTracksHeader();
+    renderGisTree();
+    if (_updateMapData) _updateMapData();
+    schedulePersistAppSession();
+    return nextActiveTrackId;
+}
+
+export function createNewGisTab() {
+    const createdTab = createGisTabDomain();
+    applySelectedGisTabContext(createdTab.id, { force: true });
+    return createdTab;
+}
+
+export function selectGisTabById(gisTabId) {
+    return applySelectedGisTabContext(gisTabId);
+}
+
+function renderGisTabsBar() {
+    const list = document.getElementById('gis-tabs-list');
+    if (!list) return;
+
+    list.innerHTML = gisTabs.map(tab => {
+        const isSelected = tab.id === selectedGisTabId;
+        return `
+          <button type="button"
+                  class="gis-tab-chip ${isSelected ? 'is-selected' : ''}"
+                  data-gis-tab-id="${escapeXml(tab.id)}"
+                  aria-pressed="${isSelected ? 'true' : 'false'}"
+                  title="Apri ${escapeXml(tab.name)}">
+            ${escapeXml(tab.name)}
+          </button>`;
+    }).join('');
+
+    list.querySelectorAll('[data-gis-tab-id]').forEach(button => {
+        button.addEventListener('click', () => selectGisTabById(button.dataset.gisTabId));
+    });
+}
+
 export function createNewTrack(name) {
     const trackName = name || `Traccia ${tracks.length + 1}`;
     const color = generateDistinctTrackColor(tracks.map(track => track.color));
@@ -2019,10 +2083,12 @@ export function createNewTrack(name) {
     tracks.push(newTrack);
     setActiveTrackId(newTrack.id);
     setActiveSegmentId(newTrack.segments[0].id);
+    rememberActiveTrackForSelectedGisTab(newTrack.id, tracks);
 
     if (_saveHistoryState) _saveHistoryState();
     updateActiveTracksHeader();
     renderGisTree();
+    schedulePersistAppSession();
     showToast(`Creata: ${trackName}`, 'info');
     return newTrack;
 }
@@ -2101,7 +2167,7 @@ function parseTreeKey(key) {
 
 function getTreeItemOrder() {
     const order = [];
-    tracks.forEach(track => {
+    getSelectedGisTabTracks(tracks).forEach(track => {
         order.push(makeTreeKey('track', track.id));
         track.segments.forEach(seg => order.push(makeTreeKey('segment', track.id, seg.id)));
     });
@@ -2251,7 +2317,8 @@ function removeSelectionForCut() {
     }
 
     if (!tracks.some(track => track.id === activeTrackId)) {
-        const nextTrack = tracks[0] || null;
+        const nextTrackId = selectGisTabDomain(selectedGisTabId, tracks);
+        const nextTrack = tracks.find(track => track.id === nextTrackId) || null;
         setActiveTrackId(nextTrack?.id || null);
         setActiveSegmentId(nextTrack?.segments[0]?.id || null);
         if (nextTrack) setTrackExpanded(nextTrack.id, true);
@@ -3774,9 +3841,8 @@ export async function restoreStoredTracksOnStartup() {
     initializeGisTabs(restoredTracks, session);
     setTracks(restoredTracks);
     schedulePersistTracks(restoredTracks);
-    const activeTrack = restoredTracks.find(track => track.id === session?.activeTrackId)
-        || restoredTracks.find(track => track.visible !== false)
-        || restoredTracks[0];
+    const selectedActiveTrackId = selectGisTabDomain(selectedGisTabId, restoredTracks);
+    const activeTrack = restoredTracks.find(track => track.id === selectedActiveTrackId) || null;
     setActiveTrackId(activeTrack?.id || null);
 
     const activeSegment = activeTrack?.segments.find(segment => segment.id === session?.activeSegmentId)
@@ -4058,26 +4124,28 @@ export function flushGisTreeIfDirty() {
 function _doRenderGisTree() {
     _gisTreeDirty = false;
     const container = document.getElementById('gis-file-tree');
+    renderGisTabsBar();
     normalizeTreeSelection();
     pruneCollapsedActiveTracks();
+    const selectedTracks = getSelectedGisTabTracks(tracks);
     const offroadJobsHtml = renderOffroadJobsHtml();
-    if (tracks.length === 0 && !offroadJobsHtml) {
+    if (selectedTracks.length === 0 && !offroadJobsHtml) {
         container.innerHTML = `
           <div class="text-center py-6 text-gray-500 text-xs italic">
-            Nessuna traccia o waypoint caricati in memoria.
+            Nessuna traccia in questa Scheda GIS.<br>Creane una o importa un GPX.
           </div>`;
         return;
     }
 
     let html = offroadJobsHtml;
 
-    if (tracks.length > 0) {
+    if (selectedTracks.length > 0) {
         html += `<div class="space-y-2">
           <span class="text-[10px] text-gray-400 font-bold uppercase tracking-wider flex items-center gap-1">
-            <i data-lucide="folder-tree" class="w-3.5 h-3.5"></i> File GPX in mappa (${tracks.length})
+            <i data-lucide="folder-tree" class="w-3.5 h-3.5"></i> File GPX nella scheda (${selectedTracks.length})
           </span>`;
 
-        tracks.forEach((track, trackIndex) => {
+        selectedTracks.forEach((track, trackIndex) => {
             const isActive = track.id === activeTrackId;
             const isSelected = selectionHas(makeTreeKey('track', track.id));
             const isExpanded = isTrackExpanded(track.id, isActive);
@@ -4086,7 +4154,7 @@ function _doRenderGisTree() {
             const segmentCount = track.segments.length;
             const pointCount = track.segments.reduce((sum, seg) => sum + seg.points.length, 0);
             const isFirst = trackIndex === 0;
-            const isLast = trackIndex === tracks.length - 1;
+            const isLast = trackIndex === selectedTracks.length - 1;
 
             // Paginazione righe: mostra al massimo N segmenti/waypoint per volta.
             // Il limite viene esteso automaticamente per includere il segmento attivo.
@@ -4356,10 +4424,11 @@ export function handleGisDrop(event, targetType, targetTrackId, targetSegId = nu
 
 export function setTrackActive(trackId, shouldFocus = false) {
     const track = tracks.find(tr => tr.id === trackId);
-    if (!track) return;
+    if (!track || track.gisTabId !== selectedGisTabId) return;
 
     const wasActive = activeTrackId === trackId;
     setActiveTrackId(trackId);
+    rememberActiveTrackForSelectedGisTab(trackId, tracks);
     if (!wasActive) setTrackExpanded(trackId, true);
     if (track.segments.length > 0) {
         setActiveSegmentId(track.segments[track.segments.length - 1].id);
@@ -4452,7 +4521,8 @@ export function deleteTrack(trackId) {
     setTracks(remainingTracks);
     _collapsedActiveTrackIds.delete(trackId);
     if (activeTrackId === trackId) {
-        const nextTrack = remainingTracks.length > 0 ? remainingTracks[0] : null;
+        const nextTrackId = selectGisTabDomain(selectedGisTabId, remainingTracks);
+        const nextTrack = remainingTracks.find(track => track.id === nextTrackId) || null;
         setActiveTrackId(nextTrack ? nextTrack.id : null);
         setActiveSegmentId(nextTrack && nextTrack.segments.length > 0 ? nextTrack.segments[0].id : null);
         if (nextTrack) setTrackExpanded(nextTrack.id, true);
@@ -4500,8 +4570,11 @@ export function renameSegment(trackId, segId, newName) {
 }
 
 export function setSegmentActive(trackId, segId, shouldFocus = false) {
+    const track = tracks.find(item => item.id === trackId && item.gisTabId === selectedGisTabId);
+    if (!track || !track.segments.some(segment => segment.id === segId)) return;
     setActiveTrackId(trackId);
     setActiveSegmentId(segId);
+    rememberActiveTrackForSelectedGisTab(trackId, tracks);
     setTrackExpanded(trackId, true);
     setTrackSectionExpanded(trackId, 'segments', true);
     if (shouldFocus) focusSegmentOnMap(trackId, segId);
@@ -4540,12 +4613,13 @@ export function deleteWaypoint(trackId, wpId) {
 
 export function updateActiveTracksHeader() {
     const list = document.getElementById('active-tracks-list');
-    if (tracks.length === 0) {
-        list.innerHTML = `<span class="text-gray-500 italic whitespace-nowrap">Nessuna traccia creata</span>`;
+    const selectedTracks = getSelectedGisTabTracks(tracks);
+    if (selectedTracks.length === 0) {
+        list.innerHTML = `<span class="text-gray-500 italic whitespace-nowrap">Nessuna traccia nella scheda</span>`;
         return;
     }
 
-    list.innerHTML = tracks.map(t => {
+    list.innerHTML = selectedTracks.map(t => {
         const isActive = t.id === activeTrackId;
         return `
           <div onclick="setTrackActive('${t.id}', true)" class="cursor-pointer flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${isActive ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400 hover:text-white'} ${t.visible === false ? 'opacity-50' : ''}">
@@ -5241,6 +5315,9 @@ export function setupEvents() {
 
     document.getElementById('btn-tree-new-track').onclick = () => {
         createNewTrack();
+    };
+    document.getElementById('btn-add-gis-tab').onclick = () => {
+        createNewGisTab();
     };
 
     document.getElementById('btn-search').onclick = searchNominatim;

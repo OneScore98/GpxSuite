@@ -9,6 +9,16 @@ import {
 
 export const GIS_TABS_SESSION_VERSION = 2;
 export const PRIMARY_GIS_TAB_ID = 'gis-tab-principale';
+let nextGisTabSequence = 0;
+
+function createUniqueGisTabId() {
+    let id;
+    do {
+        nextGisTabSequence += 1;
+        id = `gis-tab-${Date.now()}-${nextGisTabSequence}`;
+    } while (gisTabs.some(tab => tab.id === id));
+    return id;
+}
 
 function createPrimaryGisTab(trackList, activeTrackId = null) {
     const requestedTrack = trackList.find(track => track.id === activeTrackId);
@@ -81,6 +91,10 @@ export function getTracksForGisTab(gisTabId, trackList) {
     return tracks.filter(track => track.gisTabId === gisTabId);
 }
 
+export function getSelectedGisTabTracks(trackList) {
+    return getTracksForGisTab(selectedGisTabId, trackList);
+}
+
 export function assignTrackToGisTab(track, requestedGisTabId = selectedGisTabId) {
     if (!track || typeof track !== 'object') return null;
     if (!gisTabs.some(tab => tab.id === PRIMARY_GIS_TAB_ID)) {
@@ -91,6 +105,50 @@ export function assignTrackToGisTab(track, requestedGisTabId = selectedGisTabId)
         : PRIMARY_GIS_TAB_ID;
     track.gisTabId = destinationId;
     return destinationId;
+}
+
+export function createGisTab() {
+    if (gisTabs.length === 0) initializeGisTabs([], null);
+    const usedNames = new Set(gisTabs.map(tab => String(tab.name || '').trim().toLocaleLowerCase('it')));
+    let number = 1;
+    while (usedNames.has(`scheda ${number}`)) number += 1;
+
+    const tab = {
+        id: createUniqueGisTabId(),
+        name: `Scheda ${number}`,
+        visible: true,
+        activeTrackId: null
+    };
+    setGisTabs([...gisTabs, tab]);
+    setSelectedGisTabId(tab.id);
+    return { ...tab };
+}
+
+export function selectGisTab(gisTabId, trackList) {
+    const tab = gisTabs.find(item => item.id === gisTabId);
+    if (!tab) return null;
+
+    const ownedTracks = getTracksForGisTab(tab.id, trackList);
+    const nextActiveTrackId = ownedTracks.some(track => track.id === tab.activeTrackId)
+        ? tab.activeTrackId
+        : (ownedTracks[0]?.id || null);
+    if (nextActiveTrackId !== tab.activeTrackId) {
+        setGisTabs(gisTabs.map(item => item.id === tab.id
+            ? { ...item, activeTrackId: nextActiveTrackId }
+            : item));
+    }
+    setSelectedGisTabId(tab.id);
+    return nextActiveTrackId;
+}
+
+export function rememberActiveTrackForSelectedGisTab(trackId, trackList) {
+    const track = getTracksForGisTab(selectedGisTabId, trackList)
+        .find(item => item.id === trackId);
+    if (!track) return false;
+    setGisTabs(gisTabs.map(tab => tab.id === selectedGisTabId
+        ? { ...tab, activeTrackId: track.id }
+        : tab));
+    return true;
 }
 
 export function getGisTabsState() {
