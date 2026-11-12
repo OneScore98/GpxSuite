@@ -36,8 +36,10 @@ import {
     getSelectedGisTabTracks,
     inheritTrackGisTab,
     initializeGisTabs,
+    isTrackEffectivelyVisible,
     rememberActiveTrackForSelectedGisTab,
-    selectGisTab as selectGisTabDomain
+    selectGisTab as selectGisTabDomain,
+    toggleGisTabVisibility as toggleGisTabVisibilityDomain
 } from './gis-tabs.js';
 import {
     listStoredTracks,
@@ -2044,19 +2046,49 @@ function renderGisTabsBar() {
 
     list.innerHTML = gisTabs.map(tab => {
         const isSelected = tab.id === selectedGisTabId;
+        const isVisible = tab.visible !== false;
         return `
-          <button type="button"
-                  class="gis-tab-chip ${isSelected ? 'is-selected' : ''}"
-                  data-gis-tab-id="${escapeXml(tab.id)}"
-                  aria-pressed="${isSelected ? 'true' : 'false'}"
-                  title="Apri ${escapeXml(tab.name)}">
-            ${escapeXml(tab.name)}
-          </button>`;
+          <div class="gis-tab-chip ${isSelected ? 'is-selected' : ''} ${isVisible ? '' : 'is-hidden'}"
+               data-gis-tab-id="${escapeXml(tab.id)}">
+            <button type="button"
+                    class="gis-tab-select"
+                    data-gis-tab-select="${escapeXml(tab.id)}"
+                    aria-pressed="${isSelected ? 'true' : 'false'}"
+                    title="Apri ${escapeXml(tab.name)}">
+              <span class="gis-tab-name">${escapeXml(tab.name)}</span>
+            </button>
+            <button type="button"
+                    class="gis-tab-visibility"
+                    data-gis-tab-visibility="${escapeXml(tab.id)}"
+                    aria-label="${isVisible ? 'Nascondi' : 'Mostra'} la Scheda GIS ${escapeXml(tab.name)}"
+                    title="${isVisible ? 'Nascondi' : 'Mostra'} la Scheda GIS sulla mappa e in stampa">
+              <i data-lucide="${isVisible ? 'eye' : 'eye-off'}" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>`;
     }).join('');
 
-    list.querySelectorAll('[data-gis-tab-id]').forEach(button => {
-        button.addEventListener('click', () => selectGisTabById(button.dataset.gisTabId));
+    list.querySelectorAll('[data-gis-tab-select]').forEach(button => {
+        button.addEventListener('click', () => selectGisTabById(button.dataset.gisTabSelect));
     });
+    list.querySelectorAll('[data-gis-tab-visibility]').forEach(button => {
+        button.addEventListener('click', event => {
+            event.stopPropagation();
+            toggleGisTabVisibilityById(button.dataset.gisTabVisibility);
+        });
+    });
+    refreshLucideIcons();
+}
+
+export function toggleGisTabVisibilityById(gisTabId) {
+    const tab = gisTabs.find(item => item.id === gisTabId);
+    if (!tab) return null;
+    const isVisible = toggleGisTabVisibilityDomain(gisTabId);
+    renderGisTabsBar();
+    renderGisTree();
+    if (_updateMapData) _updateMapData();
+    schedulePersistAppSession();
+    showToast(`Scheda GIS ${tab.name}: ${isVisible ? 'visibile' : 'nascosta'}`, 'info');
+    return isVisible;
 }
 
 export function createNewTrack(name, options = {}) {
@@ -4177,6 +4209,7 @@ function _doRenderGisTree() {
         selectedTracks.forEach((track, trackIndex) => {
             const isActive = track.id === activeTrackId;
             const isSelected = selectionHas(makeTreeKey('track', track.id));
+            const isTemporarilyHiddenByGisTab = track.visible !== false && !isTrackEffectivelyVisible(track);
             const isExpanded = isTrackExpanded(track.id, isActive);
             const areSegmentsExpanded = isTrackSectionExpanded(track.id, 'segments');
             const areWaypointsExpanded = isTrackSectionExpanded(track.id, 'waypoints');
@@ -4229,6 +4262,13 @@ function _doRenderGisTree() {
                           <i data-lucide="file-map" class="w-3.5 h-3.5 ${isActive ? 'text-blue-300' : 'text-gray-500'} shrink-0"></i>
                           <span id="track-name-${track.id}" data-track-name-id="${track.id}" role="button" tabindex="0" contenteditable="false"
                                 class="track-name-label block text-xs font-bold ${track.visible === false ? 'text-gray-500 line-through' : 'text-white'} border-b border-transparent focus:border-blue-500 focus:outline-none min-w-0 flex-1 truncate cursor-pointer select-none">${escapeXml(track.name)}</span>
+                          ${isTemporarilyHiddenByGisTab ? `
+                          <span class="gis-track-tab-hidden-indicator text-amber-300 shrink-0"
+                                role="img"
+                                aria-label="Traccia temporaneamente invisibile perché la Scheda GIS è nascosta"
+                                title="Scheda GIS nascosta: la preferenza della traccia resta attiva e verrà ripristinata quando mostri la scheda">
+                            <i data-lucide="layers-2" class="w-3.5 h-3.5"></i>
+                          </span>` : ''}
                         </div>
                         <div id="track-meta-${track.id}" class="gis-track-meta text-[10px] text-gray-500 mt-0.5 pl-5">File ${trackIndex + 1} · ${segmentCount} segmenti · ${pointCount} pt · ${track.waypoints.length} wp · ${track.width || 3}px</div>
                       </div>
@@ -4236,7 +4276,7 @@ function _doRenderGisTree() {
                     <div class="gis-track-actions flex items-center gap-1.5 shrink-0">
                       <button onclick="moveTrackUp('${track.id}')" ${isFirst ? 'disabled class="opacity-20 cursor-not-allowed text-gray-700"' : 'class="text-gray-400 hover:text-white"'} title="Sposta su"><i data-lucide="chevron-up" class="w-3.5 h-3.5"></i></button>
                       <button onclick="moveTrackDown('${track.id}')" ${isLast ? 'disabled class="opacity-20 cursor-not-allowed text-gray-700"' : 'class="text-gray-400 hover:text-white"'} title="Sposta giù"><i data-lucide="chevron-down" class="w-3.5 h-3.5"></i></button>
-                      <button onclick="toggleTrackVisibility('${track.id}')" class="text-gray-400 hover:text-white" title="Mostra/Nascondi File"><i data-lucide="${track.visible === false ? 'eye-off' : 'eye'}" class="w-3.5 h-3.5"></i></button>
+                      <button onclick="toggleTrackVisibility('${track.id}')" class="text-gray-400 hover:text-white" title="Preferenza individuale: ${track.visible === false ? 'mostra' : 'nascondi'} file"><i data-lucide="${track.visible === false ? 'eye-off' : 'eye'}" class="w-3.5 h-3.5"></i></button>
                       <input type="color" value="${track.color}" onchange="changeTrackColor('${track.id}', this.value)" class="w-4 h-4 rounded border-0 bg-transparent cursor-pointer" title="Colore traccia">
                       <button onclick="handleTrackContextMenu(event, '${track.id}')" class="text-gray-500 hover:text-white" title="Menu file"><i data-lucide="more-vertical" class="w-3.5 h-3.5"></i></button>
                       <button onclick="deleteTrack('${track.id}')" class="text-gray-500 hover:text-red-400" title="Elimina file"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
