@@ -35,6 +35,7 @@ import {
     assignTrackAtIngress,
     captureTrackIngressGisTabId,
     createGisTab as createGisTabDomain,
+    deleteGisTab as deleteGisTabDomain,
     getSelectedGisTabTracks,
     getTracksForGisTab,
     inheritTrackGisTab,
@@ -51,6 +52,7 @@ import {
     listStoredTracks,
     loadStoredTrack,
     deleteStoredTrack,
+    deleteStoredTracks,
     ensureTrackStorageMeta,
     onLibraryChanged,
     loadPersistedAppSession,
@@ -2106,12 +2108,49 @@ function openGisTabContextMenu(gisTabId, clientX, clientY) {
     }, 0);
 }
 
-export function requestDeleteGisTab(gisTabId) {
+export async function requestDeleteGisTab(gisTabId) {
     const tab = gisTabs.find(item => item.id === gisTabId);
     closeGisTabContextMenu();
     if (!tab) return false;
-    showToast(`L'eliminazione di ${tab.name} richiederà conferma`, 'info');
-    return false;
+    if (gisTabs.length <= 1) {
+        showToast("L'ultima Scheda GIS non può essere eliminata", 'info');
+        return false;
+    }
+
+    const ownedTracks = getTracksForGisTab(gisTabId, tracks);
+    const trackLabel = ownedTracks.length === 1 ? 'traccia' : 'tracce';
+    const confirmed = window.confirm(
+        `Eliminare la Scheda GIS "${tab.name}" e ${ownedTracks.length} ${trackLabel}?\n\n` +
+        'Puoi ripristinare tutto con Ctrl+Z.'
+    );
+    if (!confirmed) return false;
+
+    if (_saveHistoryState) _saveHistoryState({ immediate: true });
+    const storedTrackIds = ownedTracks.map(track => track.localFileId).filter(Boolean);
+    try {
+        await deleteStoredTracks(storedTrackIds);
+    } catch (err) {
+        console.error(err);
+        showToast("Impossibile eliminare le tracce dall'archivio locale", 'error');
+        return false;
+    }
+
+    const result = deleteGisTabDomain(gisTabId, tracks);
+    if (!result) return false;
+    const nextTrack = tracks.find(track => track.id === result.activeTrackId) || null;
+    setActiveTrackId(nextTrack?.id || null);
+    setActiveSegmentId(nextTrack?.segments?.[0]?.id || null);
+    setTreeSelection([]);
+    if (_saveHistoryState) _saveHistoryState({ immediate: true });
+
+    updateActiveTracksHeader();
+    renderGisTree();
+    if (_updateMapData) _updateMapData();
+    renderLocalGpxLibrary();
+    schedulePersistTracks(tracks);
+    schedulePersistAppSession();
+    showToast(`Scheda GIS "${tab.name}" eliminata`, 'success');
+    return true;
 }
 
 export function openGisTabNameEditor(gisTabId) {

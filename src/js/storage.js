@@ -21,6 +21,13 @@ let _dbPromise = null;
 let _persistTimer = null;
 let _persistQueuedTracks = [];
 let _sessionTimer = null;
+let _storageMutationQueue = Promise.resolve();
+
+function queueStorageMutation(operation) {
+    const queued = _storageMutationQueue.then(operation, operation);
+    _storageMutationQueue = queued.catch(() => {});
+    return queued;
+}
 
 function promisifyRequest(request) {
     return new Promise((resolve, reject) => {
@@ -144,7 +151,7 @@ async function putTrackRecord(track) {
     await waitForTransaction(tx);
 }
 
-async function persistOneTrackNow(track, force = false) {
+async function persistOneTrackRaw(track, force = false) {
     if (!track || track.localSource === 'recording-live') return null;
     const signature = trackContentSignature(track);
     if (!force && _persistedTrackSignatures.get(track) === signature) {
@@ -153,6 +160,10 @@ async function persistOneTrackNow(track, force = false) {
     await putTrackRecord(track);
     _persistedTrackSignatures.set(track, signature);
     return track.localFileId || null;
+}
+
+function persistOneTrackNow(track, force = false) {
+    return queueStorageMutation(() => persistOneTrackRaw(track, force));
 }
 
 function readHikingTrailsVisibility() {
@@ -220,18 +231,20 @@ export function schedulePersistAppSession() {
 }
 
 async function persistTracksNow(trackList, force = false) {
-    for (let i = 0; i < trackList.length; i++) {
-        const track = trackList[i];
-        if (track?.localSource === 'recording-live') continue;
-        try {
-            // Salta le tracce il cui contenuto non è cambiato dall'ultimo
-            // salvataggio (firma leggera). Il flush di uscita forza sempre
-            // il salvataggio completo per garantire la durabilità.
-            await persistOneTrackNow(track, force);
-        } catch (err) {
-            console.error('Errore salvataggio IndexedDB:', err);
+    return queueStorageMutation(async () => {
+        for (let i = 0; i < trackList.length; i++) {
+            const track = trackList[i];
+            if (track?.localSource === 'recording-live') continue;
+            try {
+                // Salta le tracce il cui contenuto non è cambiato dall'ultimo
+                // salvataggio (firma leggera). Il flush di uscita forza sempre
+                // il salvataggio completo per garantire la durabilità.
+                await persistOneTrackRaw(track, force);
+            } catch (err) {
+                console.error('Errore salvataggio IndexedDB:', err);
+            }
         }
-    }
+    });
 }
 
 export async function persistTrackNow(track, options = {}) {
@@ -302,11 +315,23 @@ export async function loadStoredTrack(id) {
 }
 
 export async function deleteStoredTrack(id) {
-    const db = await openDb();
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).delete(id);
-    await waitForTransaction(tx);
+    return deleteStoredTracks([id]);
+}
+
+export async function deleteStoredTracks(ids) {
+    const requestedIds = new Set((Array.isArray(ids) ? ids : []).filter(Boolean));
+    if (requestedIds.size === 0) return 0;
+    _persistQueuedTracks = _persistQueuedTracks.filter(track => !requestedIds.has(track?.localFileId));
+
+    await queueStorageMutation(async () => {
+        const db = await openDb();
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        for (const id of requestedIds) store.delete(id);
+        await waitForTransaction(tx);
+    });
     emitLibraryChanged();
+    return requestedIds.size;
 }
 
 export async function hasStoredTracks() {
