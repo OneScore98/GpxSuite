@@ -4,9 +4,10 @@
 import {
     OSRM_ENDPOINTS,
     tracks, setTracks,
-    gisTabs, selectedGisTabId,
     activeTrackId, setActiveTrackId,
     activeSegmentId, setActiveSegmentId,
+    gisTabs, setGisTabs,
+    selectedGisTabId, setSelectedGisTabId,
     undoStack, setUndoStack,
     isSnapActive, setIsSnapActive,
     isDrawing,
@@ -25,6 +26,7 @@ import { haversineDistance } from './stats.js?v=robust-slope3-20260720';
 import { schedulePersistAppSession, schedulePersistTracks } from './storage.js';
 import { trackAnalyticsEvent } from './auth.js';
 import { isGeometryEditable } from './gis-tabs.js';
+import { buildHistoryStateJson, parseHistoryStateJson } from './history-state.js';
 
 const HIDDEN_GEOMETRY_MESSAGE = 'Modifica geometrica non disponibile: rendi visibili la Scheda GIS, la traccia e il segmento.';
 
@@ -86,7 +88,12 @@ function _trackSnapshotJson(track) {
 function buildTracksSnapshotJson() {
     const parts = new Array(tracks.length);
     for (let i = 0; i < tracks.length; i++) parts[i] = _trackSnapshotJson(tracks[i]);
-    return '{"tracks":[' + parts.join(',') + ']}';
+    return buildHistoryStateJson({
+        gisTabs,
+        selectedGisTabId,
+        activeTrackId,
+        activeSegmentId
+    }, parts);
 }
 
 function pushHistorySnapshot() {
@@ -139,21 +146,26 @@ export function triggerUndo() {
     }
 
     undoStack.pop();
-    const prevState = JSON.parse(undoStack[undoStack.length - 1]);
+    const prevState = parseHistoryStateJson(undoStack[undoStack.length - 1]);
 
     setTracks(prevState.tracks);
-    if (tracks.length > 0) {
-        setActiveTrackId(tracks[tracks.length - 1].id);
-        const activeTrack = tracks.find(t => t.id === activeTrackId);
-        if (activeTrack.segments.length > 0) {
-            setActiveSegmentId(activeTrack.segments[activeTrack.segments.length - 1].id);
-        }
-    } else {
-        setActiveTrackId(null);
-        setActiveSegmentId(null);
+    if (Array.isArray(prevState.gisTabs) && prevState.gisTabs.length > 0) {
+        setGisTabs(prevState.gisTabs);
+        const restoredSelectedId = prevState.gisTabs.some(tab => tab.id === prevState.selectedGisTabId)
+            ? prevState.selectedGisTabId
+            : prevState.gisTabs[0].id;
+        setSelectedGisTabId(restoredSelectedId);
     }
+    const restoredActiveTrack = tracks.find(track => track.id === prevState.activeTrackId) || null;
+    setActiveTrackId(restoredActiveTrack?.id || null);
+    const restoredActiveSegment = restoredActiveTrack?.segments?.find(segment => (
+        segment.id === prevState.activeSegmentId
+    )) || restoredActiveTrack?.segments?.[0] || null;
+    setActiveSegmentId(restoredActiveSegment?.id || null);
 
     updateMapData();
+    updateActiveTracksHeader();
+    renderGisTree();
     showToast("Annullato con successo!", "success");
     schedulePersistTracks(tracks);
     schedulePersistAppSession();

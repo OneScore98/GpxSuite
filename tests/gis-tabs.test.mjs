@@ -10,6 +10,7 @@ import {
     assignTrackToGisTab,
     captureTrackIngressGisTabId,
     createGisTab,
+    deleteGisTab,
     getGisTabsState,
     getSelectedGisTabTracks,
     getTracksForGisTab,
@@ -37,6 +38,65 @@ function track(id, gisTabId) {
         ...(gisTabId === undefined ? {} : { gisTabId })
     };
 }
+
+test('protegge l\'ultima Scheda GIS dalla cancellazione', () => {
+    const tracks = [track('main-1', PRIMARY_GIS_TAB_ID)];
+    initializeGisTabs(tracks, null);
+
+    assert.equal(deleteGisTab(PRIMARY_GIS_TAB_ID, tracks), null);
+    assert.deepEqual(getGisTabsState().gisTabs.map(tab => tab.id), [PRIMARY_GIS_TAB_ID]);
+    assert.deepEqual(tracks.map(item => item.id), ['main-1']);
+});
+
+test('elimina a cascata una scheda non vuota e seleziona la scheda a sinistra', () => {
+    const tracks = [
+        track('main-1', PRIMARY_GIS_TAB_ID),
+        track('alpi-1', 'gis-tab-alpi'),
+        track('laghi-1', 'gis-tab-laghi'),
+        track('alpi-2', 'gis-tab-alpi')
+    ];
+    initializeGisTabs(tracks, {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true, activeTrackId: 'main-1' },
+            { id: 'gis-tab-alpi', name: 'Alpi', visible: false, activeTrackId: 'alpi-2' },
+            { id: 'gis-tab-laghi', name: 'Laghi', visible: true, activeTrackId: 'laghi-1' }
+        ],
+        selectedGisTabId: 'gis-tab-alpi'
+    });
+
+    const deleted = deleteGisTab('gis-tab-alpi', tracks);
+
+    assert.deepEqual({ ...deleted, deletedTracks: deleted.deletedTracks.map(item => item.id) }, {
+        deletedTab: { id: 'gis-tab-alpi', name: 'Alpi', visible: false, activeTrackId: 'alpi-2' },
+        deletedTracks: ['alpi-1', 'alpi-2'],
+        selectedGisTabId: PRIMARY_GIS_TAB_ID,
+        activeTrackId: 'main-1'
+    });
+    assert.deepEqual(tracks.map(item => item.id), ['main-1', 'laghi-1']);
+    assert.deepEqual(getGisTabsState().gisTabs.map(tab => tab.id), [PRIMARY_GIS_TAB_ID, 'gis-tab-laghi']);
+    assert.equal(getGisTabsState().selectedGisTabId, PRIMARY_GIS_TAB_ID);
+});
+
+test('elimina una scheda vuota e usa la scheda a destra quando manca quella a sinistra', () => {
+    const tracks = [track('alpi-1', 'gis-tab-alpi')];
+    initializeGisTabs(tracks, {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: 'gis-tab-vuota', name: 'Vuota', visible: true, activeTrackId: null },
+            { id: 'gis-tab-alpi', name: 'Alpi', visible: true, activeTrackId: 'alpi-1' },
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true, activeTrackId: null }
+        ],
+        selectedGisTabId: 'gis-tab-vuota'
+    });
+
+    const deleted = deleteGisTab('gis-tab-vuota', tracks);
+
+    assert.deepEqual(deleted.deletedTracks, []);
+    assert.equal(deleted.selectedGisTabId, 'gis-tab-alpi');
+    assert.equal(deleted.activeTrackId, 'alpi-1');
+    assert.deepEqual(getGisTabsState().gisTabs.map(tab => tab.id), ['gis-tab-alpi', PRIMARY_GIS_TAB_ID]);
+});
 
 test('crea sempre Principale anche all\'avvio senza tracce o sessione', () => {
     const state = initializeGisTabs([], null);
