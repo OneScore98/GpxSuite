@@ -12,9 +12,13 @@ import {
     getSelectedGisTabTracks,
     getTracksForGisTab,
     initializeGisTabs,
+    isSegmentEffectivelyVisible,
+    isTrackEffectivelyVisible,
+    isWaypointEffectivelyVisible,
     rememberActiveTrackForSelectedGisTab,
     selectGisTab,
-    serializeGisTabsState
+    serializeGisTabsState,
+    toggleGisTabVisibility
 } from '../src/js/gis-tabs.js';
 
 function track(id, gisTabId) {
@@ -200,6 +204,130 @@ test('una scheda vuota non mantiene tracce esterne e la selezione non cambia la 
     assert.deepEqual(getSelectedGisTabTracks(tracks), []);
     assert.deepEqual(tracks.map(item => item.visible), visibilityBefore);
     assert.equal(getGisTabsState().gisTabs.find(tab => tab.id === 'gis-tab-vuota').activeTrackId, null);
+});
+
+test('nascondere una Scheda GIS esclude le sue tracce senza riscriverne le preferenze', () => {
+    const tracks = [
+        {
+            ...track('alpi-visible', 'gis-tab-alpi'),
+            visible: true,
+            waypointsVisible: false,
+            segments: [{ id: 'seg-visible', visible: true }, { id: 'seg-hidden', visible: false }],
+            waypoints: [{ id: 'wp-visible', visible: true }, { id: 'wp-hidden', visible: false }]
+        },
+        { ...track('alpi-hidden', 'gis-tab-alpi'), visible: false }
+    ];
+    initializeGisTabs(tracks, {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true },
+            { id: 'gis-tab-alpi', name: 'Alpi', visible: true }
+        ],
+        selectedGisTabId: PRIMARY_GIS_TAB_ID
+    });
+    const preferencesBefore = tracks.map(item => ({
+        visible: item.visible,
+        waypointsVisible: item.waypointsVisible,
+        segments: item.segments.map(segment => segment.visible),
+        waypoints: item.waypoints.map(waypoint => waypoint.visible)
+    }));
+
+    assert.equal(isTrackEffectivelyVisible(tracks[0]), true);
+    assert.equal(isTrackEffectivelyVisible(tracks[1]), false);
+    assert.equal(toggleGisTabVisibility('gis-tab-alpi'), false);
+    assert.deepEqual(tracks.map(item => ({
+        visible: item.visible,
+        waypointsVisible: item.waypointsVisible,
+        segments: item.segments.map(segment => segment.visible),
+        waypoints: item.waypoints.map(waypoint => waypoint.visible)
+    })), preferencesBefore);
+    assert.deepEqual(tracks.map(isTrackEffectivelyVisible), [false, false]);
+    assert.equal(toggleGisTabVisibility('gis-tab-alpi'), true);
+    assert.deepEqual(tracks.map(item => ({
+        visible: item.visible,
+        waypointsVisible: item.waypointsVisible,
+        segments: item.segments.map(segment => segment.visible),
+        waypoints: item.waypoints.map(waypoint => waypoint.visible)
+    })), preferencesBefore);
+    assert.deepEqual(tracks.map(isTrackEffectivelyVisible), [true, false]);
+});
+
+test('la visibilità effettiva dei segmenti segue la matrice scheda × traccia × segmento', () => {
+    const matrix = [
+        [true, true, true, true],
+        [true, true, false, false],
+        [true, false, true, false],
+        [true, false, false, false],
+        [false, true, true, false],
+        [false, true, false, false],
+        [false, false, true, false],
+        [false, false, false, false]
+    ];
+
+    for (const [tabVisible, trackVisible, segmentVisible, expected] of matrix) {
+        const ownerId = 'gis-tab-matrice';
+        initializeGisTabs([], {
+            version: GIS_TABS_SESSION_VERSION,
+            gisTabs: [
+                { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true },
+                { id: ownerId, name: 'Matrice', visible: tabVisible }
+            ],
+            selectedGisTabId: PRIMARY_GIS_TAB_ID
+        });
+        const candidateTrack = { ...track('matrix-track', ownerId), visible: trackVisible };
+        const candidateSegment = { id: 'matrix-segment', visible: segmentVisible, points: [] };
+
+        assert.equal(
+            isSegmentEffectivelyVisible(candidateTrack, candidateSegment),
+            expected,
+            `scheda=${tabVisible}, traccia=${trackVisible}, segmento=${segmentVisible}`
+        );
+    }
+});
+
+test('la visibilità effettiva dei waypoint segue scheda, traccia, gruppo e preferenza individuale', () => {
+    const matrix = [
+        [true, true, true, true, true],
+        [true, true, true, false, false],
+        [true, true, false, true, false],
+        [true, true, false, false, false],
+        [true, false, true, true, false],
+        [true, false, true, false, false],
+        [true, false, false, true, false],
+        [true, false, false, false, false],
+        [false, true, true, true, false],
+        [false, true, true, false, false],
+        [false, true, false, true, false],
+        [false, true, false, false, false],
+        [false, false, true, true, false],
+        [false, false, true, false, false],
+        [false, false, false, true, false],
+        [false, false, false, false, false]
+    ];
+
+    for (const [tabVisible, trackVisible, groupVisible, waypointVisible, expected] of matrix) {
+        const ownerId = 'gis-tab-waypoint-matrix';
+        initializeGisTabs([], {
+            version: GIS_TABS_SESSION_VERSION,
+            gisTabs: [
+                { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true },
+                { id: ownerId, name: 'Waypoint', visible: tabVisible }
+            ],
+            selectedGisTabId: PRIMARY_GIS_TAB_ID
+        });
+        const candidateTrack = {
+            ...track('waypoint-track', ownerId),
+            visible: trackVisible,
+            waypointsVisible: groupVisible
+        };
+        const candidateWaypoint = { id: 'matrix-waypoint', visible: waypointVisible };
+
+        assert.equal(
+            isWaypointEffectivelyVisible(candidateTrack, candidateWaypoint),
+            expected,
+            `scheda=${tabVisible}, traccia=${trackVisible}, gruppo=${groupVisible}, waypoint=${waypointVisible}`
+        );
+    }
 });
 
 test('la creazione manuale usa la Scheda GIS catturata all\'inizio dell\'ingresso', () => {

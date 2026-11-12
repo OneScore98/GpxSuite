@@ -69,15 +69,47 @@ html:not(.tw-ready) body > :not(#map):not(#auth-gate) {
 }
 
 .gis-tab-chip {
+    display: inline-flex;
+    align-items: stretch;
     flex: 0 0 auto;
     max-width: 10rem;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     border-radius: 999px;
-    padding: 0.35rem 0.7rem;
     font-size: 0.7rem;
     font-weight: 650;
+}
+
+.gis-tab-select,
+.gis-tab-visibility {
+    display: inline-flex;
+    align-items: center;
+    border: 0;
+    background: transparent;
+    color: inherit;
+}
+
+.gis-tab-select {
+    min-width: 0;
+    padding: 0.35rem 0.25rem 0.35rem 0.7rem;
+}
+
+.gis-tab-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gis-tab-visibility {
+    flex: 0 0 auto;
+    justify-content: center;
+    padding: 0.35rem 0.6rem 0.35rem 0.35rem;
+    opacity: 0.82;
+}
+
+.gis-tab-visibility:hover,
+.gis-tab-visibility:focus-visible {
+    opacity: 1;
+    color: #fff;
 }
 
 .gis-tab-chip:hover,
@@ -91,6 +123,18 @@ html:not(.tw-ready) body > :not(#map):not(#auth-gate) {
     background: rgba(37, 99, 235, 0.72);
     color: #fff;
     box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.18);
+}
+
+.gis-tab-chip.is-hidden {
+    border-style: dashed;
+    background: rgba(30, 41, 59, 0.45);
+    color: #94a3b8;
+}
+
+.gis-tab-chip.is-hidden.is-selected {
+    border-color: rgba(251, 191, 36, 0.78);
+    background: rgba(120, 53, 15, 0.32);
+    color: #fde68a;
 }
 
 .gis-tabs-add {

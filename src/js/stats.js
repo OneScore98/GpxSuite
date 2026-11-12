@@ -12,6 +12,7 @@
 import { chart, setChart, tracks, activeTrackId, map } from './state.js';
 import { loadScriptOnce, vibrationLevelColor } from './utils.js';
 import { computeSlopeProfile } from './slope.js?v=robust-slope3-20260720';
+import { isSegmentEffectivelyVisible, isTrackEffectivelyVisible } from './gis-tabs.js';
 
 const CHART_JS_URL = 'https://cdn.jsdelivr.net/npm/chart.js';
 let _chartLoadPromise = null;
@@ -179,10 +180,10 @@ const surfaceBandsPlugin = {
 function _getActiveTrackColor() {
     if (activeTrackId) {
         const t = tracks.find(t => t.id === activeTrackId);
-        if (t?.color) return t.color;
+        if (isTrackEffectivelyVisible(t) && t.color) return t.color;
     }
     for (const t of tracks) {
-        if (t.visible !== false && t.color) return t.color;
+        if (isTrackEffectivelyVisible(t) && t.color) return t.color;
     }
     return '#3b82f6';
 }
@@ -1389,10 +1390,10 @@ function findChartTimeOrigin() {
     for (let ti = 0; ti < tracks.length; ti++) {
         const track = tracks[ti];
         if (activeTrackId && track.id !== activeTrackId) continue;
-        if (track.visible === false) continue;
+        if (!isTrackEffectivelyVisible(track)) continue;
         for (let si = 0; si < track.segments.length; si++) {
             const segment = track.segments[si];
-            if (segment.visible === false) continue;
+            if (!isSegmentEffectivelyVisible(track, segment)) continue;
             const points = segment.points || [];
             for (let pi = 0; pi < points.length; pi++) {
                 const timeMs = readPointTimeMs(points[pi]);
@@ -1837,10 +1838,10 @@ function _doUpdateStats() {
     for (let ti = 0; ti < tracks.length; ti++) {
         const t = tracks[ti];
         if (activeTrackId && t.id !== activeTrackId) continue;
-        if (t.visible === false) continue;
+        if (!isTrackEffectivelyVisible(t)) continue;
         for (let si = 0; si < t.segments.length; si++) {
             const s = t.segments[si];
-            if (s.visible === false) continue;
+            if (!isSegmentEffectivelyVisible(t, s)) continue;
             pointsTotalEstimate += s.points.length;
             if (!needsTimeScan) continue;
             for (let pi = 0; pi < s.points.length; pi++) {
@@ -1868,11 +1869,11 @@ function _doUpdateStats() {
     for (let ti = 0; ti < tracks.length; ti++) {
         const track = tracks[ti];
         if (activeTrackId && track.id !== activeTrackId) continue;
-        if (track.visible === false) continue;
+        if (!isTrackEffectivelyVisible(track)) continue;
         const segs = track.segments;
         for (let si = 0; si < segs.length; si++) {
             const seg = segs[si];
-            if (seg.visible === false) continue;
+            if (!isSegmentEffectivelyVisible(track, seg)) continue;
             totalSegments++;
             prevPt = null;
             prevTimeMs = null;

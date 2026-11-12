@@ -95,6 +95,23 @@ export function getSelectedGisTabTracks(trackList) {
     return getTracksForGisTab(selectedGisTabId, trackList);
 }
 
+export function isTrackEffectivelyVisible(track) {
+    if (!track || track.visible === false) return false;
+    const ownerTab = gisTabs.find(tab => tab.id === track.gisTabId);
+    return Boolean(ownerTab) && ownerTab.visible !== false;
+}
+
+export function isSegmentEffectivelyVisible(track, segment) {
+    return isTrackEffectivelyVisible(track) && Boolean(segment) && segment.visible !== false;
+}
+
+export function isWaypointEffectivelyVisible(track, waypoint) {
+    return isTrackEffectivelyVisible(track)
+        && track.waypointsVisible !== false
+        && Boolean(waypoint)
+        && waypoint.visible !== false;
+}
+
 export function assignTrackToGisTab(track, requestedGisTabId = selectedGisTabId) {
     if (!track || typeof track !== 'object') return null;
     if (!gisTabs.some(tab => tab.id === PRIMARY_GIS_TAB_ID)) {
@@ -150,6 +167,16 @@ export function createGisTab() {
     setGisTabs([...gisTabs, tab]);
     setSelectedGisTabId(tab.id);
     return { ...tab };
+}
+
+export function toggleGisTabVisibility(gisTabId) {
+    const tab = gisTabs.find(item => item.id === gisTabId);
+    if (!tab) return null;
+    const nextVisible = tab.visible === false;
+    setGisTabs(gisTabs.map(item => item.id === gisTabId
+        ? { ...item, visible: nextVisible }
+        : item));
+    return nextVisible;
 }
 
 export function selectGisTab(gisTabId, trackList) {
