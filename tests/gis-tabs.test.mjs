@@ -15,6 +15,7 @@ import {
     getTracksForGisTab,
     inheritTrackGisTab,
     initializeGisTabs,
+    isGeometryEditable,
     isSegmentEffectivelyVisible,
     isTrackEffectivelyVisible,
     isWaypointEffectivelyVisible,
@@ -436,6 +437,47 @@ test('la visibilità effettiva dei segmenti segue la matrice scheda × traccia �
             `scheda=${tabVisible}, traccia=${trackVisible}, segmento=${segmentVisible}`
         );
     }
+});
+
+test('il guard geometrico rifiuta scheda, traccia o segmento nascosti senza cambiare preferenze', () => {
+    const ownerId = 'gis-tab-edit';
+    const candidateTrack = {
+        ...track('editable-track', ownerId),
+        visible: true
+    };
+    const candidateSegment = { id: 'editable-segment', visible: true, points: [] };
+    const preferencesBefore = {
+        trackVisible: candidateTrack.visible,
+        segmentVisible: candidateSegment.visible
+    };
+
+    initializeGisTabs([], {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true },
+            { id: ownerId, name: 'Modifica', visible: true }
+        ],
+        selectedGisTabId: ownerId
+    });
+
+    assert.equal(isGeometryEditable(candidateTrack), true);
+    assert.equal(isGeometryEditable(candidateTrack, candidateSegment), true);
+
+    candidateSegment.visible = false;
+    assert.equal(isGeometryEditable(candidateTrack, candidateSegment), false);
+    candidateSegment.visible = true;
+
+    candidateTrack.visible = false;
+    assert.equal(isGeometryEditable(candidateTrack), false);
+    candidateTrack.visible = true;
+
+    toggleGisTabVisibility(ownerId);
+    assert.equal(isGeometryEditable(candidateTrack), false);
+    assert.equal(isGeometryEditable(candidateTrack, candidateSegment), false);
+    assert.deepEqual({
+        trackVisible: candidateTrack.visible,
+        segmentVisible: candidateSegment.visible
+    }, preferencesBefore);
 });
 
 test('la visibilità effettiva dei waypoint segue scheda, traccia, gruppo e preferenza individuale', () => {

@@ -135,6 +135,12 @@ export function isSegmentEffectivelyVisible(track, segment) {
     return isTrackEffectivelyVisible(track) && Boolean(segment) && segment.visible !== false;
 }
 
+export function isGeometryEditable(track, segment = null) {
+    return segment === null
+        ? isTrackEffectivelyVisible(track)
+        : isSegmentEffectivelyVisible(track, segment);
+}
+
 export function isWaypointEffectivelyVisible(track, waypoint) {
     return isTrackEffectivelyVisible(track)
         && track.waypointsVisible !== false

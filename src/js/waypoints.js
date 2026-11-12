@@ -18,7 +18,7 @@ import { saveHistoryState } from './tracks.js?v=vibration-tooltip-units-20260715
 import { updateMapData, queryElevation } from './map.js?v=robust-slope3-20260720';
 import { activateTrackFromMap, showToast, updateToolButtons, updateMapToolCursor } from './ui.js?v=vibration-tooltip-units-20260715';
 import { trovaTipoWaypoint } from './waypointTypes.js';
-import { isTrackEffectivelyVisible, isWaypointEffectivelyVisible } from './gis-tabs.js';
+import { isGeometryEditable, isTrackEffectivelyVisible, isWaypointEffectivelyVisible } from './gis-tabs.js';
 
 let _waypointInteractionsBound = false;
 let _draggingWaypoint = null;
@@ -28,6 +28,7 @@ let _dragRafHandle = null;
 let _suppressNextWaypointClick = false;
 // Sotto questa distanza (px) il movimento è jitter del click, non un drag
 const DRAG_THRESHOLD_PX = 3;
+const HIDDEN_GEOMETRY_MESSAGE = 'Modifica geometrica non disponibile: rendi visibile la Scheda GIS e la traccia.';
 
 // Cache immagini badge per colore+simbolo (`${color}|${symbol}` -> imageId)
 const _pinImageCache = new Map();
@@ -312,6 +313,13 @@ export async function addWaypointAtCoords(lon, lat) {
     }
     const track = tracks.find(t => t.id === activeTrackId);
     if (!track) return;
+    if (!isGeometryEditable(track)) {
+        showToast(HIDDEN_GEOMETRY_MESSAGE, "error");
+        setIsAddingWaypoint(false);
+        updateToolButtons();
+        updateMapToolCursor();
+        return;
+    }
 
     const wpName = `WP - ${track.waypoints.length + 1}`;
     const newWp = {
@@ -511,6 +519,25 @@ export function updateWaypointsOnMap() {
     src.setData(buildWaypointFeatureCollection());
 }
 
+export function cancelWaypointGeometryInteraction() {
+    const dragged = _draggingWaypoint;
+    if (_dragRafHandle !== null) {
+        cancelAnimationFrame(_dragRafHandle);
+        _dragRafHandle = null;
+    }
+    if (dragged?.origin && _dragMoved) {
+        dragged.wp.lon = dragged.origin.lon;
+        dragged.wp.lat = dragged.origin.lat;
+        dragged.wp.ele = dragged.origin.ele;
+        updateWaypointsOnMap();
+    }
+    _draggingWaypoint = null;
+    _dragMoved = false;
+    _dragStartPoint = null;
+    if (map?.dragPan?.isEnabled && !map.dragPan.isEnabled()) map.dragPan.enable();
+    if (map?.getCanvas) map.getCanvas().style.cursor = '';
+}
+
 export function bindWaypointInteractions() {
     if (_waypointInteractionsBound) return;
     _waypointInteractionsBound = true;
@@ -559,9 +586,16 @@ export function bindWaypointInteractions() {
         if (!ids) return;
         const found = findWaypoint(ids.trackId, ids.wpId);
         if (!found) return;
+        if (!isWaypointEffectivelyVisible(found.track, found.wp)) {
+            showToast(HIDDEN_GEOMETRY_MESSAGE, "error");
+            return;
+        }
         if (!activateTrackFromMap(ids.trackId)) return;
 
-        _draggingWaypoint = found;
+        _draggingWaypoint = {
+            ...found,
+            origin: { lon: found.wp.lon, lat: found.wp.lat, ele: found.wp.ele }
+        };
         _dragMoved = false;
         _dragStartPoint = e.point;
         _suppressNextWaypointClick = false;
@@ -572,6 +606,11 @@ export function bindWaypointInteractions() {
 
     map.on('mousemove', (e) => {
         if (!_draggingWaypoint) return;
+        if (!isWaypointEffectivelyVisible(_draggingWaypoint.track, _draggingWaypoint.wp)) {
+            cancelWaypointGeometryInteraction();
+            showToast(HIDDEN_GEOMETRY_MESSAGE, "error");
+            return;
+        }
         // Ignora il jitter del click: il drag parte solo oltre la soglia in pixel,
         // altrimenti il click di apertura editor verrebbe scambiato per spostamento.
         if (!_dragMoved && _dragStartPoint) {
@@ -594,8 +633,14 @@ export function bindWaypointInteractions() {
 
     map.on('mouseup', async () => {
         if (!_draggingWaypoint) return;
+        if (!isWaypointEffectivelyVisible(_draggingWaypoint.track, _draggingWaypoint.wp)) {
+            cancelWaypointGeometryInteraction();
+            showToast(HIDDEN_GEOMETRY_MESSAGE, "error");
+            return;
+        }
         const dragged = _draggingWaypoint;
         _draggingWaypoint = null;
+        _dragStartPoint = null;
         map.dragPan.enable();
         map.getCanvas().style.cursor = '';
 

@@ -1518,6 +1518,35 @@ body.auth-locked #print-drag-grid {
     pointer-events: none;
 }
 
+.stats-gis-tab-hidden {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    padding: 1rem;
+    text-align: center;
+    color: #cbd5e1;
+    background: rgba(3, 7, 18, 0.96);
+}
+
+.stats-gis-tab-hidden.hidden {
+    display: none;
+}
+
+.stats-gis-tab-hidden strong {
+    color: #f8fafc;
+    font-size: 0.8rem;
+}
+
+.stats-gis-tab-hidden span {
+    color: #94a3b8;
+    font-size: 0.7rem;
+}
+
 .stats-summary-panel {
     width: min(22rem, 34vw);
     display: grid !important;

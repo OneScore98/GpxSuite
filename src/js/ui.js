@@ -39,6 +39,7 @@ import {
     getTracksForGisTab,
     inheritTrackGisTab,
     initializeGisTabs,
+    isGeometryEditable,
     isTrackEffectivelyVisible,
     moveTrackToGisTab,
     rememberActiveTrackForSelectedGisTab,
@@ -76,6 +77,7 @@ let _addPointToActiveSegment = null;
 let _cutTrackAtPoint = null;
 let _handleBoxDeleteClick = null;
 let _addWaypointAtCoords = null;
+let _cancelWaypointGeometryInteraction = null;
 let _saveWaypointModifications = null;
 let _setSnapProfile = null;
 let _togglePrintPlanning = null;
@@ -1950,6 +1952,53 @@ function clearBoxDeleteSelection() {
     }
 }
 
+const HIDDEN_GEOMETRY_MESSAGE = 'Modifica geometrica non disponibile: rendi visibili la Scheda GIS, la traccia e il segmento.';
+
+function canActivateGeometricTool(options = {}) {
+    const selectedTab = gisTabs.find(tab => tab.id === selectedGisTabId);
+    const track = tracks.find(item => item.id === activeTrackId) || null;
+
+    if (selectedTab?.visible === false) {
+        showToast(HIDDEN_GEOMETRY_MESSAGE, 'error');
+        return false;
+    }
+    if (!track && options.allowTrackCreation === true && selectedTab?.visible !== false) {
+        return true;
+    }
+    if (!track || track.gisTabId !== selectedGisTabId) {
+        showToast('Seleziona o crea una traccia nella Scheda GIS corrente.', 'error');
+        return false;
+    }
+
+    const segment = options.requireSegment === true
+        ? ((track.segments || []).find(item => item.id === activeSegmentId)
+            || (track.segments || []).at(-1)
+            || null)
+        : null;
+    const editable = options.requireSegment === true && segment
+        ? isGeometryEditable(track, segment)
+        : isGeometryEditable(track);
+    if (!editable) {
+        showToast(HIDDEN_GEOMETRY_MESSAGE, 'error');
+        return false;
+    }
+    return true;
+}
+
+export function terminateGeometricModes(options = {}) {
+    const wasActive = isDrawing || isCutting || isBoxDeleting || isAddingWaypoint;
+    setIsDrawing(false);
+    setIsCutting(false);
+    setIsBoxDeleting(false);
+    setIsAddingWaypoint(false);
+    clearBoxDeleteSelection();
+    if (_cancelWaypointGeometryInteraction) _cancelWaypointGeometryInteraction();
+    updateToolButtons();
+    updateMapToolCursor();
+    if (options.refreshMap !== false && _updateMapData) _updateMapData(true);
+    return wasActive;
+}
+
 export function injectDeps(deps) {
     _updateMapData = deps.updateMapData;
     _saveHistoryState = deps.saveHistoryState;
@@ -1966,6 +2015,7 @@ export function injectDeps(deps) {
     _cutTrackAtPoint = deps.cutTrackAtPoint;
     _handleBoxDeleteClick = deps.handleBoxDeleteClick;
     _addWaypointAtCoords = deps.addWaypointAtCoords;
+    _cancelWaypointGeometryInteraction = deps.cancelWaypointGeometryInteraction;
     _saveWaypointModifications = deps.saveWaypointModifications;
     _setSnapProfile = deps.setSnapProfile;
     _togglePrintPlanning = deps.togglePrintPlanning;
@@ -2019,6 +2069,7 @@ function applySelectedGisTabContext(gisTabId, options = {}) {
     const previousGisTabId = selectedGisTabId;
     const nextActiveTrackId = selectGisTabDomain(gisTabId, tracks);
     if (previousGisTabId === gisTabId && options.force !== true) return nextActiveTrackId;
+    terminateGeometricModes({ refreshMap: false });
 
     const activeTrack = getSelectedGisTabTracks(tracks)
         .find(track => track.id === nextActiveTrackId) || null;
@@ -2034,6 +2085,7 @@ function applySelectedGisTabContext(gisTabId, options = {}) {
     updateActiveTracksHeader();
     renderGisTree();
     if (_updateMapData) _updateMapData();
+    forceUpdateStats();
     schedulePersistAppSession();
     return nextActiveTrackId;
 }
@@ -2348,9 +2400,13 @@ export function toggleGisTabVisibilityById(gisTabId) {
     const tab = gisTabs.find(item => item.id === gisTabId);
     if (!tab) return null;
     const isVisible = toggleGisTabVisibilityDomain(gisTabId);
+    if (isVisible === false && gisTabId === selectedGisTabId) {
+        terminateGeometricModes({ refreshMap: false });
+    }
     renderGisTabsBar();
     renderGisTree();
     if (_updateMapData) _updateMapData();
+    forceUpdateStats();
     schedulePersistAppSession();
     showToast(`Scheda GIS ${tab.name}: ${isVisible ? 'visibile' : 'nascosta'}`, 'info');
     return isVisible;
@@ -4931,6 +4987,9 @@ export function toggleTrackVisibility(trackId) {
     const t = tracks.find(tr => tr.id === trackId);
     if (t) {
         t.visible = t.visible === false ? true : false;
+        if (t.id === activeTrackId && t.visible === false) {
+            terminateGeometricModes({ refreshMap: false });
+        }
         if (_saveHistoryState) _saveHistoryState();
         if (_updateMapData) _updateMapData();
         renderGisTree();
@@ -4964,6 +5023,9 @@ export function toggleSegmentVisibility(trackId, segId) {
         const s = t.segments.find(sg => sg.id === segId);
         if (s) {
             s.visible = s.visible === false ? true : false;
+            if (t.id === activeTrackId && s.id === activeSegmentId && s.visible === false) {
+                terminateGeometricModes({ refreshMap: false });
+            }
             if (_saveHistoryState) _saveHistoryState();
             if (_updateMapData) _updateMapData();
         }
@@ -5470,12 +5532,14 @@ export function setupEvents() {
     if (viewMode3dButton) viewMode3dButton.onclick = () => _setDimensionMode(true);
 
     document.getElementById('btn-draw-track').onclick = () => {
-        setIsDrawing(!isDrawing);
-        setIsCutting(false);
-        setIsBoxDeleting(false);
-        setIsAddingWaypoint(false);
+        const shouldActivate = !isDrawing;
+        if (shouldActivate && !canActivateGeometricTool({
+            allowTrackCreation: true,
+            requireSegment: true
+        })) return;
+        terminateGeometricModes({ refreshMap: false });
+        setIsDrawing(shouldActivate);
         _disablePrintPlanning();
-        clearBoxDeleteSelection();
 
         const btn = document.getElementById('btn-draw-track');
         if (isDrawing) {
@@ -5715,36 +5779,33 @@ export function setupEvents() {
     });
 
     document.getElementById('btn-cut-track').onclick = () => {
-        setIsCutting(!isCutting);
-        setIsDrawing(false);
-        setIsBoxDeleting(false);
-        setIsAddingWaypoint(false);
+        const shouldActivate = !isCutting;
+        if (shouldActivate && !canActivateGeometricTool()) return;
+        terminateGeometricModes({ refreshMap: false });
+        setIsCutting(shouldActivate);
         _disablePrintPlanning();
-        clearBoxDeleteSelection();
         updateToolButtons();
         updateMapToolCursor();
         showToast(isCutting ? "Clicca su un punto della traccia per tagliarla in due segmenti" : "Taglio disattivato", "info");
     };
 
     document.getElementById('btn-box-delete').onclick = () => {
-        setIsBoxDeleting(!isBoxDeleting);
-        setIsDrawing(false);
-        setIsCutting(false);
-        setIsAddingWaypoint(false);
+        const shouldActivate = !isBoxDeleting;
+        if (shouldActivate && !canActivateGeometricTool()) return;
+        terminateGeometricModes({ refreshMap: false });
+        setIsBoxDeleting(shouldActivate);
         _disablePrintPlanning();
-        clearBoxDeleteSelection();
         updateToolButtons();
         updateMapToolCursor();
         showToast(isBoxDeleting ? "Clicca due punti per definire il rettangolo d'eliminazione" : "Cancellazione box disattivata", "info");
     };
 
     document.getElementById('btn-add-waypoint').onclick = () => {
-        setIsAddingWaypoint(!isAddingWaypoint);
-        setIsDrawing(false);
-        setIsCutting(false);
-        setIsBoxDeleting(false);
+        const shouldActivate = !isAddingWaypoint;
+        if (shouldActivate && !canActivateGeometricTool()) return;
+        terminateGeometricModes({ refreshMap: false });
+        setIsAddingWaypoint(shouldActivate);
         _disablePrintPlanning();
-        clearBoxDeleteSelection();
         updateToolButtons();
         updateMapToolCursor();
         showToast(isAddingWaypoint ? "Clicca sulla mappa per inserire un Waypoint" : "Inserimento waypoint disattivato", "info");
