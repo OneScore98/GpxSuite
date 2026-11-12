@@ -95,6 +95,19 @@ export function getSelectedGisTabTracks(trackList) {
     return getTracksForGisTab(selectedGisTabId, trackList);
 }
 
+export function areTracksInSameGisTab(trackIds, trackList, requiredGisTabId = null) {
+    const ids = Array.isArray(trackIds) ? trackIds : [];
+    const tracks = Array.isArray(trackList) ? trackList : [];
+    if (ids.length === 0) return false;
+
+    const firstTrack = tracks.find(track => track.id === ids[0]);
+    const ownerGisTabId = requiredGisTabId || firstTrack?.gisTabId;
+    if (!ownerGisTabId) return false;
+    return ids.every(trackId => tracks.some(track => (
+        track.id === trackId && track.gisTabId === ownerGisTabId
+    )));
+}
+
 export function isTrackEffectivelyVisible(track) {
     if (!track || track.visible === false) return false;
     const ownerTab = gisTabs.find(tab => tab.id === track.gisTabId);
@@ -126,6 +139,48 @@ export function assignTrackToGisTab(track, requestedGisTabId = selectedGisTabId)
 
 export function inheritTrackGisTab(track, sourceTrack) {
     return assignTrackToGisTab(track, sourceTrack?.gisTabId);
+}
+
+export function moveTrackToGisTab(trackId, destinationGisTabId, trackList) {
+    const tracks = Array.isArray(trackList) ? trackList : [];
+    const trackIndex = tracks.findIndex(track => track.id === trackId);
+    const movedTrack = tracks[trackIndex];
+    const sourceGisTabId = movedTrack?.gisTabId;
+    if (
+        trackIndex === -1 ||
+        sourceGisTabId === destinationGisTabId ||
+        !gisTabs.some(tab => tab.id === sourceGisTabId) ||
+        !gisTabs.some(tab => tab.id === destinationGisTabId)
+    ) {
+        return null;
+    }
+
+    const sourceTab = gisTabs.find(tab => tab.id === sourceGisTabId);
+    const sourceTracks = getTracksForGisTab(sourceGisTabId, tracks);
+    const sourceTrackIndex = sourceTracks.findIndex(track => track.id === trackId);
+    const sourceActiveTrackId = sourceTab.activeTrackId === trackId
+        ? (sourceTracks[sourceTrackIndex - 1]?.id || sourceTracks[sourceTrackIndex + 1]?.id || null)
+        : sourceTab.activeTrackId;
+    if (sourceActiveTrackId !== sourceTab.activeTrackId) {
+        setGisTabs(gisTabs.map(tab => tab.id === sourceGisTabId
+            ? { ...tab, activeTrackId: sourceActiveTrackId }
+            : tab));
+    }
+
+    tracks.splice(trackIndex, 1);
+    let destinationLastIndex = -1;
+    for (let i = 0; i < tracks.length; i++) {
+        if (tracks[i].gisTabId === destinationGisTabId) destinationLastIndex = i;
+    }
+    movedTrack.gisTabId = destinationGisTabId;
+    tracks.splice(destinationLastIndex + 1, 0, movedTrack);
+
+    return {
+        trackId: movedTrack.id,
+        sourceGisTabId,
+        destinationGisTabId,
+        sourceActiveTrackId
+    };
 }
 
 export function captureTrackIngressGisTabId() {
