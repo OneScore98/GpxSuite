@@ -2264,22 +2264,24 @@ function cloneSegmentForPaste(segment, suffix = ' copia') {
     };
 }
 
-function cloneTrackForPaste(track, suffix = ' copia') {
+function cloneTrackForPaste(track, suffix = ' copia', preserveIdentity = false) {
     const cloned = JSON.parse(JSON.stringify(track));
-    cloned.id = uid('track');
-    cloned.localFileId = uid('local');
-    cloned.localCreatedAt = Date.now();
     cloned.localUpdatedAt = Date.now();
-    cloned.localSource = 'created';
     cloned.name = `${track.name || 'Traccia'}${suffix}`;
-    cloned.segments = (cloned.segments || []).map(seg => ({
-        ...seg,
-        id: uid('seg')
-    }));
-    cloned.waypoints = (cloned.waypoints || []).map(wp => ({
-        ...wp,
-        id: uid('wp')
-    }));
+    if (!preserveIdentity) {
+        cloned.id = uid('track');
+        cloned.localFileId = uid('local');
+        cloned.localCreatedAt = Date.now();
+        cloned.localSource = 'created';
+        cloned.segments = (cloned.segments || []).map(seg => ({
+            ...seg,
+            id: uid('seg')
+        }));
+        cloned.waypoints = (cloned.waypoints || []).map(wp => ({
+            ...wp,
+            id: uid('wp')
+        }));
+    }
     return cloned;
 }
 
@@ -2353,7 +2355,8 @@ function pasteTreeClipboard(target = {}) {
     let insertTrackIndex = trackTargetIndex === -1 ? tracks.length : trackTargetIndex + 1;
 
     (_treeClipboard.tracks || []).forEach(trackData => {
-        const cloned = cloneTrackForPaste(trackData, _treeClipboard.mode === 'cut' ? '' : ' copia');
+        const isCut = _treeClipboard.mode === 'cut';
+        const cloned = cloneTrackForPaste(trackData, isCut ? '' : ' copia', isCut);
         assignTrackAtIngress(cloned, { destinationGisTabId });
         tracks.splice(insertTrackIndex, 0, cloned);
         insertTrackIndex++;
