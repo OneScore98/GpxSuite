@@ -193,6 +193,13 @@ html:not(.tw-ready) body > :not(#map):not(#auth-gate) {
     color: #fde68a;
 }
 
+.gis-tab-chip.is-track-drop-target {
+    border-color: rgba(34, 211, 238, 0.95);
+    background: rgba(8, 145, 178, 0.34);
+    color: #ecfeff;
+    box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.28), 0 0 1rem rgba(6, 182, 212, 0.18);
+}
+
 .gis-tab-chip.is-drop-before {
     box-shadow: -3px 0 0 #38bdf8;
 }

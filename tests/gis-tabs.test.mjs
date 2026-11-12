@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
     GIS_TABS_SESSION_VERSION,
     PRIMARY_GIS_TAB_ID,
+    areTracksInSameGisTab,
     activateTrackOwnerGisTab,
     appendTracksAtIngress,
     assignTrackToGisTab,
@@ -17,6 +18,7 @@ import {
     isSegmentEffectivelyVisible,
     isTrackEffectivelyVisible,
     isWaypointEffectivelyVisible,
+    moveTrackToGisTab,
     rememberActiveTrackForSelectedGisTab,
     renameGisTab,
     reorderGisTab,
@@ -551,6 +553,114 @@ test('gli import multipli mantengono ordine relativo e destinazione anche se la 
         'gis-tab-alpi',
         'gis-tab-alpi'
     ]);
+});
+
+test('sposta una traccia in fondo alla destinazione conservando ordine, selezione e memoria attiva', () => {
+    const tracks = [
+        track('a-1', 'gis-tab-a'),
+        track('b-1', 'gis-tab-b'),
+        track('a-2', 'gis-tab-a'),
+        track('b-2', 'gis-tab-b')
+    ];
+    initializeGisTabs(tracks, {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true },
+            { id: 'gis-tab-a', name: 'A', visible: true, activeTrackId: 'a-2' },
+            { id: 'gis-tab-b', name: 'B', visible: true, activeTrackId: 'b-1' }
+        ],
+        selectedGisTabId: 'gis-tab-a'
+    });
+
+    const result = moveTrackToGisTab('a-1', 'gis-tab-b', tracks);
+    const state = getGisTabsState();
+
+    assert.equal(result?.trackId, 'a-1');
+    assert.deepEqual(getTracksForGisTab('gis-tab-a', tracks).map(item => item.id), ['a-2']);
+    assert.deepEqual(getTracksForGisTab('gis-tab-b', tracks).map(item => item.id), ['b-1', 'b-2', 'a-1']);
+    assert.equal(state.selectedGisTabId, 'gis-tab-a');
+    assert.equal(state.gisTabs.find(tab => tab.id === 'gis-tab-a').activeTrackId, 'a-2');
+    assert.equal(state.gisTabs.find(tab => tab.id === 'gis-tab-b').activeTrackId, 'b-1');
+});
+
+test('sostituisce la Traccia attiva con la precedente, poi la successiva, oppure nessuna', () => {
+    const scenarios = [
+        { sourceIds: ['a-1', 'a-2', 'a-3'], movedId: 'a-2', expectedActiveId: 'a-1' },
+        { sourceIds: ['a-2', 'a-3'], movedId: 'a-2', expectedActiveId: 'a-3' },
+        { sourceIds: ['a-1'], movedId: 'a-1', expectedActiveId: null }
+    ];
+
+    for (const scenario of scenarios) {
+        const tracks = scenario.sourceIds.map(id => track(id, 'gis-tab-a'));
+        initializeGisTabs(tracks, {
+            version: GIS_TABS_SESSION_VERSION,
+            gisTabs: [
+                { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true },
+                { id: 'gis-tab-a', name: 'A', visible: true, activeTrackId: scenario.movedId },
+                { id: 'gis-tab-vuota', name: 'Vuota', visible: true, activeTrackId: null }
+            ],
+            selectedGisTabId: 'gis-tab-a'
+        });
+
+        const result = moveTrackToGisTab(scenario.movedId, 'gis-tab-vuota', tracks);
+        const state = getGisTabsState();
+
+        assert.equal(result?.sourceActiveTrackId, scenario.expectedActiveId);
+        assert.equal(state.gisTabs.find(tab => tab.id === 'gis-tab-a').activeTrackId, scenario.expectedActiveId);
+        assert.equal(state.gisTabs.find(tab => tab.id === 'gis-tab-vuota').activeTrackId, null);
+        assert.deepEqual(getTracksForGisTab('gis-tab-vuota', tracks).map(item => item.id), [scenario.movedId]);
+    }
+});
+
+test('protegge le operazioni multiple dal coinvolgere tracce di Schede GIS differenti', () => {
+    const tracks = [
+        track('a-1', 'gis-tab-a'),
+        track('a-2', 'gis-tab-a'),
+        track('b-1', 'gis-tab-b')
+    ];
+    initializeGisTabs(tracks, {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true },
+            { id: 'gis-tab-a', name: 'A', visible: true },
+            { id: 'gis-tab-b', name: 'B', visible: true }
+        ],
+        selectedGisTabId: 'gis-tab-a'
+    });
+
+    assert.equal(areTracksInSameGisTab(['a-1', 'a-2'], tracks, 'gis-tab-a'), true);
+    assert.equal(areTracksInSameGisTab(['a-1', 'b-1'], tracks, 'gis-tab-a'), false);
+    assert.equal(areTracksInSameGisTab(['b-1'], tracks, 'gis-tab-a'), false);
+    assert.equal(areTracksInSameGisTab(['a-1', 'missing'], tracks, 'gis-tab-a'), false);
+});
+
+test('ripristina appartenenza e ordine dopo lo spostamento e applica la visibilità della destinazione', () => {
+    const tracks = [
+        { ...track('a-1', 'gis-tab-a'), visible: true },
+        { ...track('b-1', 'gis-tab-b'), visible: true },
+        { ...track('a-2', 'gis-tab-a'), visible: true }
+    ];
+    initializeGisTabs(tracks, {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true },
+            { id: 'gis-tab-a', name: 'A', visible: true, activeTrackId: 'a-1' },
+            { id: 'gis-tab-b', name: 'B', visible: false, activeTrackId: 'b-1' }
+        ],
+        selectedGisTabId: 'gis-tab-a'
+    });
+
+    moveTrackToGisTab('a-2', 'gis-tab-b', tracks);
+    assert.equal(isTrackEffectivelyVisible(tracks.find(item => item.id === 'a-2')), false);
+
+    const persistedTracks = JSON.parse(JSON.stringify(tracks));
+    const persistedSession = JSON.parse(JSON.stringify(serializeGisTabsState()));
+    initializeGisTabs(persistedTracks, persistedSession);
+
+    assert.deepEqual(getTracksForGisTab('gis-tab-a', persistedTracks).map(item => item.id), ['a-1']);
+    assert.deepEqual(getTracksForGisTab('gis-tab-b', persistedTracks).map(item => item.id), ['b-1', 'a-2']);
+    assert.equal(getGisTabsState().selectedGisTabId, 'gis-tab-a');
+    assert.equal(isTrackEffectivelyVisible(persistedTracks.find(item => item.id === 'a-2')), false);
 });
 
 test('il click cartografico seleziona la scheda proprietaria e la traccia senza cambiare visibilità', () => {

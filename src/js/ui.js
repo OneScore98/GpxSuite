@@ -31,6 +31,7 @@ import { trovaTipoWaypoint } from './waypointTypes.js';
 import {
     activateTrackOwnerGisTab,
     appendTracksAtIngress,
+    areTracksInSameGisTab,
     assignTrackAtIngress,
     captureTrackIngressGisTabId,
     createGisTab as createGisTabDomain,
@@ -39,6 +40,7 @@ import {
     inheritTrackGisTab,
     initializeGisTabs,
     isTrackEffectivelyVisible,
+    moveTrackToGisTab,
     rememberActiveTrackForSelectedGisTab,
     renameGisTab as renameGisTabDomain,
     reorderGisTab as reorderGisTabDomain,
@@ -2222,7 +2224,9 @@ function renderGisTabsBar() {
         const trackCount = getTracksForGisTab(tab.id, tracks).length;
         return `
           <div class="gis-tab-chip ${isSelected ? 'is-selected' : ''} ${isVisible ? '' : 'is-hidden'}"
-               data-gis-tab-id="${escapeXml(tab.id)}">
+               data-gis-tab-id="${escapeXml(tab.id)}"
+               data-gis-tab-drop="${escapeXml(tab.id)}"
+               role="listitem">
             <button type="button" draggable="true"
                     class="gis-tab-drag-handle"
                     data-gis-tab-drag="${escapeXml(tab.id)}"
@@ -2270,8 +2274,15 @@ function renderGisTabsBar() {
             event.preventDefault();
             openGisTabContextMenu(gisTabId, event.clientX, event.clientY);
         });
-        chip.addEventListener('dragover', event => handleGisTabDragOver(event, gisTabId));
-        chip.addEventListener('drop', event => handleGisTabDrop(event, gisTabId));
+        chip.addEventListener('dragover', event => {
+            handleGisTabDragOver(event, gisTabId);
+            handleTrackGisTabDragOver(event);
+        });
+        chip.addEventListener('dragleave', handleTrackGisTabDragLeave);
+        chip.addEventListener('drop', event => {
+            handleGisTabDrop(event, gisTabId);
+            handleTrackGisTabDrop(event);
+        });
     });
     list.querySelectorAll('[data-gis-tab-drag]').forEach(button => {
         button.addEventListener('dragstart', event => handleGisTabDragStart(event, button.dataset.gisTabDrag));
@@ -2301,6 +2312,38 @@ function renderGisTabsBar() {
     refreshLucideIcons();
 }
 
+function clearGisTabDropTargets() {
+    document.querySelectorAll('.gis-tab-chip.is-track-drop-target')
+        .forEach(chip => chip.classList.remove('is-track-drop-target'));
+}
+
+function handleTrackGisTabDragOver(event) {
+    if (_gisDragPayload?.type !== 'track') return;
+    const destinationGisTabId = event.currentTarget.dataset.gisTabDrop;
+    const sourceTrack = tracks.find(track => track.id === _gisDragPayload.trackId);
+    if (!sourceTrack || sourceTrack.gisTabId === destinationGisTabId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'move';
+    event.currentTarget.classList.add('is-track-drop-target');
+}
+
+function handleTrackGisTabDragLeave(event) {
+    if (event.currentTarget.contains(event.relatedTarget)) return;
+    event.currentTarget.classList.remove('is-track-drop-target');
+}
+
+function handleTrackGisTabDrop(event) {
+    if (_gisDragPayload?.type !== 'track') return;
+    event.preventDefault();
+    event.stopPropagation();
+    const trackId = _gisDragPayload.trackId;
+    const destinationGisTabId = event.currentTarget.dataset.gisTabDrop;
+    clearGisTabDropTargets();
+    _gisDragPayload = null;
+    moveTrackToGisTabById(trackId, destinationGisTabId);
+}
+
 export function toggleGisTabVisibilityById(gisTabId) {
     const tab = gisTabs.find(item => item.id === gisTabId);
     if (!tab) return null;
@@ -2311,6 +2354,41 @@ export function toggleGisTabVisibilityById(gisTabId) {
     schedulePersistAppSession();
     showToast(`Scheda GIS ${tab.name}: ${isVisible ? 'visibile' : 'nascosta'}`, 'info');
     return isVisible;
+}
+
+export function moveTrackToGisTabById(trackId, destinationGisTabId) {
+    closeTrackContextMenu();
+    const movedTrack = tracks.find(track => track.id === trackId);
+    const destinationTab = gisTabs.find(tab => tab.id === destinationGisTabId);
+    if (
+        !movedTrack ||
+        movedTrack.gisTabId !== selectedGisTabId ||
+        !destinationTab ||
+        destinationGisTabId === selectedGisTabId
+    ) {
+        return false;
+    }
+
+    if (_saveHistoryState) _saveHistoryState();
+    const result = moveTrackToGisTab(trackId, destinationGisTabId, tracks);
+    if (!result) return false;
+
+    if (activeTrackId === trackId) {
+        const nextActiveTrack = tracks.find(track => track.id === result.sourceActiveTrackId) || null;
+        setActiveTrackId(nextActiveTrack?.id || null);
+        setActiveSegmentId(nextActiveTrack?.segments[0]?.id || null);
+        if (nextActiveTrack) setTrackExpanded(nextActiveTrack.id, true);
+    }
+    setTreeSelection([]);
+    renderGisTabsBar();
+    updateActiveTracksHeader();
+    renderGisTree();
+    if (_updateMapData) _updateMapData(true);
+    renderLocalGpxLibrary();
+    schedulePersistTracks(tracks);
+    schedulePersistAppSession();
+    showToast(`Traccia "${movedTrack.name}" spostata in "${destinationTab.name}"`, 'success');
+    return true;
 }
 
 export function createNewTrack(name, options = {}) {
@@ -2691,11 +2769,20 @@ function openTrackContextMenuAt(trackId, clientX, clientY) {
     const hasClipboard = !!_treeClipboard && (((_treeClipboard.tracks || []).length + (_treeClipboard.segments || []).length) > 0);
     const pointCount = (track.segments || []).reduce((sum, segment) => sum + ((segment.points || []).length), 0);
 
-    const trackIndex = tracks.findIndex(t => t.id === trackId);
+    const selectedTabTracks = getSelectedGisTabTracks(tracks);
+    const trackIndex = selectedTabTracks.findIndex(t => t.id === trackId);
     const isFirst = trackIndex === 0;
-    const isLast = trackIndex === tracks.length - 1;
+    const isLast = trackIndex === selectedTabTracks.length - 1;
     const selectedTracks = getSelectedTracks();
     const selectedTracksCount = selectedTracks.length;
+    const destinationTabs = gisTabs.filter(tab => tab.id !== track.gisTabId);
+    const moveDestinationsHtml = destinationTabs.map(tab => `
+      <button type="button"
+              data-move-track-destination="${escapeXml(tab.id)}"
+              class="w-full flex items-center gap-2 px-2 py-2 rounded-lg text-left hover:bg-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+        <i data-lucide="panel-top" class="w-3.5 h-3.5"></i>
+        <span class="truncate">${escapeXml(tab.name)}</span>
+      </button>`).join('');
 
     closeTrackContextMenu();
     const menu = document.createElement('div');
@@ -2714,9 +2801,26 @@ function openTrackContextMenuAt(trackId, clientX, clientY) {
       ${createTreeContextMenuButton('download', 'Scarica traccia', `downloadTrackGPX('${track.id}', 'context_menu')`)}
       ${createTreeContextMenuButton('chevron-up', 'Sposta su', `moveTrackUp('${track.id}')`, isFirst)}
       ${createTreeContextMenuButton('chevron-down', 'Sposta giù', `moveTrackDown('${track.id}')`, isLast)}
+      <button type="button"
+              data-move-track-toggle
+              aria-expanded="false"
+              aria-controls="track-move-destinations"
+              ${destinationTabs.length === 0 ? 'disabled' : ''}
+              class="w-full flex items-center gap-2 px-2 py-2 rounded-lg text-left hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed">
+        <i data-lucide="panel-top-open" class="w-3.5 h-3.5"></i>
+        <span class="flex-1">Sposta in…</span>
+        <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+      </button>
+      <div id="track-move-destinations"
+           data-move-track-list
+           role="group"
+           aria-label="Sposta la traccia in un'altra Scheda GIS"
+           class="hidden ml-3 pl-2 border-l border-gray-800">
+        ${moveDestinationsHtml}
+      </div>
       ${selectedTracksCount > 1
             ? createTreeContextMenuButton('git-merge', 'Unisci tracce selezionate', 'mergeSelectedTracks()')
-            : createTreeContextMenuButton('git-merge', 'Unisci con un\'altra traccia...', `openMergeTracksModal('${track.id}')`, tracks.length < 2)
+            : createTreeContextMenuButton('git-merge', 'Unisci con un\'altra traccia...', `openMergeTracksModal('${track.id}')`, selectedTabTracks.length < 2)
         }
       <div class="my-1 border-t border-gray-800"></div>
       <button onclick="openTrackNameEditor('${track.id}')" class="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-gray-800 text-left">
@@ -2739,6 +2843,20 @@ function openTrackContextMenuAt(trackId, clientX, clientY) {
       ${createTreeContextMenuButton('trash-2', selectedCount > 1 ? 'Elimina selezione' : 'Elimina file', selectedCount > 1 ? 'deleteTreeSelection()' : `deleteTrack('${track.id}')`, false, true)}`;
     document.body.appendChild(menu);
     refreshLucideIcons();
+
+    const moveToggle = menu.querySelector('[data-move-track-toggle]');
+    const moveList = menu.querySelector('[data-move-track-list]');
+    moveToggle?.addEventListener('click', () => {
+        const willOpen = moveList.classList.contains('hidden');
+        moveList.classList.toggle('hidden', !willOpen);
+        moveToggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        if (willOpen) moveList.querySelector('[data-move-track-destination]')?.focus();
+    });
+    menu.querySelectorAll('[data-move-track-destination]').forEach(button => {
+        button.addEventListener('click', () => {
+            moveTrackToGisTabById(track.id, button.dataset.moveTrackDestination);
+        });
+    });
 
     const padding = 8;
     const rect = menu.getBoundingClientRect();
@@ -4475,7 +4593,8 @@ function _doRenderGisTree() {
                               ondragstart="handleGisDragStart(event, 'track', '${track.id}')"
                               ondragend="handleGisDragEnd(event)"
                               class="gis-track-drag mt-0.5 text-gray-600 hover:text-gray-300 cursor-grab active:cursor-grabbing"
-                              title="Trascina per riordinare questo file GPX">
+                              aria-label="Trascina per riordinare o spostare la traccia ${escapeXml(track.name)} in un'altra Scheda GIS"
+                              title="Trascina per riordinare o spostare in un'altra Scheda GIS">
                         <i data-lucide="grip-vertical" class="w-4 h-4"></i>
                       </button>
                       <div class="gis-track-title-block flex-1 min-w-0 cursor-pointer">
@@ -4630,11 +4749,12 @@ function getDropPosition(event) {
 }
 
 function finishGisTreeMove(message) {
-    if (_saveHistoryState) _saveHistoryState();
     if (_updateMapData) _updateMapData(true);
     updateActiveTracksHeader();
     renderGisTree();
     renderLocalGpxLibrary();
+    schedulePersistTracks(tracks);
+    schedulePersistAppSession();
     showToast(message, 'success');
 }
 
@@ -4652,6 +4772,7 @@ export function handleGisDragOver(event) {
 
 export function handleGisDragEnd() {
     _gisDragPayload = null;
+    clearGisTabDropTargets();
 }
 
 export function handleGisDrop(event, targetType, targetTrackId, targetSegId = null) {
@@ -4665,12 +4786,22 @@ export function handleGisDrop(event, targetType, targetTrackId, targetSegId = nu
     if (_gisDragPayload.type === 'track' && targetType === 'track') {
         const fromIndex = tracks.findIndex(track => track.id === _gisDragPayload.trackId);
         const targetIndex = tracks.findIndex(track => track.id === targetTrackId);
-        if (fromIndex === -1 || targetIndex === -1 || fromIndex === targetIndex) return;
+        const sourceTrack = tracks[fromIndex];
+        const targetTrack = tracks[targetIndex];
+        if (
+            fromIndex === -1 ||
+            targetIndex === -1 ||
+            fromIndex === targetIndex ||
+            sourceTrack?.gisTabId !== selectedGisTabId ||
+            targetTrack?.gisTabId !== selectedGisTabId
+        ) return;
 
+        if (_saveHistoryState) _saveHistoryState();
         let toIndex = targetIndex + (getDropPosition(event) === 'after' ? 1 : 0);
         if (fromIndex < toIndex) toIndex--;
         tracks.splice(toIndex, 0, tracks.splice(fromIndex, 1)[0]);
         setActiveTrackId(_gisDragPayload.trackId);
+        rememberActiveTrackForSelectedGisTab(_gisDragPayload.trackId, tracks);
         const activeTrack = tracks.find(track => track.id === _gisDragPayload.trackId);
         setActiveSegmentId(activeTrack?.segments[0]?.id || null);
         _gisDragPayload = null;
@@ -4682,7 +4813,12 @@ export function handleGisDrop(event, targetType, targetTrackId, targetSegId = nu
 
     const sourceTrack = tracks.find(track => track.id === _gisDragPayload.trackId);
     const targetTrack = tracks.find(track => track.id === targetTrackId);
-    if (!sourceTrack || !targetTrack) return;
+    if (
+        !sourceTrack ||
+        !targetTrack ||
+        sourceTrack.gisTabId !== selectedGisTabId ||
+        targetTrack.gisTabId !== selectedGisTabId
+    ) return;
 
     if (
         targetType === 'segment' &&
@@ -4696,6 +4832,7 @@ export function handleGisDrop(event, targetType, targetTrackId, targetSegId = nu
     const sourceIndex = sourceTrack.segments.findIndex(seg => seg.id === _gisDragPayload.segId);
     if (sourceIndex === -1) return;
 
+    if (_saveHistoryState) _saveHistoryState();
     const [segment] = sourceTrack.segments.splice(sourceIndex, 1);
     let targetIndex = targetTrack.segments.length;
 
@@ -5004,24 +5141,30 @@ export function showToast(message, type = 'info') {
 
 export function moveTrackUp(trackId) {
     closeTrackContextMenu();
-    const index = tracks.findIndex(t => t.id === trackId);
-    if (index <= 0) return;
+    const selectedTracks = getSelectedGisTabTracks(tracks);
+    const selectedIndex = selectedTracks.findIndex(track => track.id === trackId);
+    if (selectedIndex <= 0) return;
 
-    const temp = tracks[index];
-    tracks[index] = tracks[index - 1];
-    tracks[index - 1] = temp;
+    const index = tracks.findIndex(track => track.id === trackId);
+    const previousIndex = tracks.findIndex(track => track.id === selectedTracks[selectedIndex - 1].id);
+    if (index === -1 || previousIndex === -1) return;
+    if (_saveHistoryState) _saveHistoryState();
+    [tracks[index], tracks[previousIndex]] = [tracks[previousIndex], tracks[index]];
 
     finishGisTreeMove("Traccia spostata in alto");
 }
 
 export function moveTrackDown(trackId) {
     closeTrackContextMenu();
-    const index = tracks.findIndex(t => t.id === trackId);
-    if (index === -1 || index >= tracks.length - 1) return;
+    const selectedTracks = getSelectedGisTabTracks(tracks);
+    const selectedIndex = selectedTracks.findIndex(track => track.id === trackId);
+    if (selectedIndex === -1 || selectedIndex >= selectedTracks.length - 1) return;
 
-    const temp = tracks[index];
-    tracks[index] = tracks[index + 1];
-    tracks[index + 1] = temp;
+    const index = tracks.findIndex(track => track.id === trackId);
+    const nextIndex = tracks.findIndex(track => track.id === selectedTracks[selectedIndex + 1].id);
+    if (index === -1 || nextIndex === -1) return;
+    if (_saveHistoryState) _saveHistoryState();
+    [tracks[index], tracks[nextIndex]] = [tracks[nextIndex], tracks[index]];
 
     finishGisTreeMove("Traccia spostata in basso");
 }
@@ -5029,11 +5172,13 @@ export function moveTrackDown(trackId) {
 export function openMergeTracksModal(trackId) {
     closeTrackContextMenu();
     const sourceTrack = tracks.find(t => t.id === trackId);
-    if (!sourceTrack) return;
+    if (!sourceTrack || sourceTrack.gisTabId !== selectedGisTabId) return;
 
-    const otherTracks = tracks.filter(t => t.id !== trackId);
+    const otherTracks = tracks.filter(t => (
+        t.id !== trackId && t.gisTabId === sourceTrack.gisTabId
+    ));
     if (otherTracks.length === 0) {
-        showToast("Nessun'altra traccia disponibile con cui effettuare l'unione", "error");
+        showToast("Nessun'altra traccia disponibile in questa Scheda GIS", "error");
         return;
     }
 
@@ -5086,7 +5231,17 @@ export function openMergeTracksModal(trackId) {
 export function mergeTwoTracks(sourceId, targetId) {
     const sourceTrack = tracks.find(t => t.id === sourceId);
     const targetTrack = tracks.find(t => t.id === targetId);
-    if (!sourceTrack || !targetTrack) return;
+    if (
+        !sourceTrack ||
+        !targetTrack ||
+        sourceId === targetId ||
+        !areTracksInSameGisTab([sourceId, targetId], tracks, selectedGisTabId)
+    ) {
+        showToast("Sposta prima le tracce nella stessa Scheda GIS per unirle", "error");
+        return;
+    }
+
+    if (_saveHistoryState) _saveHistoryState();
 
     // Copy segments
     if (sourceTrack.segments) {
@@ -5118,11 +5273,12 @@ export function mergeTwoTracks(sourceId, targetId) {
     setTrackExpanded(targetTrack.id, true);
     setTreeSelection([makeTreeKey('track', targetTrack.id)]);
 
-    if (_saveHistoryState) _saveHistoryState();
     if (_updateMapData) _updateMapData();
     updateActiveTracksHeader();
     renderGisTree();
     renderLocalGpxLibrary();
+    schedulePersistTracks(tracks);
+    schedulePersistAppSession();
 
     showToast(`Traccia "${sourceTrack.name}" unita in "${targetTrack.name}"!`, "success");
 }
@@ -5134,6 +5290,12 @@ export function mergeSelectedTracks() {
         showToast("Seleziona almeno due tracce per effettuare l'unione", "error");
         return;
     }
+    if (!areTracksInSameGisTab(selectedTracks.map(track => track.id), tracks, selectedGisTabId)) {
+        showToast("Sposta prima le tracce nella stessa Scheda GIS per unirle", "error");
+        return;
+    }
+
+    if (_saveHistoryState) _saveHistoryState();
 
     // Sort selectedTracks by their index in tracks to keep order consistent
     selectedTracks.sort((a, b) => {
@@ -5175,11 +5337,12 @@ export function mergeSelectedTracks() {
     setTrackExpanded(targetTrack.id, true);
     setTreeSelection([makeTreeKey('track', targetTrack.id)]);
 
-    if (_saveHistoryState) _saveHistoryState();
     if (_updateMapData) _updateMapData();
     updateActiveTracksHeader();
     renderGisTree();
     renderLocalGpxLibrary();
+    schedulePersistTracks(tracks);
+    schedulePersistAppSession();
 
     showToast(`Tracce unite con successo in "${targetTrack.name}"!`, "success");
 }
