@@ -18,6 +18,8 @@ import {
     isTrackEffectivelyVisible,
     isWaypointEffectivelyVisible,
     rememberActiveTrackForSelectedGisTab,
+    renameGisTab,
+    reorderGisTab,
     selectGisTab,
     serializeGisTabsState,
     toggleGisTabVisibility
@@ -221,6 +223,93 @@ test('crea in coda una scheda vuota con il primo nome disponibile e la seleziona
     assert.equal(created.activeTrackId, null);
     assert.equal(state.gisTabs.at(-1).id, created.id);
     assert.equal(state.selectedGisTabId, created.id);
+});
+
+test('rinomina una Scheda GIS eliminando gli spazi esterni', () => {
+    initializeGisTabs([], {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true },
+            { id: 'gis-tab-alpi', name: 'Scheda 1', visible: true }
+        ],
+        selectedGisTabId: 'gis-tab-alpi'
+    });
+
+    assert.equal(renameGisTab('gis-tab-alpi', '  Alpi occidentali  '), 'Alpi occidentali');
+    assert.equal(getGisTabsState().gisTabs[1].name, 'Alpi occidentali');
+});
+
+test('rifiuta nomi duplicati senza distinzione tra maiuscole e minuscole', () => {
+    initializeGisTabs([], {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true },
+            { id: 'gis-tab-alpi', name: 'Alpi', visible: true },
+            { id: 'gis-tab-laghi', name: 'Laghi', visible: true }
+        ],
+        selectedGisTabId: 'gis-tab-laghi'
+    });
+
+    assert.equal(renameGisTab('gis-tab-laghi', '  aLpI  '), null);
+    assert.equal(getGisTabsState().gisTabs[2].name, 'Laghi');
+});
+
+test('una rinomina vuota conserva il nome valido corrente', () => {
+    initializeGisTabs([], {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true },
+            { id: 'gis-tab-alpi', name: 'Alpi', visible: true }
+        ],
+        selectedGisTabId: 'gis-tab-alpi'
+    });
+
+    assert.equal(renameGisTab('gis-tab-alpi', '   '), 'Alpi');
+    assert.equal(getGisTabsState().gisTabs[1].name, 'Alpi');
+});
+
+test('il ripristino assegna il primo nome Scheda N disponibile a nomi vuoti o duplicati', () => {
+    const state = initializeGisTabs([], {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true },
+            { id: 'gis-tab-uno', name: 'Scheda 1', visible: true },
+            { id: 'gis-tab-vuota', name: '   ', visible: true },
+            { id: 'gis-tab-duplicata', name: 'sChEdA 1', visible: true }
+        ],
+        selectedGisTabId: PRIMARY_GIS_TAB_ID
+    });
+
+    assert.deepEqual(state.gisTabs.map(tab => tab.name), [
+        'Principale',
+        'Scheda 1',
+        'Scheda 2',
+        'Scheda 3'
+    ]);
+});
+
+test('riordina le Schede GIS e conserva nome e ordine nel round-trip', () => {
+    initializeGisTabs([], {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true },
+            { id: 'gis-tab-alpi', name: 'Alpi', visible: true },
+            { id: 'gis-tab-laghi', name: 'Laghi', visible: true }
+        ],
+        selectedGisTabId: 'gis-tab-alpi'
+    });
+
+    assert.equal(reorderGisTab('gis-tab-laghi', PRIMARY_GIS_TAB_ID, 'before'), true);
+    renameGisTab('gis-tab-laghi', '  Prealpi  ');
+    const persisted = JSON.parse(JSON.stringify(serializeGisTabsState()));
+    const restored = initializeGisTabs([], persisted);
+
+    assert.deepEqual(restored.gisTabs.map(tab => `${tab.id}:${tab.name}`), [
+        'gis-tab-laghi:Prealpi',
+        `${PRIMARY_GIS_TAB_ID}:Principale`,
+        'gis-tab-alpi:Alpi'
+    ]);
+    assert.equal(restored.selectedGisTabId, 'gis-tab-alpi');
 });
 
 test('seleziona la scheda con fallback alla prima traccia e ricorda l\'ultima attiva', () => {

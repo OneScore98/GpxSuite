@@ -35,10 +35,13 @@ import {
     captureTrackIngressGisTabId,
     createGisTab as createGisTabDomain,
     getSelectedGisTabTracks,
+    getTracksForGisTab,
     inheritTrackGisTab,
     initializeGisTabs,
     isTrackEffectivelyVisible,
     rememberActiveTrackForSelectedGisTab,
+    renameGisTab as renameGisTabDomain,
+    reorderGisTab as reorderGisTabDomain,
     selectGisTab as selectGisTabDomain,
     toggleGisTabVisibility as toggleGisTabVisibilityDomain
 } from './gis-tabs.js';
@@ -98,6 +101,8 @@ let _updateRecordingSettings = null;
 let _getDefaultRecordingName = null;
 let _localLibraryBound = false;
 let _gisDragPayload = null;
+let _gisTabDragPayload = null;
+let _gisTabContextMenu = null;
 let _trackContextMenu = null;
 let _savingLoggerSessionId = null;
 let _trackLongPressTimer = null;
@@ -2034,11 +2039,177 @@ function applySelectedGisTabContext(gisTabId, options = {}) {
 export function createNewGisTab() {
     const createdTab = createGisTabDomain();
     applySelectedGisTabContext(createdTab.id, { force: true });
+    requestAnimationFrame(() => openGisTabNameEditor(createdTab.id));
     return createdTab;
 }
 
 export function selectGisTabById(gisTabId) {
     return applySelectedGisTabContext(gisTabId);
+}
+
+function closeGisTabContextMenu() {
+    if (_gisTabContextMenu) {
+        _gisTabContextMenu.remove();
+        _gisTabContextMenu = null;
+    }
+    document.removeEventListener('pointerdown', handleOutsideGisTabContextMenu);
+    document.removeEventListener('keydown', handleGisTabContextMenuKeydown);
+}
+
+function handleOutsideGisTabContextMenu(event) {
+    if (!_gisTabContextMenu || _gisTabContextMenu.contains(event.target)) return;
+    closeGisTabContextMenu();
+}
+
+function handleGisTabContextMenuKeydown(event) {
+    if (event.key === 'Escape') closeGisTabContextMenu();
+}
+
+function openGisTabContextMenu(gisTabId, clientX, clientY) {
+    const tab = gisTabs.find(item => item.id === gisTabId);
+    if (!tab) return;
+    closeGisTabContextMenu();
+
+    const menu = document.createElement('div');
+    menu.className = 'gpx-track-context-menu fixed z-50 w-52 rounded-xl border border-gray-700 bg-gray-950 shadow-2xl p-2 text-xs text-gray-200';
+    menu.setAttribute('role', 'menu');
+    menu.innerHTML = `
+      <div class="px-2 pb-2 mb-1 border-b border-gray-800 font-bold truncate">${escapeXml(tab.name)}</div>
+      <button type="button" data-gis-tab-menu-action="rename" role="menuitem"
+              class="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-gray-800 text-left">
+        <i data-lucide="pencil" class="w-3.5 h-3.5"></i><span>Rinomina</span>
+      </button>
+      <button type="button" data-gis-tab-menu-action="delete" role="menuitem"
+              class="w-full flex items-center gap-2 px-2 py-2 rounded-lg text-red-300 hover:bg-red-950 text-left">
+        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i><span>Elimina</span>
+      </button>`;
+    document.body.appendChild(menu);
+    refreshLucideIcons();
+
+    const padding = 8;
+    const rect = menu.getBoundingClientRect();
+    menu.style.left = `${Math.max(padding, Math.min(clientX, window.innerWidth - rect.width - padding))}px`;
+    menu.style.top = `${Math.max(padding, Math.min(clientY, window.innerHeight - rect.height - padding))}px`;
+    menu.querySelector('[data-gis-tab-menu-action="rename"]').addEventListener('click', () => {
+        closeGisTabContextMenu();
+        openGisTabNameEditor(gisTabId);
+    });
+    menu.querySelector('[data-gis-tab-menu-action="delete"]').addEventListener('click', () => {
+        requestDeleteGisTab(gisTabId);
+    });
+    _gisTabContextMenu = menu;
+    setTimeout(() => {
+        document.addEventListener('pointerdown', handleOutsideGisTabContextMenu);
+        document.addEventListener('keydown', handleGisTabContextMenuKeydown);
+    }, 0);
+}
+
+export function requestDeleteGisTab(gisTabId) {
+    const tab = gisTabs.find(item => item.id === gisTabId);
+    closeGisTabContextMenu();
+    if (!tab) return false;
+    showToast(`L'eliminazione di ${tab.name} richiederà conferma`, 'info');
+    return false;
+}
+
+export function openGisTabNameEditor(gisTabId) {
+    closeGisTabContextMenu();
+    const nameEl = document.getElementById(`gis-tab-name-${gisTabId}`);
+    if (!nameEl) return;
+    nameEl.contentEditable = 'true';
+    nameEl.classList.add('is-editing');
+    nameEl.focus();
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(nameEl);
+    selection.removeAllRanges();
+    selection.addRange(range);
+}
+
+function closeGisTabNameEditor(nameEl) {
+    if (!nameEl) return;
+    nameEl.contentEditable = 'false';
+    nameEl.classList.remove('is-editing');
+}
+
+export function finishGisTabNameEditor(gisTabId, requestedName) {
+    const tab = gisTabs.find(item => item.id === gisTabId);
+    const nameEl = document.getElementById(`gis-tab-name-${gisTabId}`);
+    if (!tab) {
+        closeGisTabNameEditor(nameEl);
+        return false;
+    }
+
+    const previousName = tab.name;
+    const renamed = renameGisTabDomain(gisTabId, requestedName);
+    if (renamed === null) {
+        if (nameEl) nameEl.textContent = previousName;
+        closeGisTabNameEditor(nameEl);
+        showToast('Esiste già una Scheda GIS con questo nome', 'error');
+        return false;
+    }
+
+    if (nameEl) nameEl.textContent = renamed;
+    closeGisTabNameEditor(nameEl);
+    renderGisTabsBar();
+    schedulePersistAppSession();
+    return true;
+}
+
+function handleGisTabNameKeydown(event, gisTabId) {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        finishGisTabNameEditor(gisTabId, event.currentTarget.textContent);
+        event.currentTarget.blur();
+    } else if (event.key === 'Escape') {
+        event.preventDefault();
+        const tab = gisTabs.find(item => item.id === gisTabId);
+        if (tab) event.currentTarget.textContent = tab.name;
+        closeGisTabNameEditor(event.currentTarget);
+        event.currentTarget.blur();
+    }
+}
+
+function clearGisTabDropIndicators() {
+    document.querySelectorAll('.gis-tab-chip.is-drop-before, .gis-tab-chip.is-drop-after')
+        .forEach(chip => chip.classList.remove('is-drop-before', 'is-drop-after'));
+}
+
+function handleGisTabDragStart(event, gisTabId) {
+    _gisTabDragPayload = { type: 'gis-tab', gisTabId };
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', JSON.stringify(_gisTabDragPayload));
+}
+
+function handleGisTabDragOver(event, targetGisTabId) {
+    if (_gisTabDragPayload?.type !== 'gis-tab' || _gisTabDragPayload.gisTabId === targetGisTabId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    const chip = event.currentTarget;
+    const rect = chip.getBoundingClientRect();
+    const position = event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+    clearGisTabDropIndicators();
+    chip.classList.add(position === 'before' ? 'is-drop-before' : 'is-drop-after');
+}
+
+function handleGisTabDrop(event, targetGisTabId) {
+    if (_gisTabDragPayload?.type !== 'gis-tab') return;
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const position = event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+    const changed = reorderGisTabDomain(_gisTabDragPayload.gisTabId, targetGisTabId, position);
+    _gisTabDragPayload = null;
+    clearGisTabDropIndicators();
+    if (!changed) return;
+    renderGisTabsBar();
+    schedulePersistAppSession();
+    showToast('Ordine delle Schede GIS aggiornato', 'success');
+}
+
+function handleGisTabDragEnd() {
+    _gisTabDragPayload = null;
+    clearGisTabDropIndicators();
 }
 
 function renderGisTabsBar() {
@@ -2048,15 +2219,24 @@ function renderGisTabsBar() {
     list.innerHTML = gisTabs.map(tab => {
         const isSelected = tab.id === selectedGisTabId;
         const isVisible = tab.visible !== false;
+        const trackCount = getTracksForGisTab(tab.id, tracks).length;
         return `
           <div class="gis-tab-chip ${isSelected ? 'is-selected' : ''} ${isVisible ? '' : 'is-hidden'}"
                data-gis-tab-id="${escapeXml(tab.id)}">
+            <button type="button" draggable="true"
+                    class="gis-tab-drag-handle"
+                    data-gis-tab-drag="${escapeXml(tab.id)}"
+                    aria-label="Riordina la Scheda GIS ${escapeXml(tab.name)}"
+                    title="Trascina per riordinare">
+              <i data-lucide="grip-vertical" class="w-3 h-3"></i>
+            </button>
             <button type="button"
                     class="gis-tab-select"
                     data-gis-tab-select="${escapeXml(tab.id)}"
                     aria-pressed="${isSelected ? 'true' : 'false'}"
                     title="Apri ${escapeXml(tab.name)}">
-              <span class="gis-tab-name">${escapeXml(tab.name)}</span>
+              <span id="gis-tab-name-${escapeXml(tab.id)}" class="gis-tab-name" contenteditable="false" spellcheck="false">${escapeXml(tab.name)}</span>
+              <span class="gis-tab-count" aria-label="${trackCount} ${trackCount === 1 ? 'traccia' : 'tracce'}">${trackCount}</span>
             </button>
             <button type="button"
                     class="gis-tab-visibility"
@@ -2064,6 +2244,13 @@ function renderGisTabsBar() {
                     aria-label="${isVisible ? 'Nascondi' : 'Mostra'} la Scheda GIS ${escapeXml(tab.name)}"
                     title="${isVisible ? 'Nascondi' : 'Mostra'} la Scheda GIS sulla mappa e in stampa">
               <i data-lucide="${isVisible ? 'eye' : 'eye-off'}" class="w-3.5 h-3.5"></i>
+            </button>
+            <button type="button"
+                    class="gis-tab-menu-trigger"
+                    data-gis-tab-menu="${escapeXml(tab.id)}"
+                    aria-label="Azioni per la Scheda GIS ${escapeXml(tab.name)}"
+                    title="Azioni Scheda GIS">
+              <i data-lucide="more-vertical" class="w-3.5 h-3.5"></i>
             </button>
           </div>`;
     }).join('');
@@ -2075,6 +2262,40 @@ function renderGisTabsBar() {
         button.addEventListener('click', event => {
             event.stopPropagation();
             toggleGisTabVisibilityById(button.dataset.gisTabVisibility);
+        });
+    });
+    list.querySelectorAll('[data-gis-tab-id]').forEach(chip => {
+        const gisTabId = chip.dataset.gisTabId;
+        chip.addEventListener('contextmenu', event => {
+            event.preventDefault();
+            openGisTabContextMenu(gisTabId, event.clientX, event.clientY);
+        });
+        chip.addEventListener('dragover', event => handleGisTabDragOver(event, gisTabId));
+        chip.addEventListener('drop', event => handleGisTabDrop(event, gisTabId));
+    });
+    list.querySelectorAll('[data-gis-tab-drag]').forEach(button => {
+        button.addEventListener('dragstart', event => handleGisTabDragStart(event, button.dataset.gisTabDrag));
+        button.addEventListener('dragend', handleGisTabDragEnd);
+    });
+    list.querySelectorAll('.gis-tab-name').forEach(nameEl => {
+        const gisTabId = nameEl.closest('[data-gis-tab-id]')?.dataset.gisTabId;
+        nameEl.addEventListener('dblclick', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            openGisTabNameEditor(gisTabId);
+        });
+        nameEl.addEventListener('keydown', event => handleGisTabNameKeydown(event, gisTabId));
+        nameEl.addEventListener('blur', event => {
+            if (event.currentTarget.contentEditable === 'true') {
+                finishGisTabNameEditor(gisTabId, event.currentTarget.textContent);
+            }
+        });
+    });
+    list.querySelectorAll('[data-gis-tab-menu]').forEach(button => {
+        button.addEventListener('click', event => {
+            event.stopPropagation();
+            const rect = button.getBoundingClientRect();
+            openGisTabContextMenu(button.dataset.gisTabMenu, rect.right, rect.bottom + 4);
         });
     });
     refreshLucideIcons();
