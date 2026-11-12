@@ -4,8 +4,9 @@ import assert from 'node:assert/strict';
 import {
     GIS_TABS_SESSION_VERSION,
     PRIMARY_GIS_TAB_ID,
+    appendTracksAtIngress,
     assignTrackToGisTab,
-    captureSelectedGisTabId,
+    captureTrackIngressGisTabId,
     createGisTab,
     getGisTabsState,
     getSelectedGisTabTracks,
@@ -147,7 +148,7 @@ test('la destinazione catturata all\'avvio di un flusso live resta stabile dopo 
         selectedGisTabId: 'gis-tab-live'
     });
 
-    const destinationId = captureSelectedGisTabId();
+    const destinationId = captureTrackIngressGisTabId();
     selectGisTab(PRIMARY_GIS_TAB_ID, []);
     const liveTrack = track('track-live');
 
@@ -188,7 +189,7 @@ test('l\'incolla usa la scheda di destinazione catturata e sovrascrive il propri
     const copiedTrack = track('track-copy', 'gis-tab-a');
 
     selectGisTab('gis-tab-b', []);
-    const pasteDestinationId = captureSelectedGisTabId();
+    const pasteDestinationId = captureTrackIngressGisTabId();
     const pastedTrack = JSON.parse(JSON.stringify(copiedTrack));
     pastedTrack.id = 'track-pasted';
     assignTrackToGisTab(pastedTrack, pasteDestinationId);
@@ -260,4 +261,76 @@ test('una scheda vuota non mantiene tracce esterne e la selezione non cambia la 
     assert.deepEqual(getSelectedGisTabTracks(tracks), []);
     assert.deepEqual(tracks.map(item => item.visible), visibilityBefore);
     assert.equal(getGisTabsState().gisTabs.find(tab => tab.id === 'gis-tab-vuota').activeTrackId, null);
+});
+
+test('la creazione manuale usa la Scheda GIS catturata all\'inizio dell\'ingresso', () => {
+    const tracks = [];
+    initializeGisTabs(tracks, {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true },
+            { id: 'gis-tab-alpi', name: 'Alpi', visible: true }
+        ],
+        selectedGisTabId: 'gis-tab-alpi'
+    });
+    const destinationGisTabId = captureTrackIngressGisTabId();
+    selectGisTab(PRIMARY_GIS_TAB_ID, tracks);
+
+    const created = track('manuale');
+    appendTracksAtIngress(tracks, [created], { destinationGisTabId });
+
+    assert.equal(created.gisTabId, 'gis-tab-alpi');
+    assert.deepEqual(tracks.map(item => item.id), ['manuale']);
+});
+
+test('la libreria preserva un proprietario persistito valido e recupera gli orfani nella destinazione catturata', () => {
+    const tracks = [];
+    initializeGisTabs(tracks, {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true },
+            { id: 'gis-tab-alpi', name: 'Alpi', visible: true }
+        ],
+        selectedGisTabId: 'gis-tab-alpi'
+    });
+    const destinationGisTabId = captureTrackIngressGisTabId();
+    const persisted = track('persistita', PRIMARY_GIS_TAB_ID);
+    const orphan = track('orfana', 'gis-tab-rimossa');
+
+    appendTracksAtIngress(tracks, [persisted, orphan], {
+        destinationGisTabId,
+        preserveValidOwner: true
+    });
+
+    assert.equal(persisted.gisTabId, PRIMARY_GIS_TAB_ID);
+    assert.equal(orphan.gisTabId, 'gis-tab-alpi');
+});
+
+test('gli import multipli mantengono ordine relativo e destinazione anche se la selezione cambia', () => {
+    const tracks = [track('preesistente', PRIMARY_GIS_TAB_ID)];
+    initializeGisTabs(tracks, {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true },
+            { id: 'gis-tab-alpi', name: 'Alpi', visible: true }
+        ],
+        selectedGisTabId: 'gis-tab-alpi'
+    });
+    const destinationGisTabId = captureTrackIngressGisTabId();
+    selectGisTab(PRIMARY_GIS_TAB_ID, tracks);
+    const imported = [track('import-1'), track('import-2'), track('import-3')];
+
+    appendTracksAtIngress(tracks, imported, { destinationGisTabId });
+
+    assert.deepEqual(tracks.map(item => item.id), [
+        'preesistente',
+        'import-1',
+        'import-2',
+        'import-3'
+    ]);
+    assert.deepEqual(imported.map(item => item.gisTabId), [
+        'gis-tab-alpi',
+        'gis-tab-alpi',
+        'gis-tab-alpi'
+    ]);
 });

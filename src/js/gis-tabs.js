@@ -95,12 +95,6 @@ export function getSelectedGisTabTracks(trackList) {
     return getTracksForGisTab(selectedGisTabId, trackList);
 }
 
-export function captureSelectedGisTabId() {
-    return gisTabs.some(tab => tab.id === selectedGisTabId)
-        ? selectedGisTabId
-        : PRIMARY_GIS_TAB_ID;
-}
-
 export function assignTrackToGisTab(track, requestedGisTabId = selectedGisTabId) {
     if (!track || typeof track !== 'object') return null;
     if (!gisTabs.some(tab => tab.id === PRIMARY_GIS_TAB_ID)) {
@@ -115,6 +109,34 @@ export function assignTrackToGisTab(track, requestedGisTabId = selectedGisTabId)
 
 export function inheritTrackGisTab(track, sourceTrack) {
     return assignTrackToGisTab(track, sourceTrack?.gisTabId);
+}
+
+export function captureTrackIngressGisTabId() {
+    return gisTabs.some(tab => tab.id === selectedGisTabId)
+        ? selectedGisTabId
+        : PRIMARY_GIS_TAB_ID;
+}
+
+export function assignTrackAtIngress(track, options = {}) {
+    const hasValidOwner = options.preserveValidOwner === true &&
+        gisTabs.some(tab => tab.id === track?.gisTabId);
+    if (hasValidOwner) return track.gisTabId;
+    return assignTrackToGisTab(
+        track,
+        options.destinationGisTabId || captureTrackIngressGisTabId()
+    );
+}
+
+export function appendTracksAtIngress(trackList, incomingTracks, options = {}) {
+    const targetTracks = Array.isArray(trackList) ? trackList : [];
+    const tracksToAppend = Array.isArray(incomingTracks) ? incomingTracks : [];
+
+    for (let i = 0; i < tracksToAppend.length; i++) {
+        const track = tracksToAppend[i];
+        assignTrackAtIngress(track, options);
+        targetTracks.push(track);
+    }
+    return tracksToAppend;
 }
 
 export function createGisTab() {

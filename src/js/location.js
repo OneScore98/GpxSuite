@@ -10,7 +10,7 @@ import {
 } from './state.js';
 import {
     assignTrackToGisTab,
-    captureSelectedGisTabId,
+    captureTrackIngressGisTabId,
     getSelectedGisTabTracks
 } from './gis-tabs.js';
 import { escapeXml, filterGpxExportPoints, generateDistinctTrackColor } from './utils.js';
@@ -262,7 +262,7 @@ export function startDeviceRecording() {
     _recording = createEmptyRecording();
     _recording.state = 'recording';
     _recording.startedAt = Date.now();
-    _recording.gisTabId = captureSelectedGisTabId();
+    _recording.gisTabId = captureTrackIngressGisTabId();
     if (!isDeviceLocationActive() && !startDeviceLocation()) {
         _recording = createEmptyRecording();
         emitRecordingStatus();
@@ -334,7 +334,7 @@ export async function finishDeviceRecording(name = getDefaultRecordingName()) {
     const trackName = sanitizeRecordingName(name || getDefaultRecordingName());
     const track = finalizeRecordingTrack(recording, recordedPoints, trackName);
     const segmentId = track.segments[0]?.id || null;
-    if (track.gisTabId === captureSelectedGisTabId()) {
+    if (track.gisTabId === captureTrackIngressGisTabId()) {
         setActiveTrackId(track.id);
         if (segmentId) setActiveSegmentId(segmentId);
     }
@@ -1161,7 +1161,7 @@ function ensureRecordingTrack() {
     tracks.push(track);
     _recording.trackId = track.id;
     _recording.segmentId = track.segments[0].id;
-    if (track.gisTabId === captureSelectedGisTabId()) {
+    if (track.gisTabId === captureTrackIngressGisTabId()) {
         setActiveTrackId(track.id);
         setActiveSegmentId(track.segments[0].id);
     }
@@ -1997,7 +1997,7 @@ export function resumePendingRecordingSnapshot() {
         skipped: 0,
         trackId: null,
         segmentId: null,
-        gisTabId: snap.gisTabId || captureSelectedGisTabId()
+        gisTabId: snap.gisTabId || captureTrackIngressGisTabId()
     };
     ensureRecordingTrack();
     refreshRecordingTrackData(true);

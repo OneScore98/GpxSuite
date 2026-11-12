@@ -11,7 +11,7 @@
 // Dipendenze iniettate da main.js (initDeviceModule): nessun import circolare.
 
 import { tracks, setActiveTrackId, setActiveSegmentId } from './state.js';
-import { assignTrackToGisTab, captureSelectedGisTabId } from './gis-tabs.js';
+import { assignTrackToGisTab, captureTrackIngressGisTabId } from './gis-tabs.js';
 import { ensureLucideIcons } from './utils.js';
 import { listStoredTracks, loadStoredTrack, persistTrackNow } from './storage.js';
 
@@ -81,7 +81,7 @@ function notify(msg, kind = 'info') { _deps.showToast?.(msg, kind); }
 
 function captureLoggerSessionGisTab(sessionId, requestedGisTabId = null) {
     const sid = String(sessionId || '').trim();
-    const destinationId = requestedGisTabId || _pendingSessionGisTabId || captureSelectedGisTabId();
+    const destinationId = requestedGisTabId || _pendingSessionGisTabId || captureTrackIngressGisTabId();
     if (sid && !_sessionGisTabIds.has(sid)) _sessionGisTabIds.set(sid, destinationId);
     if (sid) _pendingSessionGisTabId = null;
     return sid ? _sessionGisTabIds.get(sid) : destinationId;
@@ -961,7 +961,7 @@ function ensureSessionTrack() {
     };
     const destinationGisTabId = assignTrackToGisTab(track, captureLoggerSessionGisTab(sid));
     tracks.push(track);
-    if (destinationGisTabId === captureSelectedGisTabId()) {
+    if (destinationGisTabId === captureTrackIngressGisTabId()) {
         setActiveTrackId(track.id);
         setActiveSegmentId(track.segments[0].id);
     }
@@ -1129,6 +1129,7 @@ async function downloadDeviceSessionToPhone(item, targetTrack = null) {
         deviceSessionId: sessionId,
         deviceLastSeq: expectedPoints,
         targetTrackId: targetTrack?.id || null,
+        destinationGisTabId,
         trackName: targetTrack?.name || ('Logger ' + sessionId),
         color: targetTrack?.color || LOGGER_TRACK_COLOR,
         width: targetTrack?.width || 4
@@ -1365,7 +1366,7 @@ export function toggleDeviceRecording() {
 }
 
 export async function startLoggerRecording() {
-    _pendingSessionGisTabId = captureSelectedGisTabId();
+    _pendingSessionGisTabId = captureTrackIngressGisTabId();
     const result = await sendCommand('START', 'Registrazione avviata sul dispositivo');
     if (_sessionId) captureLoggerSessionGisTab(_sessionId);
     else if (!result) _pendingSessionGisTabId = null;
