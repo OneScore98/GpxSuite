@@ -16,7 +16,7 @@ import {
 
 import { saveHistoryState } from './tracks.js?v=vibration-tooltip-units-20260715';
 import { updateMapData, queryElevation } from './map.js?v=robust-slope3-20260720';
-import { showToast, updateToolButtons, updateMapToolCursor } from './ui.js?v=vibration-tooltip-units-20260715';
+import { activateTrackFromMap, showToast, updateToolButtons, updateMapToolCursor } from './ui.js?v=vibration-tooltip-units-20260715';
 import { trovaTipoWaypoint } from './waypointTypes.js';
 import { isTrackEffectivelyVisible, isWaypointEffectivelyVisible } from './gis-tabs.js';
 
@@ -554,11 +554,12 @@ export function bindWaypointInteractions() {
 
     // Drag waypoint
     map.on('mousedown', 'gpx-waypoints-hit-layer', (e) => {
-        if (isAddingWaypoint) return;
+        if (isDrawing || isCutting || isBoxDeleting || isAddingWaypoint) return;
         const ids = getWaypointFeatureFromEvent(e);
         if (!ids) return;
         const found = findWaypoint(ids.trackId, ids.wpId);
         if (!found) return;
+        if (!activateTrackFromMap(ids.trackId)) return;
 
         _draggingWaypoint = found;
         _dragMoved = false;
@@ -614,13 +615,14 @@ export function bindWaypointInteractions() {
 
     // Click su pin: apri editor
     map.on('click', 'gpx-waypoints-hit-layer', (e) => {
-        if (isAddingWaypoint) return;
+        if (isDrawing || isCutting || isBoxDeleting || isAddingWaypoint) return;
         if (_suppressNextWaypointClick) {
             _suppressNextWaypointClick = false;
             return;
         }
         const ids = getWaypointFeatureFromEvent(e);
         if (!ids) return;
+        if (!activateTrackFromMap(ids.trackId)) return;
         openWaypointEditor(ids.trackId, ids.wpId);
         e.preventDefault();
     });
