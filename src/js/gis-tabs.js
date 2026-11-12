@@ -11,6 +11,16 @@ export const GIS_TABS_SESSION_VERSION = 2;
 export const PRIMARY_GIS_TAB_ID = 'gis-tab-principale';
 let nextGisTabSequence = 0;
 
+function gisTabNameKey(name) {
+    return String(name || '').trim().toLocaleLowerCase('it');
+}
+
+function firstAvailableGisTabName(usedNames) {
+    let number = 1;
+    while (usedNames.has(gisTabNameKey(`Scheda ${number}`))) number += 1;
+    return `Scheda ${number}`;
+}
+
 function createUniqueGisTabId() {
     let id;
     do {
@@ -35,16 +45,23 @@ function normalizePersistedTabs(session, trackList) {
 
     const normalized = [];
     const ids = new Set();
+    const usedNames = new Set();
     for (let i = 0; i < session.gisTabs.length; i++) {
         const savedTab = session.gisTabs[i];
         const id = typeof savedTab?.id === 'string' ? savedTab.id.trim() : '';
         if (!id || ids.has(id)) continue;
         ids.add(id);
+        const requestedName = typeof savedTab.name === 'string' ? savedTab.name.trim() : '';
+        const requestedNameKey = gisTabNameKey(requestedName);
+        const name = requestedName && !usedNames.has(requestedNameKey)
+            ? requestedName
+            : (id === PRIMARY_GIS_TAB_ID && !usedNames.has(gisTabNameKey('Principale'))
+                ? 'Principale'
+                : firstAvailableGisTabName(usedNames));
+        usedNames.add(gisTabNameKey(name));
         normalized.push({
             id,
-            name: typeof savedTab.name === 'string' && savedTab.name.trim()
-                ? savedTab.name.trim()
-                : (id === PRIMARY_GIS_TAB_ID ? 'Principale' : `Scheda ${normalized.length + 1}`),
+            name,
             visible: savedTab.visible !== false,
             activeTrackId: typeof savedTab.activeTrackId === 'string' ? savedTab.activeTrackId : null
         });
@@ -213,19 +230,46 @@ export function appendTracksAtIngress(trackList, incomingTracks, options = {}) {
 
 export function createGisTab() {
     if (gisTabs.length === 0) initializeGisTabs([], null);
-    const usedNames = new Set(gisTabs.map(tab => String(tab.name || '').trim().toLocaleLowerCase('it')));
-    let number = 1;
-    while (usedNames.has(`scheda ${number}`)) number += 1;
+    const usedNames = new Set(gisTabs.map(tab => gisTabNameKey(tab.name)));
 
     const tab = {
         id: createUniqueGisTabId(),
-        name: `Scheda ${number}`,
+        name: firstAvailableGisTabName(usedNames),
         visible: true,
         activeTrackId: null
     };
     setGisTabs([...gisTabs, tab]);
     setSelectedGisTabId(tab.id);
     return { ...tab };
+}
+
+export function renameGisTab(gisTabId, requestedName) {
+    const tab = gisTabs.find(item => item.id === gisTabId);
+    const cleanName = String(requestedName || '').trim();
+    if (!tab) return null;
+    if (!cleanName) return tab.name;
+    const comparisonName = gisTabNameKey(cleanName);
+    const hasCollision = gisTabs.some(item => item.id !== gisTabId &&
+        gisTabNameKey(item.name) === comparisonName);
+    if (hasCollision) return null;
+    setGisTabs(gisTabs.map(item => item.id === gisTabId
+        ? { ...item, name: cleanName }
+        : item));
+    return cleanName;
+}
+
+export function reorderGisTab(gisTabId, targetGisTabId, position = 'before') {
+    const fromIndex = gisTabs.findIndex(tab => tab.id === gisTabId);
+    const targetIndex = gisTabs.findIndex(tab => tab.id === targetGisTabId);
+    if (fromIndex === -1 || targetIndex === -1 || fromIndex === targetIndex) return false;
+
+    const nextTabs = gisTabs.slice();
+    const [movedTab] = nextTabs.splice(fromIndex, 1);
+    const adjustedTargetIndex = nextTabs.findIndex(tab => tab.id === targetGisTabId);
+    const insertIndex = adjustedTargetIndex + (position === 'after' ? 1 : 0);
+    nextTabs.splice(insertIndex, 0, movedTab);
+    setGisTabs(nextTabs);
+    return true;
 }
 
 export function toggleGisTabVisibility(gisTabId) {
