@@ -210,6 +210,19 @@ export function rememberActiveTrackForSelectedGisTab(trackId, trackList) {
     return true;
 }
 
+export function activateTrackOwnerGisTab(trackId, trackList) {
+    const tracks = Array.isArray(trackList) ? trackList : [];
+    const track = tracks.find(item => item.id === trackId);
+    if (!track || !gisTabs.some(tab => tab.id === track.gisTabId)) return null;
+
+    selectGisTab(track.gisTabId, tracks);
+    rememberActiveTrackForSelectedGisTab(track.id, tracks);
+    return {
+        gisTabId: track.gisTabId,
+        trackId: track.id
+    };
+}
+
 export function getGisTabsState() {
     return {
         gisTabs: gisTabs.map(tab => ({ ...tab })),

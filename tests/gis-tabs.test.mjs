@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
     GIS_TABS_SESSION_VERSION,
     PRIMARY_GIS_TAB_ID,
+    activateTrackOwnerGisTab,
     appendTracksAtIngress,
     assignTrackToGisTab,
     captureTrackIngressGisTabId,
@@ -461,4 +462,58 @@ test('gli import multipli mantengono ordine relativo e destinazione anche se la 
         'gis-tab-alpi',
         'gis-tab-alpi'
     ]);
+});
+
+test('il click cartografico seleziona la scheda proprietaria e la traccia senza cambiare visibilità', () => {
+    const tracks = [
+        {
+            ...track('track-principale', PRIMARY_GIS_TAB_ID),
+            visible: false,
+            waypointsVisible: true,
+            segments: [{ id: 'segmento-principale', visible: true }]
+        },
+        {
+            ...track('track-alpi', 'gis-tab-alpi'),
+            visible: true,
+            waypointsVisible: false,
+            segments: [{ id: 'segmento-alpi', visible: false }],
+            waypoints: [{ id: 'waypoint-alpi', visible: true }]
+        }
+    ];
+    initializeGisTabs(tracks, {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true, activeTrackId: 'track-principale' },
+            { id: 'gis-tab-alpi', name: 'Alpi', visible: true, activeTrackId: null }
+        ],
+        selectedGisTabId: PRIMARY_GIS_TAB_ID
+    });
+    const visibilityBefore = JSON.parse(JSON.stringify({
+        tabs: getGisTabsState().gisTabs.map(tab => tab.visible),
+        tracks: tracks.map(item => ({
+            visible: item.visible,
+            waypointsVisible: item.waypointsVisible,
+            segments: item.segments.map(segment => segment.visible),
+            waypoints: item.waypoints.map(waypoint => waypoint.visible)
+        }))
+    }));
+
+    assert.deepEqual(activateTrackOwnerGisTab('track-alpi', tracks), {
+        gisTabId: 'gis-tab-alpi',
+        trackId: 'track-alpi'
+    });
+    assert.equal(getGisTabsState().selectedGisTabId, 'gis-tab-alpi');
+    assert.equal(
+        getGisTabsState().gisTabs.find(tab => tab.id === 'gis-tab-alpi').activeTrackId,
+        'track-alpi'
+    );
+    assert.deepEqual({
+        tabs: getGisTabsState().gisTabs.map(tab => tab.visible),
+        tracks: tracks.map(item => ({
+            visible: item.visible,
+            waypointsVisible: item.waypointsVisible,
+            segments: item.segments.map(segment => segment.visible),
+            waypoints: item.waypoints.map(waypoint => waypoint.visible)
+        }))
+    }, visibilityBefore);
 });
