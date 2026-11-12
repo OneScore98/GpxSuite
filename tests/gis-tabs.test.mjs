@@ -4,7 +4,9 @@ import assert from 'node:assert/strict';
 import {
     GIS_TABS_SESSION_VERSION,
     PRIMARY_GIS_TAB_ID,
+    appendTracksAtIngress,
     assignTrackToGisTab,
+    captureTrackIngressGisTabId,
     createGisTab,
     getGisTabsState,
     getSelectedGisTabTracks,
@@ -326,4 +328,76 @@ test('la visibilità effettiva dei waypoint segue scheda, traccia, gruppo e pref
             `scheda=${tabVisible}, traccia=${trackVisible}, gruppo=${groupVisible}, waypoint=${waypointVisible}`
         );
     }
+});
+
+test('la creazione manuale usa la Scheda GIS catturata all\'inizio dell\'ingresso', () => {
+    const tracks = [];
+    initializeGisTabs(tracks, {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true },
+            { id: 'gis-tab-alpi', name: 'Alpi', visible: true }
+        ],
+        selectedGisTabId: 'gis-tab-alpi'
+    });
+    const destinationGisTabId = captureTrackIngressGisTabId();
+    selectGisTab(PRIMARY_GIS_TAB_ID, tracks);
+
+    const created = track('manuale');
+    appendTracksAtIngress(tracks, [created], { destinationGisTabId });
+
+    assert.equal(created.gisTabId, 'gis-tab-alpi');
+    assert.deepEqual(tracks.map(item => item.id), ['manuale']);
+});
+
+test('la libreria preserva un proprietario persistito valido e recupera gli orfani nella destinazione catturata', () => {
+    const tracks = [];
+    initializeGisTabs(tracks, {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true },
+            { id: 'gis-tab-alpi', name: 'Alpi', visible: true }
+        ],
+        selectedGisTabId: 'gis-tab-alpi'
+    });
+    const destinationGisTabId = captureTrackIngressGisTabId();
+    const persisted = track('persistita', PRIMARY_GIS_TAB_ID);
+    const orphan = track('orfana', 'gis-tab-rimossa');
+
+    appendTracksAtIngress(tracks, [persisted, orphan], {
+        destinationGisTabId,
+        preserveValidOwner: true
+    });
+
+    assert.equal(persisted.gisTabId, PRIMARY_GIS_TAB_ID);
+    assert.equal(orphan.gisTabId, 'gis-tab-alpi');
+});
+
+test('gli import multipli mantengono ordine relativo e destinazione anche se la selezione cambia', () => {
+    const tracks = [track('preesistente', PRIMARY_GIS_TAB_ID)];
+    initializeGisTabs(tracks, {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true },
+            { id: 'gis-tab-alpi', name: 'Alpi', visible: true }
+        ],
+        selectedGisTabId: 'gis-tab-alpi'
+    });
+    const destinationGisTabId = captureTrackIngressGisTabId();
+    selectGisTab(PRIMARY_GIS_TAB_ID, tracks);
+    const imported = [track('import-1'), track('import-2'), track('import-3')];
+
+    appendTracksAtIngress(tracks, imported, { destinationGisTabId });
+
+    assert.deepEqual(tracks.map(item => item.id), [
+        'preesistente',
+        'import-1',
+        'import-2',
+        'import-3'
+    ]);
+    assert.deepEqual(imported.map(item => item.gisTabId), [
+        'gis-tab-alpi',
+        'gis-tab-alpi',
+        'gis-tab-alpi'
+    ]);
 });
