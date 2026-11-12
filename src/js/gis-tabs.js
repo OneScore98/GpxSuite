@@ -243,6 +243,38 @@ export function createGisTab() {
     return { ...tab };
 }
 
+export function deleteGisTab(gisTabId, trackList) {
+    if (gisTabs.length <= 1) return null;
+    const tabIndex = gisTabs.findIndex(tab => tab.id === gisTabId);
+    if (tabIndex === -1) return null;
+    const tracks = Array.isArray(trackList) ? trackList : [];
+    const deletedTab = gisTabs[tabIndex];
+    const deletedTracks = tracks.filter(track => track.gisTabId === gisTabId);
+    for (let i = tracks.length - 1; i >= 0; i--) {
+        if (tracks[i].gisTabId === gisTabId) tracks.splice(i, 1);
+    }
+
+    const nextTabs = gisTabs.filter(tab => tab.id !== gisTabId);
+    let nextSelectedGisTabId = selectedGisTabId;
+    if (selectedGisTabId === gisTabId) {
+        nextSelectedGisTabId = nextTabs[tabIndex - 1]?.id || nextTabs[tabIndex]?.id || null;
+    }
+    const selectedTab = nextTabs.find(tab => tab.id === nextSelectedGisTabId);
+    const selectedTracks = getTracksForGisTab(nextSelectedGisTabId, tracks);
+    const nextActiveTrackId = selectedTracks.some(track => track.id === selectedTab?.activeTrackId)
+        ? selectedTab.activeTrackId
+        : (selectedTracks[0]?.id || null);
+
+    setGisTabs(nextTabs);
+    setSelectedGisTabId(nextSelectedGisTabId);
+    return {
+        deletedTab: { ...deletedTab },
+        deletedTracks,
+        selectedGisTabId: nextSelectedGisTabId,
+        activeTrackId: nextActiveTrackId
+    };
+}
+
 export function renameGisTab(gisTabId, requestedName) {
     const tab = gisTabs.find(item => item.id === gisTabId);
     const cleanName = String(requestedName || '').trim();
