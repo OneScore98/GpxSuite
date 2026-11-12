@@ -10,6 +10,7 @@ import {
     is3D,
     map
 } from './state.js';
+import { serializeGisTabsState } from './gis-tabs.js';
 
 const DB_NAME = 'gpxsuite-local-db';
 const STORE_NAME = 'gpx-files';
@@ -67,6 +68,7 @@ function trackContentSignature(track) {
         Number.isFinite(track.deviceLastSeq) ? track.deviceLastSeq : '',
         track.name || '',
         track.desc || '',
+        track.gisTabId || '',
         track.color || '',
         track.width || 3,
         track.visible !== false,
@@ -162,7 +164,7 @@ function buildSessionSnapshot() {
     const persistedTracks = appTracks.filter(track => track.localSource !== 'recording-live');
     const activeTrack = appTracks.find(track => track.id === activeTrackId);
     const snapshot = {
-        version: 1,
+        ...serializeGisTabsState(),
         savedAt: Date.now(),
         activeTrackId: activeTrack?.localSource === 'recording-live' ? null : (activeTrackId || null),
         activeSegmentId: activeTrack?.localSource === 'recording-live' ? null : (activeSegmentId || null),
