@@ -1051,6 +1051,16 @@
 
         <!-- Contenuto scrollabile del File Tree -->
         <div class="flex-1 overflow-y-auto p-4 space-y-4">
+            <div class="gis-tabs-toolbar" aria-label="Schede GIS">
+                <div id="gis-tabs-list" class="gis-tabs-list" role="list">
+                    <span class="text-[10px] text-gray-500 italic whitespace-nowrap">Caricamento schede…</span>
+                </div>
+                <button id="btn-add-gis-tab" type="button" class="gis-tabs-add" title="Crea una Scheda GIS"
+                    aria-label="Crea una Scheda GIS">
+                    <i data-lucide="plus" class="w-4 h-4"></i>
+                </button>
+            </div>
+
             <div class="flex gap-2">
                 <button id="btn-tree-new-track"
                     class="flex-1 bg-blue-600/25 hover:bg-blue-600/40 text-blue-300 border border-blue-800/80 rounded-lg py-1.5 text-xs font-semibold flex items-center justify-center gap-1">
