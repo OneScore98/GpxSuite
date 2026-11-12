@@ -29,6 +29,7 @@ import { forceUpdateStats, haversineDistance } from './stats.js?v=robust-slope3-
 import { trackAnalyticsEvent } from './auth.js';
 import { trovaTipoWaypoint } from './waypointTypes.js';
 import {
+    activateTrackOwnerGisTab,
     appendTracksAtIngress,
     areTracksInSameGisTab,
     assignTrackAtIngress,
@@ -4626,22 +4627,49 @@ export function handleGisDrop(event, targetType, targetTrackId, targetSegId = nu
     finishGisTreeMove(sourceTrack.id === targetTrack.id ? "Segmento riordinato" : "Segmento spostato in un altro file");
 }
 
-export function setTrackActive(trackId, shouldFocus = false) {
+function activateOwnedTrack(trackId, options = {}) {
     const track = tracks.find(tr => tr.id === trackId);
-    if (!track || track.gisTabId !== selectedGisTabId) return;
+    const requestedSegmentId = options.segmentId;
+    if (!track || (requestedSegmentId && !track.segments.some(segment => segment.id === requestedSegmentId))) {
+        return false;
+    }
 
+    const previousGisTabId = selectedGisTabId;
     const wasActive = activeTrackId === trackId;
+    if (!activateTrackOwnerGisTab(trackId, tracks)) return false;
     setActiveTrackId(trackId);
-    rememberActiveTrackForSelectedGisTab(trackId, tracks);
     if (!wasActive) setTrackExpanded(trackId, true);
-    if (track.segments.length > 0) {
+    if (requestedSegmentId) {
+        setActiveSegmentId(requestedSegmentId);
+        setTrackSectionExpanded(trackId, 'segments', true);
+    } else if (track.segments.length > 0) {
         setActiveSegmentId(track.segments[track.segments.length - 1].id);
     }
-    if (shouldFocus) focusTrackOnMap(track);
+    if (options.clearTreeSelection) setTreeSelection([]);
+    if (previousGisTabId !== track.gisTabId) renderGisTabsBar();
+    if (options.shouldFocus) {
+        if (requestedSegmentId) focusSegmentOnMap(trackId, requestedSegmentId);
+        else focusTrackOnMap(track);
+    }
     if (_updateMapData) _updateMapData();
     updateActiveTracksHeader();
-    if (!wasActive) renderGisTree();
+    if (options.forceTreeRefresh || requestedSegmentId || !wasActive || previousGisTabId !== track.gisTabId) {
+        renderGisTree();
+    }
     schedulePersistAppSession();
+    return true;
+}
+
+export function activateTrackFromMap(trackId, segmentId = null) {
+    return activateOwnedTrack(trackId, {
+        segmentId: segmentId || undefined,
+        clearTreeSelection: true,
+        forceTreeRefresh: true
+    });
+}
+
+export function setTrackActive(trackId, shouldFocus = false) {
+    activateOwnedTrack(trackId, { shouldFocus });
 }
 
 export function renameTrack(trackId, newName) {
@@ -4774,18 +4802,7 @@ export function renameSegment(trackId, segId, newName) {
 }
 
 export function setSegmentActive(trackId, segId, shouldFocus = false) {
-    const track = tracks.find(item => item.id === trackId && item.gisTabId === selectedGisTabId);
-    if (!track || !track.segments.some(segment => segment.id === segId)) return;
-    setActiveTrackId(trackId);
-    setActiveSegmentId(segId);
-    rememberActiveTrackForSelectedGisTab(trackId, tracks);
-    setTrackExpanded(trackId, true);
-    setTrackSectionExpanded(trackId, 'segments', true);
-    if (shouldFocus) focusSegmentOnMap(trackId, segId);
-    if (_updateMapData) _updateMapData();
-    updateActiveTracksHeader();
-    renderGisTree();
-    schedulePersistAppSession();
+    activateOwnedTrack(trackId, { segmentId: segId, shouldFocus });
 }
 
 export function deleteSegment(trackId, segId) {

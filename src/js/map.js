@@ -36,7 +36,7 @@ import {
     isAddingWaypoint
 } from './state.js';
 
-import { renderGisTree, showToast, isGisTreeVisible, setSegmentActive, setTrackActive } from './ui.js?v=vibration-tooltip-units-20260715';
+import { activateTrackFromMap, renderGisTree, showToast, isGisTreeVisible } from './ui.js?v=vibration-tooltip-units-20260715';
 import { updateStatsAndProfile, haversineDistance, selectTrackPoint, clearSelectedTrackPoint } from './stats.js?v=robust-slope3-20260720';
 import { setupWaypointLayers, updateWaypointsOnMap, bindWaypointInteractions, refreshPinImages } from './waypoints.js';
 import { schedulePersistAppSession, schedulePersistTracks } from './storage.js';
@@ -2354,14 +2354,14 @@ export function setupLayers() {
             const segmentId = feature && feature.properties ? feature.properties.segmentId : null;
             if (!trackId || isDrawing || isCutting || isBoxDeleting || isAddingWaypoint) return;
             if (segmentId) {
-                setSegmentActive(trackId, segmentId);
+                if (!activateTrackFromMap(trackId, segmentId)) return;
                 const nearest = findNearestTrackPointOnScreen(trackId, segmentId, e.lngLat);
                 if (nearest) {
                     selectTrackPoint(trackId, segmentId, nearest.pointIndex, { source: 'map' });
                 }
                 return;
             }
-            setTrackActive(trackId);
+            activateTrackFromMap(trackId);
         };
 
         map.on('click', (e) => {
