@@ -18,6 +18,7 @@ import { saveHistoryState } from './tracks.js?v=vibration-tooltip-units-20260715
 import { updateMapData, queryElevation } from './map.js?v=robust-slope3-20260720';
 import { showToast, updateToolButtons, updateMapToolCursor } from './ui.js?v=vibration-tooltip-units-20260715';
 import { trovaTipoWaypoint } from './waypointTypes.js';
+import { isTrackEffectivelyVisible, isWaypointEffectivelyVisible } from './gis-tabs.js';
 
 let _waypointInteractionsBound = false;
 let _draggingWaypoint = null;
@@ -256,11 +257,11 @@ function buildWaypointFeatureCollection() {
     const features = [];
     for (let ti = 0; ti < tracks.length; ti++) {
         const track = tracks[ti];
-        if (track.visible === false || track.waypointsVisible === false) continue;
+        if (!isTrackEffectivelyVisible(track)) continue;
         const trackColor = track.color || '#3b82f6';
         for (let wi = 0; wi < track.waypoints.length; wi++) {
             const wp = track.waypoints[wi];
-            if (wp.visible === false) continue;
+            if (!isWaypointEffectivelyVisible(track, wp)) continue;
             // Immagine per combinazione colore traccia + simbolo del waypoint
             const imageId = getOrRegisterPinImage(trackColor, wp.symbol);
             features.push({
