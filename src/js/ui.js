@@ -26,6 +26,7 @@ import {
 import { forceUpdateStats, haversineDistance } from './stats.js?v=robust-slope3-20260720';
 import { trackAnalyticsEvent } from './auth.js';
 import { trovaTipoWaypoint } from './waypointTypes.js';
+import { assignTrackToGisTab, initializeGisTabs } from './gis-tabs.js';
 import {
     listStoredTracks,
     loadStoredTrack,
@@ -2014,6 +2015,7 @@ export function createNewTrack(name) {
         }],
         waypoints: []
     };
+    assignTrackToGisTab(newTrack);
     tracks.push(newTrack);
     setActiveTrackId(newTrack.id);
     setActiveSegmentId(newTrack.segments[0].id);
@@ -3718,6 +3720,7 @@ export async function openStoredTrackFromLibrary(fileId) {
     }
 
     ensureTrackStorageMeta(storedTrack, storedTrack.localSource || 'imported');
+    assignTrackToGisTab(storedTrack, storedTrack.gisTabId);
     tracks.push(storedTrack);
     setActiveTrackId(storedTrack.id);
     setActiveSegmentId(storedTrack.segments[0]?.id || null);
@@ -3733,7 +3736,10 @@ export async function openStoredTrackFromLibrary(fileId) {
 export async function restoreStoredTracksOnStartup() {
     const session = loadPersistedAppSession();
     const files = await listStoredTracks();
-    if (files.length === 0) return { restoredCount: 0, session };
+    if (files.length === 0) {
+        initializeGisTabs([], session);
+        return { restoredCount: 0, session };
+    }
 
     const restoredTracks = [];
     for (let i = 0; i < files.length; i++) {
@@ -3751,7 +3757,10 @@ export async function restoreStoredTracksOnStartup() {
         restoredTracks.push(storedTrack);
     }
 
-    if (restoredTracks.length === 0) return { restoredCount: 0, session };
+    if (restoredTracks.length === 0) {
+        initializeGisTabs([], session);
+        return { restoredCount: 0, session };
+    }
 
     if (Array.isArray(session?.trackOrder) && session.trackOrder.length > 0) {
         const orderMap = new Map(session.trackOrder.map((id, index) => [id, index]));
@@ -3762,7 +3771,9 @@ export async function restoreStoredTracksOnStartup() {
         });
     }
 
+    initializeGisTabs(restoredTracks, session);
     setTracks(restoredTracks);
+    schedulePersistTracks(restoredTracks);
     const activeTrack = restoredTracks.find(track => track.id === session?.activeTrackId)
         || restoredTracks.find(track => track.visible !== false)
         || restoredTracks[0];
