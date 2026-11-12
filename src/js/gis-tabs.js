@@ -107,6 +107,34 @@ export function assignTrackToGisTab(track, requestedGisTabId = selectedGisTabId)
     return destinationId;
 }
 
+export function captureTrackIngressGisTabId() {
+    return gisTabs.some(tab => tab.id === selectedGisTabId)
+        ? selectedGisTabId
+        : PRIMARY_GIS_TAB_ID;
+}
+
+export function assignTrackAtIngress(track, options = {}) {
+    const hasValidOwner = options.preserveValidOwner === true &&
+        gisTabs.some(tab => tab.id === track?.gisTabId);
+    if (hasValidOwner) return track.gisTabId;
+    return assignTrackToGisTab(
+        track,
+        options.destinationGisTabId || captureTrackIngressGisTabId()
+    );
+}
+
+export function appendTracksAtIngress(trackList, incomingTracks, options = {}) {
+    const targetTracks = Array.isArray(trackList) ? trackList : [];
+    const tracksToAppend = Array.isArray(incomingTracks) ? incomingTracks : [];
+
+    for (let i = 0; i < tracksToAppend.length; i++) {
+        const track = tracksToAppend[i];
+        assignTrackAtIngress(track, options);
+        targetTracks.push(track);
+    }
+    return tracksToAppend;
+}
+
 export function createGisTab() {
     if (gisTabs.length === 0) initializeGisTabs([], null);
     const usedNames = new Set(gisTabs.map(tab => String(tab.name || '').trim().toLocaleLowerCase('it')));

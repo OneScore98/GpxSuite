@@ -29,7 +29,8 @@ import { forceUpdateStats, haversineDistance } from './stats.js?v=robust-slope3-
 import { trackAnalyticsEvent } from './auth.js';
 import { trovaTipoWaypoint } from './waypointTypes.js';
 import {
-    assignTrackToGisTab,
+    appendTracksAtIngress,
+    captureTrackIngressGisTabId,
     createGisTab as createGisTabDomain,
     getSelectedGisTabTracks,
     initializeGisTabs,
@@ -2056,7 +2057,7 @@ function renderGisTabsBar() {
     });
 }
 
-export function createNewTrack(name) {
+export function createNewTrack(name, options = {}) {
     const trackName = name || `Traccia ${tracks.length + 1}`;
     const color = generateDistinctTrackColor(tracks.map(track => track.color));
     const newTrack = {
@@ -2079,8 +2080,12 @@ export function createNewTrack(name) {
         }],
         waypoints: []
     };
-    assignTrackToGisTab(newTrack);
-    tracks.push(newTrack);
+    appendTracksAtIngress(tracks, [newTrack], {
+        destinationGisTabId: options.destinationGisTabId
+    });
+    if (newTrack.gisTabId !== selectedGisTabId) {
+        applySelectedGisTabContext(newTrack.gisTabId);
+    }
     setActiveTrackId(newTrack.id);
     setActiveSegmentId(newTrack.segments[0].id);
     rememberActiveTrackForSelectedGisTab(newTrack.id, tracks);
@@ -3774,11 +3779,15 @@ export async function renderLocalGpxLibrary() {
 export async function openStoredTrackFromLibrary(fileId) {
     const existing = tracks.find(track => track.localFileId === fileId);
     if (existing) {
+        if (existing.gisTabId !== selectedGisTabId) {
+            applySelectedGisTabContext(existing.gisTabId);
+        }
         setTrackActive(existing.id);
         showToast(`Già in memoria: ${existing.name}`, 'info');
         return;
     }
 
+    const destinationGisTabId = captureTrackIngressGisTabId();
     const storedTrack = await loadStoredTrack(fileId);
     if (!storedTrack) {
         showToast("File locale non trovato", "error");
@@ -3787,10 +3796,16 @@ export async function openStoredTrackFromLibrary(fileId) {
     }
 
     ensureTrackStorageMeta(storedTrack, storedTrack.localSource || 'imported');
-    assignTrackToGisTab(storedTrack, storedTrack.gisTabId);
-    tracks.push(storedTrack);
+    appendTracksAtIngress(tracks, [storedTrack], {
+        destinationGisTabId,
+        preserveValidOwner: true
+    });
+    if (storedTrack.gisTabId !== selectedGisTabId) {
+        applySelectedGisTabContext(storedTrack.gisTabId);
+    }
     setActiveTrackId(storedTrack.id);
     setActiveSegmentId(storedTrack.segments[0]?.id || null);
+    rememberActiveTrackForSelectedGisTab(storedTrack.id, tracks);
     if (_saveHistoryState) _saveHistoryState();
     if (_updateMapData) _updateMapData(true);
     updateActiveTracksHeader();
@@ -5300,13 +5315,14 @@ export function setupEvents() {
         fileImportInput.onchange = (e) => {
             const file = e.target.files[0];
             if (file) {
+                const destinationGisTabId = captureTrackIngressGisTabId();
                 trackAnalyticsEvent('import_gpx', {
                     fileName: file.name,
                     size: file.size
                 }).catch(err => console.warn(err));
                 const reader = new FileReader();
                 reader.onload = function (evt) {
-                    _importGPX(evt.target.result, file.name);
+                    _importGPX(evt.target.result, file.name, { destinationGisTabId });
                 };
                 reader.readAsText(file);
             }
