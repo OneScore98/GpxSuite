@@ -95,6 +95,12 @@ export function getSelectedGisTabTracks(trackList) {
     return getTracksForGisTab(selectedGisTabId, trackList);
 }
 
+export function captureSelectedGisTabId() {
+    return gisTabs.some(tab => tab.id === selectedGisTabId)
+        ? selectedGisTabId
+        : PRIMARY_GIS_TAB_ID;
+}
+
 export function assignTrackToGisTab(track, requestedGisTabId = selectedGisTabId) {
     if (!track || typeof track !== 'object') return null;
     if (!gisTabs.some(tab => tab.id === PRIMARY_GIS_TAB_ID)) {
@@ -105,6 +111,10 @@ export function assignTrackToGisTab(track, requestedGisTabId = selectedGisTabId)
         : PRIMARY_GIS_TAB_ID;
     track.gisTabId = destinationId;
     return destinationId;
+}
+
+export function inheritTrackGisTab(track, sourceTrack) {
+    return assignTrackToGisTab(track, sourceTrack?.gisTabId);
 }
 
 export function createGisTab() {

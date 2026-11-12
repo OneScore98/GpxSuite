@@ -30,8 +30,10 @@ import { trackAnalyticsEvent } from './auth.js';
 import { trovaTipoWaypoint } from './waypointTypes.js';
 import {
     assignTrackToGisTab,
+    captureSelectedGisTabId,
     createGisTab as createGisTabDomain,
     getSelectedGisTabTracks,
+    inheritTrackGisTab,
     initializeGisTabs,
     rememberActiveTrackForSelectedGisTab,
     selectGisTab as selectGisTabDomain
@@ -2297,6 +2299,7 @@ function refreshAfterTreeClipboardMutation(message) {
     updateActiveTracksHeader();
     renderGisTree();
     renderLocalGpxLibrary();
+    schedulePersistTracks(tracks);
     schedulePersistAppSession();
     if (message) showToast(message, 'success');
 }
@@ -2338,11 +2341,15 @@ function pasteTreeClipboard(target = {}) {
     }
 
     const pastedKeys = [];
-    const trackTargetIndex = target.trackId ? tracks.findIndex(track => track.id === target.trackId) : -1;
+    const destinationGisTabId = captureSelectedGisTabId();
+    const trackTargetIndex = target.trackId
+        ? tracks.findIndex(track => track.id === target.trackId && track.gisTabId === destinationGisTabId)
+        : -1;
     let insertTrackIndex = trackTargetIndex === -1 ? tracks.length : trackTargetIndex + 1;
 
     (_treeClipboard.tracks || []).forEach(trackData => {
         const cloned = cloneTrackForPaste(trackData, _treeClipboard.mode === 'cut' ? '' : ' copia');
+        assignTrackToGisTab(cloned, destinationGisTabId);
         tracks.splice(insertTrackIndex, 0, cloned);
         insertTrackIndex++;
         pastedKeys.push(makeTreeKey('track', cloned.id));
@@ -2352,9 +2359,10 @@ function pasteTreeClipboard(target = {}) {
     });
 
     if ((_treeClipboard.segments || []).length > 0) {
-        const targetTrack = tracks.find(track => track.id === target.trackId)
-            || tracks.find(track => track.id === activeTrackId)
-            || tracks[0];
+        const destinationTracks = getSelectedGisTabTracks(tracks);
+        const targetTrack = destinationTracks.find(track => track.id === target.trackId)
+            || destinationTracks.find(track => track.id === activeTrackId)
+            || destinationTracks[0];
         if (!targetTrack) return;
 
         let insertSegmentIndex = target.segId
@@ -3473,9 +3481,12 @@ function createOffroadTrack(sourceTrack, extractedRanges, nameBase, summary) {
         waypoints: []
     };
 
+    const destinationGisTabId = inheritTrackGisTab(newTrack, sourceTrack);
     tracks.push(newTrack);
-    setActiveTrackId(newTrack.id);
-    setActiveSegmentId(newTrack.segments[0]?.id || null);
+    if (destinationGisTabId === captureSelectedGisTabId()) {
+        setActiveTrackId(newTrack.id);
+        setActiveSegmentId(newTrack.segments[0]?.id || null);
+    }
     return newTrack;
 }
 
