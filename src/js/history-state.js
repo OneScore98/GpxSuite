@@ -1,15 +1,19 @@
 // history-state.js — formato atomico degli snapshot undo, senza dipendenze UI
 
-export function buildHistoryStateJson(state, serializedTracks) {
-    const headerJson = JSON.stringify({
-        gisTabs: state.gisTabs,
-        selectedGisTabId: state.selectedGisTabId,
-        activeTrackId: state.activeTrackId,
-        activeSegmentId: state.activeSegmentId
+export function costruisciJsonStatoCronologia(stato, tracceSerializzate) {
+    const intestazioneJson = JSON.stringify({
+        gisTabs: stato.gisTabs,
+        selectedGisTabId: stato.selectedGisTabId,
+        activeTrackId: stato.activeTrackId,
+        activeSegmentId: stato.activeSegmentId
     });
-    return headerJson.slice(0, -1) + ',"tracks":[' + serializedTracks.join(',') + ']}';
+    return intestazioneJson.slice(0, -1) + ',"tracks":[' + tracceSerializzate.join(',') + ']}';
 }
 
-export function parseHistoryStateJson(json) {
+export function analizzaJsonStatoCronologia(json) {
     return JSON.parse(json);
 }
+
+// Alias di compatibilità per gli snapshot e le integrazioni già distribuite.
+export const buildHistoryStateJson = costruisciJsonStatoCronologia;
+export const parseHistoryStateJson = analizzaJsonStatoCronologia;

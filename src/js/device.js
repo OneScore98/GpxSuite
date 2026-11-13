@@ -11,7 +11,11 @@
 // Dipendenze iniettate da main.js (initDeviceModule): nessun import circolare.
 
 import { tracks, setActiveTrackId, setActiveSegmentId } from './state.js';
-import { assignTrackToGisTab, captureTrackIngressGisTabId } from './gis-tabs.js';
+import {
+    inserisciTracceInIngresso,
+    assegnaTracciaASchedaGis,
+    catturaDestinazioneIngressoTraccia
+} from './gis-tabs.js';
 import { ensureLucideIcons } from './utils.js';
 import { listStoredTracks, loadStoredTrack, persistTrackNow } from './storage.js';
 
@@ -81,7 +85,7 @@ function notify(msg, kind = 'info') { _deps.showToast?.(msg, kind); }
 
 function captureLoggerSessionGisTab(sessionId, requestedGisTabId = null) {
     const sid = String(sessionId || '').trim();
-    const destinationId = requestedGisTabId || _pendingSessionGisTabId || captureTrackIngressGisTabId();
+    const destinationId = requestedGisTabId || _pendingSessionGisTabId || catturaDestinazioneIngressoTraccia();
     if (sid && !_sessionGisTabIds.has(sid)) _sessionGisTabIds.set(sid, destinationId);
     if (sid) _pendingSessionGisTabId = null;
     return sid ? _sessionGisTabIds.get(sid) : destinationId;
@@ -929,7 +933,7 @@ function ensureSessionTrack() {
     const sid = _sessionId || (_status && _status.session) || 'SESS';
     let track = tracks.find(t => t.deviceSessionId === sid);
     if (track) {
-        assignTrackToGisTab(track, track.gisTabId || captureLoggerSessionGisTab(sid));
+        assegnaTracciaASchedaGis(track, track.gisTabId || captureLoggerSessionGisTab(sid));
         _lastSeq = Math.max(_lastSeq, getTrackDeviceSeq(track));
         return track;
     }
@@ -959,9 +963,9 @@ function ensureSessionTrack() {
         }],
         waypoints: []
     };
-    const destinationGisTabId = assignTrackToGisTab(track, captureLoggerSessionGisTab(sid));
-    tracks.push(track);
-    if (destinationGisTabId === captureTrackIngressGisTabId()) {
+    const destinationGisTabId = captureLoggerSessionGisTab(sid);
+    inserisciTracceInIngresso(tracks, [track], { destinationGisTabId });
+    if (destinationGisTabId === catturaDestinazioneIngressoTraccia()) {
         setActiveTrackId(track.id);
         setActiveSegmentId(track.segments[0].id);
     }
@@ -1135,7 +1139,7 @@ async function downloadDeviceSessionToPhone(item, targetTrack = null) {
         width: targetTrack?.width || 4
     });
     if (!track) throw new Error('import failed');
-    assignTrackToGisTab(track, destinationGisTabId);
+    assegnaTracciaASchedaGis(track, destinationGisTabId);
     track.localSource = 'device';
     track.deviceSessionId = sessionId;
     track.deviceLastSeq = Math.max(getTrackDeviceSeq(track), expectedPoints);
@@ -1366,7 +1370,7 @@ export function toggleDeviceRecording() {
 }
 
 export async function startLoggerRecording() {
-    _pendingSessionGisTabId = captureTrackIngressGisTabId();
+    _pendingSessionGisTabId = catturaDestinazioneIngressoTraccia();
     const result = await sendCommand('START', 'Registrazione avviata sul dispositivo');
     if (_sessionId) captureLoggerSessionGisTab(_sessionId);
     else if (!result) _pendingSessionGisTabId = null;

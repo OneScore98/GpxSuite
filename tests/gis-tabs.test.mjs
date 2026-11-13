@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 
 import {
     GIS_TABS_SESSION_VERSION,
+    MESSAGGIO_GEOMETRIA_NON_MODIFICABILE,
     PRIMARY_GIS_TAB_ID,
     areTracksInSameGisTab,
     activateTrackOwnerGisTab,
     appendTracksAtIngress,
+    inserisciTracceInIngresso,
     assignTrackToGisTab,
     captureTrackIngressGisTabId,
     createGisTab,
@@ -17,6 +19,8 @@ import {
     inheritTrackGisTab,
     initializeGisTabs,
     isGeometryEditable,
+    puoModificareGeometria,
+    sonoElementiGeometriciModificabili,
     isSegmentEffectivelyVisible,
     isTrackEffectivelyVisible,
     isWaypointEffectivelyVisible,
@@ -542,6 +546,31 @@ test('il guard geometrico rifiuta scheda, traccia o segmento nascosti senza camb
     }, preferencesBefore);
 });
 
+test('decisione e messaggio delle mutazioni geometriche sono centralizzati', () => {
+    const visibile = { ...track('visibile', PRIMARY_GIS_TAB_ID), visible: true };
+    const nascosta = { ...track('nascosta', 'gis-tab-nascosta'), visible: true };
+    const segmento = { id: 'segmento', visible: true, points: [] };
+    initializeGisTabs([visibile, nascosta], {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true },
+            { id: 'gis-tab-nascosta', name: 'Nascosta', visible: false }
+        ],
+        selectedGisTabId: PRIMARY_GIS_TAB_ID
+    });
+
+    assert.equal(
+        MESSAGGIO_GEOMETRIA_NON_MODIFICABILE,
+        'Modifica geometrica non disponibile: rendi visibili la Scheda GIS, la traccia e il segmento.'
+    );
+    assert.equal(puoModificareGeometria(visibile, segmento), true);
+    assert.equal(puoModificareGeometria(nascosta, segmento), false);
+    assert.equal(sonoElementiGeometriciModificabili([
+        { traccia: visibile, segmento },
+        { traccia: nascosta, segmento }
+    ]), false);
+});
+
 test('la visibilità effettiva dei waypoint segue scheda, traccia, gruppo e preferenza individuale', () => {
     const matrix = [
         [true, true, true, true, true],
@@ -657,6 +686,30 @@ test('gli import multipli mantengono ordine relativo e destinazione anche se la 
         'gis-tab-alpi',
         'gis-tab-alpi'
     ]);
+});
+
+test('l\'ingresso centralizzato assegna proprietà e posizione con una sola operazione', () => {
+    const tracks = [
+        track('main', PRIMARY_GIS_TAB_ID),
+        track('alpi-esistente', 'gis-tab-alpi')
+    ];
+    initializeGisTabs(tracks, {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true },
+            { id: 'gis-tab-alpi', name: 'Alpi', visible: true }
+        ],
+        selectedGisTabId: 'gis-tab-alpi'
+    });
+    const nuove = [track('nuova-a'), track('nuova-b')];
+
+    inserisciTracceInIngresso(tracks, nuove, {
+        idSchedaDestinazione: 'gis-tab-alpi',
+        indiceInserimento: 1
+    });
+
+    assert.deepEqual(tracks.map(item => item.id), ['main', 'nuova-a', 'nuova-b', 'alpi-esistente']);
+    assert.deepEqual(nuove.map(item => item.gisTabId), ['gis-tab-alpi', 'gis-tab-alpi']);
 });
 
 test('sposta una traccia in fondo alla destinazione conservando ordine, selezione e memoria attiva', () => {

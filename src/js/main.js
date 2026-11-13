@@ -152,6 +152,7 @@ import {
     // (selezione GIS tree, dipendenze iniettate, job offroad). Il cache-busting
     // avviene tramite la versione di main.js in index.html.
 } from './ui.js?v=vibration-tooltip-units-20260715';
+import { deveCreareTracciaIniziale } from './startup.js';
 
 initDeviceLocation({
     showToast,
@@ -419,9 +420,9 @@ function initApp() {
 
         try {
             const restoreResult = await restoreStoredTracksOnStartup();
-            if (restoreResult.restoredCount === 0) {
+            if (deveCreareTracciaIniziale(restoreResult)) {
                 createNewTrack("Traccia 1");
-            } else {
+            } else if (restoreResult.restoredCount > 0) {
                 showToast("Ripristinato l'ultimo stato locale", "success");
             }
         } catch (err) {
