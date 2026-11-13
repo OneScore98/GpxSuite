@@ -1244,6 +1244,11 @@
 
         <!-- BODY: grafico altimetrico + statistiche secondarie -->
         <div class="stats-panel-body flex-1 flex min-h-0">
+            <div id="stats-gis-tab-hidden" class="stats-gis-tab-hidden hidden" role="status" aria-live="polite">
+                <i data-lucide="eye-off" class="w-5 h-5"></i>
+                <strong>Scheda GIS nascosta</strong>
+                <span>Rendi visibile la scheda per consultare statistiche e profilo.</span>
+            </div>
             <div class="stats-chart-shell flex-1 min-w-0 h-full relative">
                 <canvas id="altitudeChart" class="w-full h-full"></canvas>
                 <div id="stats-point-card" class="stats-point-card stats-point-card--chart hidden"

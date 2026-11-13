@@ -9,7 +9,7 @@
 //   3. Tutto il lavoro viene eseguito in un requestIdleCallback per non
 //      competere con il rendering della mappa durante pan/zoom
 
-import { chart, setChart, tracks, activeTrackId, map } from './state.js';
+import { chart, setChart, tracks, activeTrackId, gisTabs, selectedGisTabId, map } from './state.js';
 import { loadScriptOnce, vibrationLevelColor } from './utils.js';
 import { computeSlopeProfile } from './slope.js?v=robust-slope3-20260720';
 import { isSegmentEffectivelyVisible, isTrackEffectivelyVisible } from './gis-tabs.js';
@@ -1751,6 +1751,52 @@ function isStatsPanelVisible() {
     return !panel.classList.contains('translate-y-60');
 }
 
+function isSelectedGisTabHidden() {
+    return gisTabs.find(tab => tab.id === selectedGisTabId)?.visible === false;
+}
+
+function setHiddenGisTabStatsState(hidden) {
+    document.getElementById('stats-gis-tab-hidden')?.classList.toggle('hidden', !hidden);
+    if (!hidden) return;
+
+    const values = {
+        'stat-dist': '0.00 km',
+        'stat-ascent': '+0 m',
+        'stat-descent': '-0 m',
+        'stat-max-alt': '0 m',
+        'stat-avg-speed': '0.0 km/h',
+        'stat-max-speed': '0.0 km/h',
+        'stat-segments-count': '0',
+        'stat-avg-slope': '0%',
+        'stat-max-slope': '0%',
+        'stat-surface-summary': 'N/D',
+        'stat-max-tilt': '--',
+        'stat-avg-vibration': '--',
+        'stat-max-vibration': '--',
+        'stat-avg-vibration-mps2': '--',
+        'stat-max-vibration-mps2': '--'
+    };
+    for (const [id, value] of Object.entries(values)) {
+        const element = document.getElementById(id);
+        if (element) element.textContent = value;
+    }
+
+    _chartPointsGeo = [];
+    _chartPointIndex = [];
+    _chartPointLookup = new Map();
+    clearSelectedTrackPoint();
+    document.getElementById('stats-chart-empty')?.classList.add('hidden');
+    const legend = document.getElementById('stats-color-legend');
+    if (legend) legend.style.display = 'none';
+    if (!chart) return;
+    _setChartFullXRange(0);
+    chart.$surfaceBands = [];
+    chart.data.labels = [];
+    for (let i = 0; i < chart.data.datasets.length; i++) chart.data.datasets[i].data = [];
+    _applyChartXScale(chart);
+    chart.update('none');
+}
+
 // Debounce + idle: il calcolo non blocca pan/zoom della mappa
 let _statsTimer = null;
 let _statsIdleHandle = null;
@@ -1784,6 +1830,9 @@ export function forceUpdateStats() {
 function _doUpdateStats() {
     // Skip totale se il pannello è chiuso — risparmio enorme su file grandi
     if (!isStatsPanelVisible()) return;
+    const selectedTabHidden = isSelectedGisTabHidden();
+    setHiddenGisTabStatsState(selectedTabHidden);
+    if (selectedTabHidden) return;
 
     let totalDistance = 0;
     let totalAscent   = 0;
