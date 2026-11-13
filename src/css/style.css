@@ -4587,3 +4587,16 @@ label {
     }
 
 }
+
+/* Legenda ADV: controllo nativo accessibile anche da tastiera e touch. */
+.adv-legend { margin-top: 0.5rem; color: #d1d5db; font-size: 0.7rem; }
+.adv-legend summary { cursor: pointer; padding: 0.65rem 0.2rem; min-height: 40px; font-weight: 600; }
+.adv-legend-body { padding: 0 0.2rem 0.3rem; line-height: 1.55; }
+.adv-legend-body p { margin: 0.35rem 0; }
+.adv-legend-note { color: #9ca3af; }
+.adv-line { display: inline-block; width: 24px; margin-right: 6px; vertical-align: middle; border-top: 3px solid #858780; }
+.adv-line-track { border-top-style: dashed; }
+.adv-line-path { border-top: 2px dotted #a6a89d; }
+.adv-line-paved { border-color: #59616a; }
+.adv-line-unpaved { border-color: #a17a43; }
+.adv-line-unknown { border-color: #858780; }
