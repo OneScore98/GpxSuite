@@ -221,8 +221,13 @@ function persistAppSessionNow() {
     }
 }
 
-export function schedulePersistAppSession() {
+export function schedulePersistAppSession(options = {}) {
     clearTimeout(_sessionTimer);
+    if (options.immediate === true) {
+        _sessionTimer = null;
+        persistAppSessionNow();
+        return;
+    }
     _sessionTimer = setTimeout(() => {
         _sessionTimer = null;
         persistAppSessionNow();

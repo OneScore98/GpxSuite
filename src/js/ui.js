@@ -2092,7 +2092,7 @@ function applySelectedGisTabContext(gisTabId, options = {}) {
     renderGisTree();
     if (_updateMapData) _updateMapData();
     forceUpdateStats();
-    schedulePersistAppSession();
+    schedulePersistAppSession({ immediate: true });
     return nextActiveTrackId;
 }
 
@@ -2208,7 +2208,7 @@ export async function requestDeleteGisTab(gisTabId) {
     forceUpdateStats();
     renderLocalGpxLibrary();
     schedulePersistTracks(tracks);
-    schedulePersistAppSession();
+    schedulePersistAppSession({ immediate: true });
     showToast(`Scheda GIS "${tab.name}" eliminata`, 'success');
     return true;
 }
@@ -2415,7 +2415,7 @@ function aggiornaDopoMutazioneSchedeGis() {
     renderGisTree();
     if (_updateMapData) _updateMapData();
     forceUpdateStats();
-    schedulePersistAppSession();
+    schedulePersistAppSession({ immediate: true });
 }
 
 function clearGisTabDropTargets() {
@@ -2461,7 +2461,7 @@ export function toggleGisTabVisibilityById(gisTabId) {
     renderGisTree();
     if (_updateMapData) _updateMapData();
     forceUpdateStats();
-    schedulePersistAppSession();
+    schedulePersistAppSession({ immediate: true });
     showToast(`Scheda GIS ${tab.name}: ${isVisible ? 'visibile' : 'nascosta'}`, 'info');
     return isVisible;
 }
@@ -2496,7 +2496,7 @@ export function moveTrackToGisTabById(trackId, destinationGisTabId) {
     if (_updateMapData) _updateMapData(true);
     renderLocalGpxLibrary();
     schedulePersistTracks(tracks);
-    schedulePersistAppSession();
+    schedulePersistAppSession({ immediate: true });
     showToast(`Traccia "${movedTrack.name}" spostata in "${destinationTab.name}"`, 'success');
     return true;
 }
@@ -2537,6 +2537,7 @@ export function createNewTrack(name, options = {}) {
     if (_saveHistoryState) _saveHistoryState();
     updateActiveTracksHeader();
     renderGisTree();
+    schedulePersistTracks(tracks);
     schedulePersistAppSession();
     showToast(`Creata: ${trackName}`, 'info');
     return newTrack;
