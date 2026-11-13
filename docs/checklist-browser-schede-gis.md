@@ -1,7 +1,7 @@
 # Checklist browser — Schede GIS
 
-Versione checklist: 1.0  
-Specifica: GitHub #1  
+Versione checklist: 1.0
+Specifica: GitHub #1
 Ticket di accettazione: GitHub #12
 
 ## Preparazione
