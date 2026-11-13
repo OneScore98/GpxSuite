@@ -24,7 +24,9 @@ import {
     rememberActiveTrackForSelectedGisTab,
     renameGisTab,
     reorderGisTab,
+    restoreGisTabsSession,
     selectGisTab,
+    serializeGisTabsSession,
     serializeGisTabsState,
     toggleGisTabVisibility
 } from '../src/js/gis-tabs.js';
@@ -817,4 +819,94 @@ test('il click cartografico seleziona la scheda proprietaria e la traccia senza 
             waypoints: item.waypoints.map(waypoint => waypoint.visible)
         }))
     }, visibilityBefore);
+});
+
+test('il round-trip della sessione ripristina esattamente schede, ordine, proprietà e ultime tracce attive', () => {
+    const originalTracks = [
+        { ...track('alpi-2', 'gis-tab-alpi'), localFileId: 'file-alpi-2' },
+        { ...track('main-1', PRIMARY_GIS_TAB_ID), localFileId: 'file-main-1' },
+        { ...track('alpi-1', 'gis-tab-alpi'), localFileId: 'file-alpi-1' }
+    ];
+    const originalSession = {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: 'gis-tab-alpi', name: 'Alpi rinominate', visible: false, activeTrackId: 'alpi-1' },
+            { id: PRIMARY_GIS_TAB_ID, name: 'Casa', visible: true, activeTrackId: 'main-1' }
+        ],
+        selectedGisTabId: 'gis-tab-alpi'
+    };
+    initializeGisTabs(originalTracks, originalSession);
+    const persistedSession = serializeGisTabsSession(originalTracks);
+    const restoredTracks = JSON.parse(JSON.stringify([
+        originalTracks[1],
+        originalTracks[2],
+        originalTracks[0]
+    ]));
+
+    const restored = restoreGisTabsSession(restoredTracks, persistedSession);
+
+    assert.deepEqual(restoredTracks.map(item => item.id), ['alpi-2', 'main-1', 'alpi-1']);
+    assert.deepEqual(restored.gisTabs, originalSession.gisTabs);
+    assert.equal(restored.selectedGisTabId, 'gis-tab-alpi');
+    assert.deepEqual(restoredTracks.map(item => item.gisTabId), [
+        'gis-tab-alpi',
+        PRIMARY_GIS_TAB_ID,
+        'gis-tab-alpi'
+    ]);
+    assert.deepEqual(restored.repairedTrackIds, []);
+    assert.equal(restored.needsPersistence, false);
+});
+
+test('la migrazione legacy è idempotente, conserva l\'ordine e non perde o duplica tracce', () => {
+    const legacySession = {
+        version: 1,
+        trackOrder: ['file-b', 'file-missing', 'file-b', 'file-a'],
+        activeTrackId: 'track-b'
+    };
+    const firstTracks = [
+        { ...track('track-a'), localFileId: 'file-a' },
+        { ...track('track-c'), localFileId: 'file-c' },
+        { ...track('track-b'), localFileId: 'file-b' }
+    ];
+
+    const firstRestore = restoreGisTabsSession(firstTracks, legacySession);
+    const migratedSession = serializeGisTabsSession(firstTracks);
+    const secondTracks = JSON.parse(JSON.stringify([firstTracks[2], firstTracks[0], firstTracks[1]]));
+    const secondRestore = restoreGisTabsSession(secondTracks, migratedSession);
+
+    assert.deepEqual(firstTracks.map(item => item.id), ['track-b', 'track-a', 'track-c']);
+    assert.deepEqual(secondTracks.map(item => item.id), ['track-b', 'track-a', 'track-c']);
+    assert.deepEqual(new Set(secondTracks.map(item => item.id)).size, 3);
+    assert.equal(firstRestore.needsPersistence, true);
+    assert.equal(secondRestore.needsPersistence, false);
+    assert.deepEqual(secondRestore.gisTabs, firstRestore.gisTabs);
+    assert.equal(secondRestore.selectedGisTabId, PRIMARY_GIS_TAB_ID);
+});
+
+test('ripara gli orfani in Principale una sola volta e segnala la persistenza necessaria', () => {
+    const session = {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: PRIMARY_GIS_TAB_ID, name: 'Principale', visible: true, activeTrackId: null },
+            { id: 'gis-tab-alpi', name: 'Alpi', visible: true, activeTrackId: 'track-alpi' }
+        ],
+        selectedGisTabId: 'gis-tab-alpi',
+        trackOrder: ['file-orphan', 'file-alpi']
+    };
+    const firstTracks = [
+        { ...track('track-alpi', 'gis-tab-alpi'), localFileId: 'file-alpi' },
+        { ...track('track-orphan', 'gis-tab-eliminata'), localFileId: 'file-orphan' }
+    ];
+
+    const firstRestore = restoreGisTabsSession(firstTracks, session);
+    const repairedSession = serializeGisTabsSession(firstTracks);
+    const secondTracks = JSON.parse(JSON.stringify(firstTracks));
+    const secondRestore = restoreGisTabsSession(secondTracks, repairedSession);
+
+    assert.equal(firstTracks[0].id, 'track-orphan');
+    assert.equal(firstTracks[0].gisTabId, PRIMARY_GIS_TAB_ID);
+    assert.deepEqual(firstRestore.repairedTrackIds, ['track-orphan']);
+    assert.equal(firstRestore.needsPersistence, true);
+    assert.deepEqual(secondRestore.repairedTrackIds, []);
+    assert.equal(secondRestore.needsPersistence, false);
 });
