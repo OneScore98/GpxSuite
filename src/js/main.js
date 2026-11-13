@@ -18,7 +18,13 @@ import {
 import { importGPX, exportGPX } from './gpx.js?v=vibration-tooltip-units-20260715';
 import { addPointToActiveSegment, cancelPendingTrackGeometryInteractions, cutTrackAtPoint, handleBoxDeleteClick, saveHistoryState, triggerUndo, setSnapProfile } from './tracks.js?v=vibration-tooltip-units-20260715';
 import { addWaypointAtCoords, cancelWaypointGeometryInteraction, saveWaypointModifications, openWaypointEditor, updateWaypointsOnMap } from './waypoints.js?v=vibration-tooltip-units-20260715';
-import { flushPersistedStateNow, schedulePersistAppSession, schedulePersistTracks } from './storage.js';
+import {
+    flushPersistedStateNow,
+    riprendiPersistenzaSessioneApp,
+    schedulePersistAppSession,
+    schedulePersistTracks,
+    sospendiPersistenzaSessioneApp
+} from './storage.js';
 import {
     initDeviceLocation,
     setDeviceLocationStatusHandler,
@@ -326,6 +332,10 @@ function configureMapInteractions(mapInstance) {
 }
 
 function initApp() {
+    // MapLibre puo' emettere moveend durante la propria inizializzazione, prima
+    // che IndexedDB abbia ricostruito tracce e Schede GIS. In quella finestra
+    // lo stato in memoria e' ancora vuoto e non deve sostituire la sessione.
+    sospendiPersistenzaSessioneApp();
     updateViewportMetrics();
     window.addEventListener('resize', updateViewportMetrics);
     window.addEventListener('orientationchange', updateViewportMetrics);
@@ -429,6 +439,8 @@ function initApp() {
             console.error(err);
             showToast("Archivio locale non disponibile in questo browser", "error");
             createNewTrack("Traccia 1");
+        } finally {
+            riprendiPersistenzaSessioneApp();
         }
 
         // La shell, la mappa e l'archivio locale sono ora utilizzabili. Solo da

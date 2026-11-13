@@ -21,6 +21,8 @@ let _dbPromise = null;
 let _persistTimer = null;
 let _persistQueuedTracks = [];
 let _sessionTimer = null;
+let _persistenzaSessioneSospesa = false;
+let _persistenzaSessioneInAttesa = false;
 let _codaMutazioniArchivio = Promise.resolve();
 
 function accodaMutazioneArchivio(operazione) {
@@ -214,6 +216,10 @@ export function loadPersistedAppSession() {
 }
 
 function persistAppSessionNow() {
+    if (_persistenzaSessioneSospesa) {
+        _persistenzaSessioneInAttesa = true;
+        return;
+    }
     try {
         localStorage.setItem(SESSION_KEY, JSON.stringify(buildSessionSnapshot()));
     } catch (err) {
@@ -221,7 +227,28 @@ function persistAppSessionNow() {
     }
 }
 
+export function sospendiPersistenzaSessioneApp() {
+    _persistenzaSessioneSospesa = true;
+    if (_sessionTimer !== null) {
+        clearTimeout(_sessionTimer);
+        _sessionTimer = null;
+        _persistenzaSessioneInAttesa = true;
+    }
+}
+
+export function riprendiPersistenzaSessioneApp() {
+    if (!_persistenzaSessioneSospesa) return;
+    _persistenzaSessioneSospesa = false;
+    if (!_persistenzaSessioneInAttesa) return;
+    _persistenzaSessioneInAttesa = false;
+    persistAppSessionNow();
+}
+
 export function schedulePersistAppSession(options = {}) {
+    if (_persistenzaSessioneSospesa) {
+        _persistenzaSessioneInAttesa = true;
+        return;
+    }
     clearTimeout(_sessionTimer);
     if (options.immediate === true) {
         _sessionTimer = null;
