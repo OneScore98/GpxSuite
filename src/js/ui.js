@@ -4350,6 +4350,29 @@ export async function openStoredTrackFromLibrary(fileId) {
     showToast(`Caricato da archivio: ${storedTrack.name}`, 'success');
 }
 
+function ripristinaPreferenzeMappaSessione(session) {
+    const applicaVista = () => {
+        if (session?.mapView && mapLoaded && map) {
+            map.jumpTo({
+                center: session.mapView.center,
+                zoom: session.mapView.zoom,
+                pitch: session.mapView.pitch,
+                bearing: session.mapView.bearing
+            });
+        }
+        if (_setDimensionMode) {
+            _setDimensionMode(!!session?.is3D, { silent: true });
+        }
+    };
+
+    if (session?.currentStyle && session.currentStyle !== currentStyle && _setBaseMap) {
+        if (mapLoaded && map) map.once('idle', applicaVista);
+        _setBaseMap(session.currentStyle);
+    } else {
+        applicaVista();
+    }
+}
+
 export async function restoreStoredTracksOnStartup() {
     const session = loadPersistedAppSession();
     const files = await listStoredTracks();
@@ -4361,6 +4384,7 @@ export async function restoreStoredTracksOnStartup() {
         if (restoredSession.needsPersistence) {
             await persisteSubitoSessioneGisRipristinata([], session);
         }
+        ripristinaPreferenzeMappaSessione(session);
         return { restoredCount: 0, session };
     }
 
@@ -4388,6 +4412,7 @@ export async function restoreStoredTracksOnStartup() {
         if (restoredSession.needsPersistence) {
             await persisteSubitoSessioneGisRipristinata([], session);
         }
+        ripristinaPreferenzeMappaSessione(session);
         return { restoredCount: 0, session };
     }
 
@@ -4434,26 +4459,7 @@ export async function restoreStoredTracksOnStartup() {
     renderGisTree();
     renderLocalGpxLibrary();
 
-    const applyMapSession = () => {
-        if (session?.mapView && mapLoaded && map) {
-            map.jumpTo({
-                center: session.mapView.center,
-                zoom: session.mapView.zoom,
-                pitch: session.mapView.pitch,
-                bearing: session.mapView.bearing
-            });
-        }
-        if (_setDimensionMode) {
-            _setDimensionMode(!!session?.is3D, { silent: true });
-        }
-    };
-
-    if (session?.currentStyle && session.currentStyle !== currentStyle && _setBaseMap) {
-        map.once('idle', applyMapSession);
-        _setBaseMap(session.currentStyle);
-    } else {
-        applyMapSession();
-    }
+    ripristinaPreferenzeMappaSessione(session);
 
     schedulePersistAppSession();
     return { restoredCount: restoredTracks.length, session };
@@ -5601,6 +5607,7 @@ export function setupEvents() {
     document.getElementById('map-style-topo').onclick = () => _setBaseMap('topo');
     document.getElementById('map-style-acqua').onclick = () => _setBaseMap('acqua');
     document.getElementById('map-style-outdoor').onclick = () => _setBaseMap('outdoor');
+    document.getElementById('map-style-adv').onclick = () => _setBaseMap('adv');
     document.getElementById('toggle-hybrid').onchange = () => {
         if (currentStyle === 'sat') _setBaseMap('sat');
     };

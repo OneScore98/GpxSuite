@@ -469,7 +469,7 @@
                 </div>
                 <div class="main-menu-card">
                     <div class="main-menu-subtitle">Base cartografica</div>
-                    <div class="grid grid-cols-5 gap-1 bg-gray-950/70 p-1 rounded-lg border border-gray-800">
+                    <div class="grid grid-cols-6 gap-1 bg-gray-950/70 p-1 rounded-lg border border-gray-800">
                         <button id="map-style-osm"
                             class="text-[10px] font-medium py-1.5 px-1 rounded-md text-center bg-blue-600 text-white transition-all">MAPPA</button>
                         <button id="map-style-sat"
@@ -480,6 +480,22 @@
                             class="text-[10px] font-medium py-1.5 px-1 rounded-md text-center text-gray-400 hover:text-white transition-all">ACQUA</button>
                         <button id="map-style-outdoor"
                             class="text-[10px] font-medium py-1.5 px-1 rounded-md text-center text-gray-400 hover:text-white transition-all">OUT</button>
+                        <button id="map-style-adv" title="Adventure 4×4" aria-label="Adventure 4×4"
+                            class="text-[10px] font-medium py-1.5 px-1 rounded-md text-center text-gray-400 hover:text-white transition-all">ADV</button>
+                    </div>
+
+                    <div id="adv-map-controls" hidden>
+                        <details id="adv-legend" class="adv-legend">
+                            <summary>Adventure 4×4 · Legenda</summary>
+                            <div class="adv-legend-body">
+                                <p>Vie principali e secondarie: linee più larghe. Vie locali e di servizio: linee sottili.</p>
+                                <p><span class="adv-line adv-line-track"></span>Pista · <span class="adv-line adv-line-path"></span>Percorso pedonale/ciclabile</p>
+                                <p><span class="adv-line adv-line-paved"></span>Pavimentato generico</p>
+                                <p><span class="adv-line adv-line-unpaved"></span>Non pavimentato generico</p>
+                                <p><span class="adv-line adv-line-unknown"></span>Fondo non specificato</p>
+                                <p class="adv-legend-note">La base distingue solo fondi generici; non indica difficoltà o autorizzazione al transito.</p>
+                            </div>
+                        </details>
                     </div>
 
                     <!-- Opzioni Satellite (Ibrido) -->
