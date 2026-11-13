@@ -10,7 +10,7 @@ import {
     is3D,
     map
 } from './state.js';
-import { serializeGisTabsState } from './gis-tabs.js';
+import { serializeGisTabsSession } from './gis-tabs.js';
 
 const DB_NAME = 'gpxsuite-local-db';
 const STORE_NAME = 'gpx-files';
@@ -175,7 +175,7 @@ function buildSessionSnapshot() {
     const persistedTracks = appTracks.filter(track => track.localSource !== 'recording-live');
     const activeTrack = appTracks.find(track => track.id === activeTrackId);
     const snapshot = {
-        ...serializeGisTabsState(),
+        ...serializeGisTabsSession(persistedTracks),
         savedAt: Date.now(),
         activeTrackId: activeTrack?.localSource === 'recording-live' ? null : (activeTrackId || null),
         activeSegmentId: activeTrack?.localSource === 'recording-live' ? null : (activeSegmentId || null),
@@ -183,8 +183,7 @@ function buildSessionSnapshot() {
         currentSnapProfile,
         is3D,
         hikingTrailsVisible: readHikingTrailsVisibility(),
-        mapillaryVisible: isMapillaryVisible,
-        trackOrder: persistedTracks.map(track => track.localFileId || track.id)
+        mapillaryVisible: isMapillaryVisible
     };
 
     if (map) {
@@ -252,6 +251,27 @@ export async function persistTrackNow(track, options = {}) {
     persistAppSessionNow();
     if (options.emit !== false) emitLibraryChanged();
     return id;
+}
+
+export async function persistRestoredGisSessionNow(repairedTracks, previousSession = null) {
+    const tracksToRepair = (Array.isArray(repairedTracks) ? repairedTracks : [])
+        .filter(track => track?.localSource !== 'recording-live');
+    await queueStorageMutation(async () => {
+        for (let i = 0; i < tracksToRepair.length; i++) {
+            await persistOneTrackRaw(tracksToRepair[i], true);
+        }
+    });
+
+    try {
+        const persistedTracks = appTracks.filter(track => track.localSource !== 'recording-live');
+        localStorage.setItem(SESSION_KEY, JSON.stringify({
+            ...(previousSession && typeof previousSession === 'object' ? previousSession : {}),
+            ...serializeGisTabsSession(persistedTracks),
+            savedAt: Date.now()
+        }));
+    } catch (err) {
+        console.error('Errore salvataggio sessione GIS ripristinata:', err);
+    }
 }
 
 export function schedulePersistTracks(trackList) {

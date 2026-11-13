@@ -39,13 +39,13 @@ import {
     getSelectedGisTabTracks,
     getTracksForGisTab,
     inheritTrackGisTab,
-    initializeGisTabs,
     isGeometryEditable,
     isTrackEffectivelyVisible,
     moveTrackToGisTab,
     rememberActiveTrackForSelectedGisTab,
     renameGisTab as renameGisTabDomain,
     reorderGisTab as reorderGisTabDomain,
+    restoreGisTabsSession,
     selectGisTab as selectGisTabDomain,
     toggleGisTabVisibility as toggleGisTabVisibilityDomain
 } from './gis-tabs.js';
@@ -59,7 +59,8 @@ import {
     loadPersistedAppSession,
     schedulePersistAppSession,
     schedulePersistTracks,
-    persistTrackNow
+    persistTrackNow,
+    persistRestoredGisSessionNow
 } from './storage.js';
 
 // Riferimenti a funzioni degli altri moduli — iniettati da main.js per evitare
@@ -4307,7 +4308,13 @@ export async function restoreStoredTracksOnStartup() {
     const session = loadPersistedAppSession();
     const files = await listStoredTracks();
     if (files.length === 0) {
-        initializeGisTabs([], session);
+        const restoredSession = restoreGisTabsSession([], session);
+        setTracks([]);
+        setActiveTrackId(null);
+        setActiveSegmentId(null);
+        if (restoredSession.needsPersistence) {
+            await persistRestoredGisSessionNow([], session);
+        }
         return { restoredCount: 0, session };
     }
 
@@ -4328,22 +4335,18 @@ export async function restoreStoredTracksOnStartup() {
     }
 
     if (restoredTracks.length === 0) {
-        initializeGisTabs([], session);
+        const restoredSession = restoreGisTabsSession([], session);
+        setTracks([]);
+        setActiveTrackId(null);
+        setActiveSegmentId(null);
+        if (restoredSession.needsPersistence) {
+            await persistRestoredGisSessionNow([], session);
+        }
         return { restoredCount: 0, session };
     }
 
-    if (Array.isArray(session?.trackOrder) && session.trackOrder.length > 0) {
-        const orderMap = new Map(session.trackOrder.map((id, index) => [id, index]));
-        restoredTracks.sort((a, b) => {
-            const aIndex = orderMap.has(a.localFileId) ? orderMap.get(a.localFileId) : Number.MAX_SAFE_INTEGER;
-            const bIndex = orderMap.has(b.localFileId) ? orderMap.get(b.localFileId) : Number.MAX_SAFE_INTEGER;
-            return aIndex - bIndex;
-        });
-    }
-
-    initializeGisTabs(restoredTracks, session);
+    const restoredSession = restoreGisTabsSession(restoredTracks, session);
     setTracks(restoredTracks);
-    schedulePersistTracks(restoredTracks);
     const selectedActiveTrackId = selectGisTabDomain(selectedGisTabId, restoredTracks);
     const activeTrack = restoredTracks.find(track => track.id === selectedActiveTrackId) || null;
     setActiveTrackId(activeTrack?.id || null);
@@ -4352,6 +4355,15 @@ export async function restoreStoredTracksOnStartup() {
         || activeTrack?.segments[0]
         || null;
     setActiveSegmentId(activeSegment?.id || null);
+
+    if (restoredSession.needsPersistence) {
+        const repairedIds = new Set(restoredSession.repairedTrackIds);
+        await persistRestoredGisSessionNow(
+            restoredTracks.filter(track => repairedIds.has(track.id)),
+            session
+        );
+    }
+    schedulePersistTracks(restoredTracks);
 
     if (typeof session?.hikingTrailsVisible === 'boolean') {
         const hikingToggle = document.getElementById('toggle-hiking-trails');

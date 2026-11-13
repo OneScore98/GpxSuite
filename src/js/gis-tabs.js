@@ -373,3 +373,53 @@ export function serializeGisTabsState() {
         ...getGisTabsState()
     };
 }
+
+function persistedTrackId(track) {
+    return track?.localFileId || track?.id || null;
+}
+
+export function serializeGisTabsSession(trackList) {
+    const tracks = Array.isArray(trackList) ? trackList : [];
+    return {
+        ...serializeGisTabsState(),
+        trackOrder: tracks.map(persistedTrackId).filter(Boolean)
+    };
+}
+
+export function restoreGisTabsSession(trackList, session = null) {
+    const tracks = Array.isArray(trackList) ? trackList : [];
+    const requestedOrder = Array.isArray(session?.trackOrder) ? session.trackOrder : [];
+    if (requestedOrder.length > 0) {
+        const orderById = new Map();
+        for (let i = 0; i < requestedOrder.length; i++) {
+            if (!orderById.has(requestedOrder[i])) orderById.set(requestedOrder[i], i);
+        }
+        const originalIndex = new Map(tracks.map((track, index) => [track, index]));
+        tracks.sort((a, b) => {
+            const aIndex = orderById.get(persistedTrackId(a));
+            const bIndex = orderById.get(persistedTrackId(b));
+            const aOrder = aIndex === undefined ? Number.MAX_SAFE_INTEGER : aIndex;
+            const bOrder = bIndex === undefined ? Number.MAX_SAFE_INTEGER : bIndex;
+            return aOrder - bOrder || originalIndex.get(a) - originalIndex.get(b);
+        });
+    }
+
+    const ownersBeforeRestore = new Map(tracks.map(track => [track, track?.gisTabId]));
+    const state = initializeGisTabs(tracks, session);
+    const repairedTrackIds = tracks
+        .filter(track => ownersBeforeRestore.get(track) !== track.gisTabId)
+        .map(track => track.id);
+    const canonicalSession = serializeGisTabsSession(tracks);
+    const persistedShape = {
+        version: session?.version,
+        gisTabs: session?.gisTabs,
+        selectedGisTabId: session?.selectedGisTabId,
+        trackOrder: session?.trackOrder
+    };
+
+    return {
+        ...state,
+        repairedTrackIds,
+        needsPersistence: JSON.stringify(persistedShape) !== JSON.stringify(canonicalSession)
+    };
+}

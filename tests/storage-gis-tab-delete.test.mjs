@@ -24,6 +24,16 @@ function createFakeIndexedDb() {
                         records.delete(id);
                         completeSoon();
                     },
+                    get(id) {
+                        const request = {};
+                        queueMicrotask(() => {
+                            const record = records.get(id);
+                            request.result = record ? structuredClone(record) : undefined;
+                            request.onsuccess?.();
+                            completeSoon();
+                        });
+                        return request;
+                    },
                     getAll() {
                         const request = {};
                         queueMicrotask(() => {
@@ -60,9 +70,10 @@ globalThis.window = {
     addEventListener() {}
 };
 globalThis.document = { getElementById: () => null };
+const localValues = new Map();
 globalThis.localStorage = {
-    getItem: () => null,
-    setItem() {}
+    getItem: key => localValues.get(key) || null,
+    setItem: (key, value) => localValues.set(key, value)
 };
 globalThis.CustomEvent = class CustomEvent {
     constructor(type) { this.type = type; }
@@ -71,8 +82,17 @@ globalThis.CustomEvent = class CustomEvent {
 const {
     deleteStoredTracks,
     listStoredTracks,
+    loadPersistedAppSession,
+    loadStoredTrack,
+    persistRestoredGisSessionNow,
     persistTrackNow
 } = await import('../src/js/storage.js');
+const { setTracks } = await import('../src/js/state.js');
+const {
+    GIS_TABS_SESSION_VERSION,
+    PRIMARY_GIS_TAB_ID,
+    initializeGisTabs
+} = await import('../src/js/gis-tabs.js');
 
 function storedTrack(id, gisTabId) {
     return {
@@ -98,4 +118,37 @@ test('undo ripersistisce le tracce dopo la cancellazione batch senza corse asinc
     await Promise.all([deletion, restoration]);
 
     assert.deepEqual((await listStoredTracks()).map(item => item.id).sort(), ['file-a', 'file-b']);
+});
+
+test('la riparazione di avvio persiste subito owner e sessione canonica senza perdere le preferenze', async () => {
+    const orphan = storedTrack('file-orphan', PRIMARY_GIS_TAB_ID);
+    const alpi = storedTrack('file-alpi', 'tab-alpi');
+    const tracks = [orphan, alpi];
+    setTracks(tracks);
+    initializeGisTabs(tracks, {
+        version: GIS_TABS_SESSION_VERSION,
+        gisTabs: [
+            { id: 'tab-alpi', name: 'Alpi', visible: false, activeTrackId: alpi.id },
+            { id: PRIMARY_GIS_TAB_ID, name: 'Casa', visible: true, activeTrackId: orphan.id }
+        ],
+        selectedGisTabId: 'tab-alpi'
+    });
+    const previousSession = {
+        version: 1,
+        currentStyle: 'satellite',
+        activeSegmentId: 'segmento-alpi',
+        mapView: { center: [9, 45], zoom: 11, pitch: 20, bearing: 3 }
+    };
+
+    await persistRestoredGisSessionNow([orphan], previousSession);
+
+    const saved = loadPersistedAppSession();
+    assert.equal(saved.version, GIS_TABS_SESSION_VERSION);
+    assert.equal(saved.currentStyle, 'satellite');
+    assert.equal(saved.activeSegmentId, 'segmento-alpi');
+    assert.deepEqual(saved.mapView, previousSession.mapView);
+    assert.deepEqual(saved.trackOrder, ['file-orphan', 'file-alpi']);
+    assert.deepEqual(saved.gisTabs.map(tab => tab.id), ['tab-alpi', PRIMARY_GIS_TAB_ID]);
+    assert.equal(saved.selectedGisTabId, 'tab-alpi');
+    assert.equal((await loadStoredTrack('file-orphan')).gisTabId, PRIMARY_GIS_TAB_ID);
 });

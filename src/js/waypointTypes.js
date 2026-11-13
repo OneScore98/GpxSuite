@@ -63,7 +63,7 @@ const TIPI_WAYPOINT_APK = [
     { chiave: 'generico', simbolo: '📍', sigla: 'WP', etichetta: 'Generico', colore: '#2563eb' }
 ];
 
-export const TIPI_WAYPOINT = window.__GPXSUITE_ANDROID__ === true ? TIPI_WAYPOINT_APK : TIPI_WAYPOINT_WEB;
+export const TIPI_WAYPOINT = globalThis.window?.__GPXSUITE_ANDROID__ === true ? TIPI_WAYPOINT_APK : TIPI_WAYPOINT_WEB;
 
 const TIPO_GENERICO = TIPI_WAYPOINT[TIPI_WAYPOINT.length - 1];
 const TIPI_PER_SIMBOLO = new Map(TIPI_WAYPOINT.map(tipo => [tipo.simbolo, tipo]));
