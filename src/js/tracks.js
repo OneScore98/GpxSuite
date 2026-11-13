@@ -25,10 +25,14 @@ import { showToast, updateActiveTracksHeader, createNewTrack, renderGisTree, upd
 import { haversineDistance } from './stats.js?v=robust-slope3-20260720';
 import { schedulePersistAppSession, schedulePersistTracks } from './storage.js';
 import { trackAnalyticsEvent } from './auth.js';
-import { isGeometryEditable } from './gis-tabs.js';
-import { buildHistoryStateJson, parseHistoryStateJson } from './history-state.js';
-
-const HIDDEN_GEOMETRY_MESSAGE = 'Modifica geometrica non disponibile: rendi visibili la Scheda GIS, la traccia e il segmento.';
+import {
+    MESSAGGIO_GEOMETRIA_NON_MODIFICABILE,
+    puoModificareGeometria
+} from './gis-tabs.js';
+import {
+    analizzaJsonStatoCronologia,
+    costruisciJsonStatoCronologia
+} from './history-state.js';
 
 // Throttle: su file enormi JSON.stringify dell'intero state può richiedere
 // 100+ ms. Se l'utente fa molte modifiche rapide (es. tracciamento continuo),
@@ -93,7 +97,7 @@ function _trackSnapshotJson(track) {
 function buildTracksSnapshotJson() {
     const parts = new Array(tracks.length);
     for (let i = 0; i < tracks.length; i++) parts[i] = _trackSnapshotJson(tracks[i]);
-    return buildHistoryStateJson({
+    return costruisciJsonStatoCronologia({
         gisTabs,
         selectedGisTabId,
         activeTrackId,
@@ -151,7 +155,7 @@ export function triggerUndo() {
     }
 
     undoStack.pop();
-    const prevState = parseHistoryStateJson(undoStack[undoStack.length - 1]);
+    const prevState = analizzaJsonStatoCronologia(undoStack[undoStack.length - 1]);
 
     setTracks(prevState.tracks);
     if (Array.isArray(prevState.gisTabs) && prevState.gisTabs.length > 0) {
@@ -183,15 +187,15 @@ export function triggerUndo() {
 function ensureActiveEditableSegment() {
     const selectedTab = gisTabs.find(tab => tab.id === selectedGisTabId);
     if (!selectedTab || selectedTab.visible === false) {
-        showToast(HIDDEN_GEOMETRY_MESSAGE, "error");
+        showToast(MESSAGGIO_GEOMETRIA_NON_MODIFICABILE, "error");
         return { track: null, segment: null };
     }
 
     let track = tracks.find(t => t.id === activeTrackId && t.gisTabId === selectedGisTabId) || null;
     if (!track) track = createNewTrack(null, { destinationGisTabId: selectedGisTabId });
     if (!track) return { track: null, segment: null };
-    if (!isGeometryEditable(track)) {
-        showToast(HIDDEN_GEOMETRY_MESSAGE, "error");
+    if (!puoModificareGeometria(track)) {
+        showToast(MESSAGGIO_GEOMETRIA_NON_MODIFICABILE, "error");
         return { track: null, segment: null };
     }
 
@@ -210,8 +214,8 @@ function ensureActiveEditableSegment() {
         setActiveSegmentId(segment.id);
     }
 
-    if (!isGeometryEditable(track, segment)) {
-        showToast(HIDDEN_GEOMETRY_MESSAGE, "error");
+    if (!puoModificareGeometria(track, segment)) {
+        showToast(MESSAGGIO_GEOMETRIA_NON_MODIFICABILE, "error");
         return { track: null, segment: null };
     }
 
@@ -255,8 +259,8 @@ export async function addPointToActiveSegment(lon, lat) {
         const routePoints = await fetchSnapRoute(lastPoint, { lon, lat }, currentSnapProfile);
         if (operationGeneration !== _geometryOperationGeneration) return;
         if (!isDrawing) return;
-        if (!isGeometryEditable(track, segment)) {
-            showToast(HIDDEN_GEOMETRY_MESSAGE, "error");
+        if (!puoModificareGeometria(track, segment)) {
+            showToast(MESSAGGIO_GEOMETRIA_NON_MODIFICABILE, "error");
             return;
         }
         if (routePoints && routePoints.length > 0) {
@@ -287,8 +291,8 @@ export async function addPointToActiveSegment(lon, lat) {
         console.warn('Errore routing:', err);
         if (operationGeneration !== _geometryOperationGeneration) return;
         if (!isDrawing) return;
-        if (!isGeometryEditable(track, segment)) {
-            showToast(HIDDEN_GEOMETRY_MESSAGE, "error");
+        if (!puoModificareGeometria(track, segment)) {
+            showToast(MESSAGGIO_GEOMETRIA_NON_MODIFICABILE, "error");
             return;
         }
         if (currentSnapProfile === 'water') {
@@ -412,14 +416,14 @@ export async function fetchSnapRoute(from, to, profile) {
 
 function getEditableSelectedTracks() {
     return tracks.filter(track => (
-        track.gisTabId === selectedGisTabId && isGeometryEditable(track)
+        track.gisTabId === selectedGisTabId && puoModificareGeometria(track)
     ));
 }
 
 function guardActiveTrackGeometry() {
     const track = tracks.find(item => item.id === activeTrackId && item.gisTabId === selectedGisTabId);
-    if (isGeometryEditable(track)) return true;
-    showToast(HIDDEN_GEOMETRY_MESSAGE, "error");
+    if (puoModificareGeometria(track)) return true;
+    showToast(MESSAGGIO_GEOMETRIA_NON_MODIFICABILE, "error");
     return false;
 }
 
@@ -448,7 +452,7 @@ export function cutTrackAtPoint(lngLat) {
         for (let sIdx = 0; sIdx < track.segments.length; sIdx++) {
             let seg = track.segments[sIdx];
 
-            if (!isGeometryEditable(track, seg)) continue;
+            if (!puoModificareGeometria(track, seg)) continue;
             if (seg.points.length < 4) continue;
 
             let minDist = Infinity;
@@ -535,7 +539,7 @@ export function handleBoxDeleteClick(lngLat) {
         const editableTracks = getEditableSelectedTracks();
         editableTracks.forEach(track => {
             track.segments.forEach(seg => {
-                if (!isGeometryEditable(track, seg)) return;
+                if (!puoModificareGeometria(track, seg)) return;
                 seg.points.forEach(pt => {
                     const inBox = pt.lon >= minLng && pt.lon <= maxLng && pt.lat >= minLat && pt.lat <= maxLat;
                     if (inBox) countDeleted++;
@@ -547,7 +551,7 @@ export function handleBoxDeleteClick(lngLat) {
             saveHistoryState({ immediate: true });
             editableTracks.forEach(track => {
                 track.segments.forEach(seg => {
-                    if (!isGeometryEditable(track, seg)) return;
+                    if (!puoModificareGeometria(track, seg)) return;
                     seg.points = seg.points.filter(pt => (
                         pt.lon < minLng || pt.lon > maxLng || pt.lat < minLat || pt.lat > maxLat
                     ));

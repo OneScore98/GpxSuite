@@ -80,11 +80,11 @@ globalThis.CustomEvent = class CustomEvent {
 };
 
 const {
-    deleteStoredTracks,
+    eliminaTracceMemorizzate,
     listStoredTracks,
     loadPersistedAppSession,
     loadStoredTrack,
-    persistRestoredGisSessionNow,
+    persisteSubitoSessioneGisRipristinata,
     persistTrackNow
 } = await import('../src/js/storage.js');
 const { setTracks } = await import('../src/js/state.js');
@@ -111,7 +111,7 @@ test('undo ripersistisce le tracce dopo la cancellazione batch senza corse asinc
     const deletedTracks = [storedTrack('file-a', 'tab-a'), storedTrack('file-b', 'tab-a')];
     await Promise.all(deletedTracks.map(track => persistTrackNow(track, { force: true, emit: false })));
 
-    const deletion = deleteStoredTracks(['file-a', 'file-b']);
+    const deletion = eliminaTracceMemorizzate(['file-a', 'file-b']);
     const restoration = Promise.all(deletedTracks.map(track => (
         persistTrackNow(structuredClone(track), { force: true, emit: false })
     )));
@@ -140,7 +140,7 @@ test('la riparazione di avvio persiste subito owner e sessione canonica senza pe
         mapView: { center: [9, 45], zoom: 11, pitch: 20, bearing: 3 }
     };
 
-    await persistRestoredGisSessionNow([orphan], previousSession);
+    await persisteSubitoSessioneGisRipristinata([orphan], previousSession);
 
     const saved = loadPersistedAppSession();
     assert.equal(saved.version, GIS_TABS_SESSION_VERSION);

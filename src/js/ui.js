@@ -30,16 +30,17 @@ import { trackAnalyticsEvent } from './auth.js';
 import { trovaTipoWaypoint } from './waypointTypes.js';
 import {
     activateTrackOwnerGisTab,
-    appendTracksAtIngress,
+    inserisciTracceInIngresso,
     areTracksInSameGisTab,
-    assignTrackAtIngress,
-    captureTrackIngressGisTabId,
+    catturaDestinazioneIngressoTraccia,
     createGisTab as createGisTabDomain,
     deleteGisTab as deleteGisTabDomain,
     getSelectedGisTabTracks,
     getTracksForGisTab,
-    inheritTrackGisTab,
-    isGeometryEditable,
+    MESSAGGIO_GEOMETRIA_NON_MODIFICABILE,
+    puoModificareGeometria,
+    sonoElementiGeometriciModificabili,
+    isWaypointEffectivelyVisible,
     isTrackEffectivelyVisible,
     moveTrackToGisTab,
     rememberActiveTrackForSelectedGisTab,
@@ -49,18 +50,19 @@ import {
     selectGisTab as selectGisTabDomain,
     toggleGisTabVisibility as toggleGisTabVisibilityDomain
 } from './gis-tabs.js';
+import { importaFileGpxInOrdine, leggiFileComeTesto } from './gpx-import.js';
 import {
     listStoredTracks,
     loadStoredTrack,
     deleteStoredTrack,
-    deleteStoredTracks,
+    eliminaTracceMemorizzate,
     ensureTrackStorageMeta,
     onLibraryChanged,
     loadPersistedAppSession,
     schedulePersistAppSession,
     schedulePersistTracks,
     persistTrackNow,
-    persistRestoredGisSessionNow
+    persisteSubitoSessioneGisRipristinata
 } from './storage.js';
 
 // Riferimenti a funzioni degli altri moduli — iniettati da main.js per evitare
@@ -1956,14 +1958,12 @@ function clearBoxDeleteSelection() {
     }
 }
 
-const HIDDEN_GEOMETRY_MESSAGE = 'Modifica geometrica non disponibile: rendi visibili la Scheda GIS, la traccia e il segmento.';
-
 function canActivateGeometricTool(options = {}) {
     const selectedTab = gisTabs.find(tab => tab.id === selectedGisTabId);
     const track = tracks.find(item => item.id === activeTrackId) || null;
 
     if (selectedTab?.visible === false) {
-        showToast(HIDDEN_GEOMETRY_MESSAGE, 'error');
+        showToast(MESSAGGIO_GEOMETRIA_NON_MODIFICABILE, 'error');
         return false;
     }
     if (!track && options.allowTrackCreation === true && selectedTab?.visible !== false) {
@@ -1980,10 +1980,10 @@ function canActivateGeometricTool(options = {}) {
             || null)
         : null;
     const editable = options.requireSegment === true && segment
-        ? isGeometryEditable(track, segment)
-        : isGeometryEditable(track);
+        ? puoModificareGeometria(track, segment)
+        : puoModificareGeometria(track);
     if (!editable) {
-        showToast(HIDDEN_GEOMETRY_MESSAGE, 'error');
+        showToast(MESSAGGIO_GEOMETRIA_NON_MODIFICABILE, 'error');
         return false;
     }
     return true;
@@ -2184,7 +2184,7 @@ export async function requestDeleteGisTab(gisTabId) {
     if (_saveHistoryState) _saveHistoryState({ immediate: true });
     const storedTrackIds = ownedTracks.map(track => track.localFileId).filter(Boolean);
     try {
-        await deleteStoredTracks(storedTrackIds);
+        await eliminaTracceMemorizzate(storedTrackIds);
     } catch (err) {
         console.error(err);
         showToast("Impossibile eliminare le tracce dall'archivio locale", 'error');
@@ -2252,8 +2252,7 @@ export function finishGisTabNameEditor(gisTabId, requestedName) {
 
     if (nameEl) nameEl.textContent = renamed;
     closeGisTabNameEditor(nameEl);
-    renderGisTabsBar();
-    schedulePersistAppSession();
+    aggiornaDopoMutazioneSchedeGis();
     return true;
 }
 
@@ -2303,8 +2302,7 @@ function handleGisTabDrop(event, targetGisTabId) {
     _gisTabDragPayload = null;
     clearGisTabDropIndicators();
     if (!changed) return;
-    renderGisTabsBar();
-    schedulePersistAppSession();
+    aggiornaDopoMutazioneSchedeGis();
     showToast('Ordine delle Schede GIS aggiornato', 'success');
 }
 
@@ -2409,6 +2407,15 @@ function renderGisTabsBar() {
         });
     });
     refreshLucideIcons();
+}
+
+function aggiornaDopoMutazioneSchedeGis() {
+    renderGisTabsBar();
+    updateActiveTracksHeader();
+    renderGisTree();
+    if (_updateMapData) _updateMapData();
+    forceUpdateStats();
+    schedulePersistAppSession();
 }
 
 function clearGisTabDropTargets() {
@@ -2517,7 +2524,7 @@ export function createNewTrack(name, options = {}) {
         }],
         waypoints: []
     };
-    appendTracksAtIngress(tracks, [newTrack], {
+    inserisciTracceInIngresso(tracks, [newTrack], {
         destinationGisTabId: options.destinationGisTabId
     });
     if (newTrack.gisTabId !== selectedGisTabId) {
@@ -2746,6 +2753,25 @@ function refreshAfterTreeClipboardMutation(message) {
     if (message) showToast(message, 'success');
 }
 
+function elementiGeometriciSelezionati() {
+    const tracce = getSelectedTracks();
+    const idTracce = new Set(tracce.map(traccia => traccia.id));
+    return [
+        ...tracce.map(traccia => ({ traccia })),
+        ...getSelectedSegments()
+            .filter(elemento => !idTracce.has(elemento.track.id))
+            .map(elemento => ({ traccia: elemento.track, segmento: elemento.segment }))
+    ];
+}
+
+function consentiMutazioneGeometrica(elementi = []) {
+    const schedaSelezionata = gisTabs.find(scheda => scheda.id === selectedGisTabId);
+    const elementiValidi = elementi.length === 0 || sonoElementiGeometriciModificabili(elementi);
+    if (schedaSelezionata && schedaSelezionata.visible !== false && elementiValidi) return true;
+    showToast(MESSAGGIO_GEOMETRIA_NON_MODIFICABILE, 'error');
+    return false;
+}
+
 function removeSelectionForCut() {
     const selectedTrackIds = new Set(getSelectedTracks().map(track => track.id));
     const selectedSegments = getSelectedSegments()
@@ -2782,8 +2808,21 @@ function pasteTreeClipboard(target = {}) {
         return;
     }
 
+    const tracceDestinazione = getSelectedGisTabTracks(tracks);
+    const tracciaDestinazione = tracceDestinazione.find(track => track.id === target.trackId)
+        || ((_treeClipboard.segments || []).length > 0
+            ? (tracceDestinazione.find(track => track.id === activeTrackId) || tracceDestinazione[0] || null)
+            : null);
+    const segmentoDestinazione = target.segId
+        ? tracciaDestinazione?.segments.find(segmento => segmento.id === target.segId)
+        : null;
+    const elementiDestinazione = tracciaDestinazione
+        ? [{ traccia: tracciaDestinazione, segmento: segmentoDestinazione || null }]
+        : [];
+    if (!consentiMutazioneGeometrica(elementiDestinazione)) return;
+
     const pastedKeys = [];
-    const destinationGisTabId = captureTrackIngressGisTabId();
+    const destinationGisTabId = catturaDestinazioneIngressoTraccia();
     const trackTargetIndex = target.trackId
         ? tracks.findIndex(track => track.id === target.trackId && track.gisTabId === destinationGisTabId)
         : -1;
@@ -2792,8 +2831,10 @@ function pasteTreeClipboard(target = {}) {
     (_treeClipboard.tracks || []).forEach(trackData => {
         const isCut = _treeClipboard.mode === 'cut';
         const cloned = cloneTrackForPaste(trackData, isCut ? '' : ' copia', isCut);
-        assignTrackAtIngress(cloned, { destinationGisTabId });
-        tracks.splice(insertTrackIndex, 0, cloned);
+        inserisciTracceInIngresso(tracks, [cloned], {
+            destinationGisTabId,
+            indiceInserimento: insertTrackIndex
+        });
         insertTrackIndex++;
         pastedKeys.push(makeTreeKey('track', cloned.id));
         setActiveTrackId(cloned.id);
@@ -3115,6 +3156,7 @@ export function cutTreeSelection() {
         showToast('Nessun elemento selezionato', 'info');
         return;
     }
+    if (!consentiMutazioneGeometrica(elementiGeometriciSelezionati())) return;
     _treeClipboard = { ...payload, mode: 'cut' };
     removeSelectionForCut();
     closeTrackContextMenu();
@@ -3143,6 +3185,7 @@ export function deleteTreeSelection() {
         showToast('Nessun elemento selezionato', 'info');
         return;
     }
+    if (!consentiMutazioneGeometrica(elementiGeometriciSelezionati())) return;
     removeSelectionForCut();
     closeTrackContextMenu();
     refreshAfterTreeClipboardMutation('Selezione eliminata');
@@ -3964,9 +4007,11 @@ function createOffroadTrack(sourceTrack, extractedRanges, nameBase, summary) {
         waypoints: []
     };
 
-    const destinationGisTabId = inheritTrackGisTab(newTrack, sourceTrack);
-    tracks.push(newTrack);
-    if (destinationGisTabId === captureTrackIngressGisTabId()) {
+    inserisciTracceInIngresso(tracks, [newTrack], {
+        destinationGisTabId: sourceTrack.gisTabId
+    });
+    const destinationGisTabId = newTrack.gisTabId;
+    if (destinationGisTabId === catturaDestinazioneIngressoTraccia()) {
         setActiveTrackId(newTrack.id);
         setActiveSegmentId(newTrack.segments[0]?.id || null);
     }
@@ -4276,7 +4321,7 @@ export async function openStoredTrackFromLibrary(fileId) {
         return;
     }
 
-    const destinationGisTabId = captureTrackIngressGisTabId();
+    const destinationGisTabId = catturaDestinazioneIngressoTraccia();
     const storedTrack = await loadStoredTrack(fileId);
     if (!storedTrack) {
         showToast("File locale non trovato", "error");
@@ -4285,7 +4330,7 @@ export async function openStoredTrackFromLibrary(fileId) {
     }
 
     ensureTrackStorageMeta(storedTrack, storedTrack.localSource || 'imported');
-    appendTracksAtIngress(tracks, [storedTrack], {
+    inserisciTracceInIngresso(tracks, [storedTrack], {
         destinationGisTabId,
         preserveValidOwner: true
     });
@@ -4313,7 +4358,7 @@ export async function restoreStoredTracksOnStartup() {
         setActiveTrackId(null);
         setActiveSegmentId(null);
         if (restoredSession.needsPersistence) {
-            await persistRestoredGisSessionNow([], session);
+            await persisteSubitoSessioneGisRipristinata([], session);
         }
         return { restoredCount: 0, session };
     }
@@ -4340,7 +4385,7 @@ export async function restoreStoredTracksOnStartup() {
         setActiveTrackId(null);
         setActiveSegmentId(null);
         if (restoredSession.needsPersistence) {
-            await persistRestoredGisSessionNow([], session);
+            await persisteSubitoSessioneGisRipristinata([], session);
         }
         return { restoredCount: 0, session };
     }
@@ -4358,7 +4403,7 @@ export async function restoreStoredTracksOnStartup() {
 
     if (restoredSession.needsPersistence) {
         const repairedIds = new Set(restoredSession.repairedTrackIds);
-        await persistRestoredGisSessionNow(
+        await persisteSubitoSessioneGisRipristinata(
             restoredTracks.filter(track => repairedIds.has(track.id)),
             session
         );
@@ -5092,6 +5137,7 @@ export function toggleSegmentVisibility(trackId, segId) {
 
 export function deleteTrack(trackId) {
     const trackToDelete = tracks.find(t => t.id === trackId);
+    if (!trackToDelete || !consentiMutazioneGeometrica([{ traccia: trackToDelete }])) return;
     const remainingTracks = tracks.filter(t => t.id !== trackId);
     setTracks(remainingTracks);
     _collapsedActiveTrackIds.delete(trackId);
@@ -5113,7 +5159,7 @@ export function deleteTrack(trackId) {
 
 export function addNewSegmentToTrack(trackId) {
     const t = tracks.find(tr => tr.id === trackId);
-    if (t) {
+    if (t && consentiMutazioneGeometrica([{ traccia: t }])) {
         const newSegId = 'seg_' + Date.now();
         t.segments.push({
             id: newSegId,
@@ -5150,11 +5196,14 @@ export function setSegmentActive(trackId, segId, shouldFocus = false) {
 
 export function deleteSegment(trackId, segId) {
     const t = tracks.find(tr => tr.id === trackId);
-    if (t) {
+    const segmento = t?.segments.find(sg => sg.id === segId) || null;
+    if (t && segmento && consentiMutazioneGeometrica([{ traccia: t, segmento }])) {
         t.segments = t.segments.filter(sg => sg.id !== segId);
         if (activeSegmentId === segId) {
             setActiveSegmentId(t.segments.length > 0 ? t.segments[0].id : null);
         }
+    } else {
+        return;
     }
     if (_saveHistoryState) _saveHistoryState();
     if (_updateMapData) _updateMapData();
@@ -5167,12 +5216,14 @@ export function zoomToWaypoint(lon, lat) {
 
 export function deleteWaypoint(trackId, wpId) {
     const track = tracks.find(t => t.id === trackId);
-    if (track) {
+    const waypoint = track?.waypoints.find(item => item.id === wpId) || null;
+    if (track && waypoint && isWaypointEffectivelyVisible(track, waypoint)
+        && consentiMutazioneGeometrica([{ traccia: track }])) {
         track.waypoints = track.waypoints.filter(w => w.id !== wpId);
         if (_saveHistoryState) _saveHistoryState();
         if (_updateMapData) _updateMapData();
         showToast("Waypoint rimosso", "info");
-    }
+    } else if (track && waypoint) showToast(MESSAGGIO_GEOMETRIA_NON_MODIFICABILE, 'error');
 }
 
 export function updateActiveTracksHeader() {
@@ -5886,19 +5937,25 @@ export function setupEvents() {
 
     const fileImportInput = document.getElementById('file-import-gpx');
     if (fileImportInput) {
-        fileImportInput.onchange = (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                const destinationGisTabId = captureTrackIngressGisTabId();
-                trackAnalyticsEvent('import_gpx', {
-                    fileName: file.name,
-                    size: file.size
-                }).catch(err => console.warn(err));
-                const reader = new FileReader();
-                reader.onload = function (evt) {
-                    _importGPX(evt.target.result, file.name, { destinationGisTabId });
-                };
-                reader.readAsText(file);
+        fileImportInput.onchange = async event => {
+            const file = event.target.files;
+            try {
+                await importaFileGpxInOrdine(file, {
+                    catturaDestinazione: catturaDestinazioneIngressoTraccia,
+                    leggiTesto: leggiFileComeTesto,
+                    importaGpx: _importGPX,
+                    notificaFile: elemento => {
+                        trackAnalyticsEvent('import_gpx', {
+                            fileName: elemento.name,
+                            size: elemento.size
+                        }).catch(err => console.warn(err));
+                    }
+                });
+            } catch (err) {
+                console.error(err);
+                showToast('Impossibile importare uno dei file GPX selezionati', 'error');
+            } finally {
+                event.target.value = '';
             }
         };
     }

@@ -18,7 +18,12 @@ import { saveHistoryState } from './tracks.js?v=vibration-tooltip-units-20260715
 import { updateMapData, queryElevation } from './map.js?v=robust-slope3-20260720';
 import { activateTrackFromMap, showToast, updateToolButtons, updateMapToolCursor } from './ui.js?v=vibration-tooltip-units-20260715';
 import { trovaTipoWaypoint } from './waypointTypes.js';
-import { isGeometryEditable, isTrackEffectivelyVisible, isWaypointEffectivelyVisible } from './gis-tabs.js';
+import {
+    MESSAGGIO_GEOMETRIA_NON_MODIFICABILE,
+    puoModificareGeometria,
+    isTrackEffectivelyVisible,
+    isWaypointEffectivelyVisible
+} from './gis-tabs.js';
 
 let _waypointInteractionsBound = false;
 let _draggingWaypoint = null;
@@ -28,8 +33,6 @@ let _dragRafHandle = null;
 let _suppressNextWaypointClick = false;
 // Sotto questa distanza (px) il movimento è jitter del click, non un drag
 const DRAG_THRESHOLD_PX = 3;
-const HIDDEN_GEOMETRY_MESSAGE = 'Modifica geometrica non disponibile: rendi visibile la Scheda GIS e la traccia.';
-
 // Cache immagini badge per colore+simbolo (`${color}|${symbol}` -> imageId)
 const _pinImageCache = new Map();
 const ID_PIN_PREFIX = 'gpx-wp-topo-';
@@ -313,8 +316,8 @@ export async function addWaypointAtCoords(lon, lat) {
     }
     const track = tracks.find(t => t.id === activeTrackId);
     if (!track) return;
-    if (!isGeometryEditable(track)) {
-        showToast(HIDDEN_GEOMETRY_MESSAGE, "error");
+    if (!puoModificareGeometria(track)) {
+        showToast(MESSAGGIO_GEOMETRIA_NON_MODIFICABILE, "error");
         setIsAddingWaypoint(false);
         updateToolButtons();
         updateMapToolCursor();
@@ -587,7 +590,7 @@ export function bindWaypointInteractions() {
         const found = findWaypoint(ids.trackId, ids.wpId);
         if (!found) return;
         if (!isWaypointEffectivelyVisible(found.track, found.wp)) {
-            showToast(HIDDEN_GEOMETRY_MESSAGE, "error");
+            showToast(MESSAGGIO_GEOMETRIA_NON_MODIFICABILE, "error");
             return;
         }
         if (!activateTrackFromMap(ids.trackId)) return;
@@ -608,7 +611,7 @@ export function bindWaypointInteractions() {
         if (!_draggingWaypoint) return;
         if (!isWaypointEffectivelyVisible(_draggingWaypoint.track, _draggingWaypoint.wp)) {
             cancelWaypointGeometryInteraction();
-            showToast(HIDDEN_GEOMETRY_MESSAGE, "error");
+            showToast(MESSAGGIO_GEOMETRIA_NON_MODIFICABILE, "error");
             return;
         }
         // Ignora il jitter del click: il drag parte solo oltre la soglia in pixel,
@@ -635,7 +638,7 @@ export function bindWaypointInteractions() {
         if (!_draggingWaypoint) return;
         if (!isWaypointEffectivelyVisible(_draggingWaypoint.track, _draggingWaypoint.wp)) {
             cancelWaypointGeometryInteraction();
-            showToast(HIDDEN_GEOMETRY_MESSAGE, "error");
+            showToast(MESSAGGIO_GEOMETRIA_NON_MODIFICABILE, "error");
             return;
         }
         const dragged = _draggingWaypoint;

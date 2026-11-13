@@ -10,7 +10,7 @@ import {
     is3D,
     map
 } from './state.js';
-import { serializeGisTabsSession } from './gis-tabs.js';
+import { serializzaSessioneSchedeGis } from './gis-tabs.js';
 
 const DB_NAME = 'gpxsuite-local-db';
 const STORE_NAME = 'gpx-files';
@@ -21,12 +21,12 @@ let _dbPromise = null;
 let _persistTimer = null;
 let _persistQueuedTracks = [];
 let _sessionTimer = null;
-let _storageMutationQueue = Promise.resolve();
+let _codaMutazioniArchivio = Promise.resolve();
 
-function queueStorageMutation(operation) {
-    const queued = _storageMutationQueue.then(operation, operation);
-    _storageMutationQueue = queued.catch(() => {});
-    return queued;
+function accodaMutazioneArchivio(operazione) {
+    const operazioneAccodata = _codaMutazioniArchivio.then(operazione, operazione);
+    _codaMutazioniArchivio = operazioneAccodata.catch(() => {});
+    return operazioneAccodata;
 }
 
 function promisifyRequest(request) {
@@ -151,19 +151,19 @@ async function putTrackRecord(track) {
     await waitForTransaction(tx);
 }
 
-async function persistOneTrackRaw(track, force = false) {
-    if (!track || track.localSource === 'recording-live') return null;
-    const signature = trackContentSignature(track);
-    if (!force && _persistedTrackSignatures.get(track) === signature) {
-        return track.localFileId || null;
+async function persisteTracciaSenzaAccodamento(traccia, forza = false) {
+    if (!traccia || traccia.localSource === 'recording-live') return null;
+    const firma = trackContentSignature(traccia);
+    if (!forza && _persistedTrackSignatures.get(traccia) === firma) {
+        return traccia.localFileId || null;
     }
-    await putTrackRecord(track);
-    _persistedTrackSignatures.set(track, signature);
-    return track.localFileId || null;
+    await putTrackRecord(traccia);
+    _persistedTrackSignatures.set(traccia, firma);
+    return traccia.localFileId || null;
 }
 
 function persistOneTrackNow(track, force = false) {
-    return queueStorageMutation(() => persistOneTrackRaw(track, force));
+    return accodaMutazioneArchivio(() => persisteTracciaSenzaAccodamento(track, force));
 }
 
 function readHikingTrailsVisibility() {
@@ -175,7 +175,7 @@ function buildSessionSnapshot() {
     const persistedTracks = appTracks.filter(track => track.localSource !== 'recording-live');
     const activeTrack = appTracks.find(track => track.id === activeTrackId);
     const snapshot = {
-        ...serializeGisTabsSession(persistedTracks),
+        ...serializzaSessioneSchedeGis(persistedTracks),
         savedAt: Date.now(),
         activeTrackId: activeTrack?.localSource === 'recording-live' ? null : (activeTrackId || null),
         activeSegmentId: activeTrack?.localSource === 'recording-live' ? null : (activeSegmentId || null),
@@ -230,7 +230,7 @@ export function schedulePersistAppSession() {
 }
 
 async function persistTracksNow(trackList, force = false) {
-    return queueStorageMutation(async () => {
+    return accodaMutazioneArchivio(async () => {
         for (let i = 0; i < trackList.length; i++) {
             const track = trackList[i];
             if (track?.localSource === 'recording-live') continue;
@@ -238,7 +238,7 @@ async function persistTracksNow(trackList, force = false) {
                 // Salta le tracce il cui contenuto non è cambiato dall'ultimo
                 // salvataggio (firma leggera). Il flush di uscita forza sempre
                 // il salvataggio completo per garantire la durabilità.
-                await persistOneTrackRaw(track, force);
+                await persisteTracciaSenzaAccodamento(track, force);
             } catch (err) {
                 console.error('Errore salvataggio IndexedDB:', err);
             }
@@ -253,20 +253,20 @@ export async function persistTrackNow(track, options = {}) {
     return id;
 }
 
-export async function persistRestoredGisSessionNow(repairedTracks, previousSession = null) {
-    const tracksToRepair = (Array.isArray(repairedTracks) ? repairedTracks : [])
-        .filter(track => track?.localSource !== 'recording-live');
-    await queueStorageMutation(async () => {
-        for (let i = 0; i < tracksToRepair.length; i++) {
-            await persistOneTrackRaw(tracksToRepair[i], true);
+export async function persisteSubitoSessioneGisRipristinata(tracceRiparate, sessionePrecedente = null) {
+    const tracceDaRiparare = (Array.isArray(tracceRiparate) ? tracceRiparate : [])
+        .filter(traccia => traccia?.localSource !== 'recording-live');
+    await accodaMutazioneArchivio(async () => {
+        for (let i = 0; i < tracceDaRiparare.length; i++) {
+            await persisteTracciaSenzaAccodamento(tracceDaRiparare[i], true);
         }
     });
 
     try {
-        const persistedTracks = appTracks.filter(track => track.localSource !== 'recording-live');
+        const traccePersistite = appTracks.filter(traccia => traccia.localSource !== 'recording-live');
         localStorage.setItem(SESSION_KEY, JSON.stringify({
-            ...(previousSession && typeof previousSession === 'object' ? previousSession : {}),
-            ...serializeGisTabsSession(persistedTracks),
+            ...(sessionePrecedente && typeof sessionePrecedente === 'object' ? sessionePrecedente : {}),
+            ...serializzaSessioneSchedeGis(traccePersistite),
             savedAt: Date.now()
         }));
     } catch (err) {
@@ -335,24 +335,28 @@ export async function loadStoredTrack(id) {
 }
 
 export async function deleteStoredTrack(id) {
-    return deleteStoredTracks([id]);
+    return eliminaTracceMemorizzate([id]);
 }
 
-export async function deleteStoredTracks(ids) {
-    const requestedIds = new Set((Array.isArray(ids) ? ids : []).filter(Boolean));
-    if (requestedIds.size === 0) return 0;
-    _persistQueuedTracks = _persistQueuedTracks.filter(track => !requestedIds.has(track?.localFileId));
+export async function eliminaTracceMemorizzate(idRichiesti) {
+    const idDaEliminare = new Set((Array.isArray(idRichiesti) ? idRichiesti : []).filter(Boolean));
+    if (idDaEliminare.size === 0) return 0;
+    _persistQueuedTracks = _persistQueuedTracks.filter(track => !idDaEliminare.has(track?.localFileId));
 
-    await queueStorageMutation(async () => {
+    await accodaMutazioneArchivio(async () => {
         const db = await openDb();
         const tx = db.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
-        for (const id of requestedIds) store.delete(id);
+        for (const id of idDaEliminare) store.delete(id);
         await waitForTransaction(tx);
     });
     emitLibraryChanged();
-    return requestedIds.size;
+    return idDaEliminare.size;
 }
+
+// Alias di compatibilità per i chiamanti precedenti all'API italiana.
+export const persistRestoredGisSessionNow = persisteSubitoSessioneGisRipristinata;
+export const deleteStoredTracks = eliminaTracceMemorizzate;
 
 export async function hasStoredTracks() {
     const db = await openDb();

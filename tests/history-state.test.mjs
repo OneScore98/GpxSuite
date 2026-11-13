@@ -2,12 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-    buildHistoryStateJson,
-    parseHistoryStateJson
+    analizzaJsonStatoCronologia,
+    costruisciJsonStatoCronologia
 } from '../src/js/history-state.js';
 
 test('uno snapshot undo conserva atomicamente schede, selezione, ultime attive, ordine e proprietari', () => {
-    const json = buildHistoryStateJson({
+    const json = costruisciJsonStatoCronologia({
         gisTabs: [
             { id: 'tab-a', name: 'A', visible: false, activeTrackId: 'track-a' },
             { id: 'tab-b', name: 'B', visible: true, activeTrackId: 'track-b' }
@@ -20,7 +20,7 @@ test('uno snapshot undo conserva atomicamente schede, selezione, ultime attive, 
         JSON.stringify({ id: 'track-b', gisTabId: 'tab-b', segments: [{ id: 'segment-b' }], waypoints: [] })
     ]);
 
-    assert.deepEqual(parseHistoryStateJson(json), {
+    assert.deepEqual(analizzaJsonStatoCronologia(json), {
         gisTabs: [
             { id: 'tab-a', name: 'A', visible: false, activeTrackId: 'track-a' },
             { id: 'tab-b', name: 'B', visible: true, activeTrackId: 'track-b' }
