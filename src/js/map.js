@@ -42,6 +42,7 @@ import { setupWaypointLayers, updateWaypointsOnMap, bindWaypointInteractions, re
 import { schedulePersistAppSession, schedulePersistTracks } from './storage.js';
 import { loadScriptOnce, loadStylesheetOnce, vibrationLevelColor } from './utils.js';
 import { computeSlopeProfile } from './slope.js?v=robust-slope3-20260720';
+import { createAdventureBaseMapStyle } from './adv-base-style.js';
 import { isSegmentEffectivelyVisible, isTrackEffectivelyVisible } from './gis-tabs.js';
 
 // ─── RDP iterativo (no ricorsione, no stack overflow) ─────────────────────────
@@ -191,7 +192,7 @@ export function setStyleRestoredHook(handler) {
 }
 const MAPILLARY_JS_URL = 'https://unpkg.com/mapillary-js@4.1.2/dist/mapillary.js';
 const MAPILLARY_CSS_URL = 'https://unpkg.com/mapillary-js@4.1.2/dist/mapillary.css';
-const BASE_MAP_STYLES = ['osm', 'sat', 'topo', 'acqua', 'outdoor'];
+const BASE_MAP_STYLES = ['osm', 'sat', 'topo', 'acqua', 'outdoor', 'adv'];
 
 function openMapTilesSource() {
     if (window.__GPXSUITE_ANDROID__ === true) {
@@ -3378,6 +3379,9 @@ export function createBaseMapStyle(style, isHybrid) {
     if (normalizedStyle === 'acqua') {
         return createHydroBaseMapStyle();
     }
+    if (normalizedStyle === 'adv') {
+        return createAdventureBaseMapStyle(openMapTilesSource());
+    }
     if (normalizedStyle === 'outdoor') {
         return createOutdoorBaseMapStyle();
     }
@@ -3505,6 +3509,9 @@ export function setBaseMap(style) {
             "text-[10px] font-bold py-1.5 px-1 rounded-md text-center bg-blue-600 text-white transition-all" :
             "text-[10px] font-medium py-1.5 px-1 rounded-md text-center text-gray-400 hover:text-white transition-all";
     });
+
+    const advControls = document.getElementById('adv-map-controls');
+    if (advControls) advControls.hidden = normalizedStyle !== 'adv';
 
     const satOptionsContainer = document.getElementById('sat-options-container');
     if (satOptionsContainer) {
