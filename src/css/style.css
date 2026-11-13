@@ -40,6 +40,197 @@ html:not(.tw-ready) body > :not(#map):not(#auth-gate) {
     height: var(--app-height);
 }
 
+.gis-tabs-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-width: 0;
+}
+
+.gis-tabs-list {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    padding: 0.15rem 0;
+}
+
+.gis-tab-chip,
+.gis-tabs-add {
+    min-height: 2rem;
+    border: 1px solid rgba(71, 85, 105, 0.9);
+    background: rgba(30, 41, 59, 0.72);
+    color: #cbd5e1;
+    transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+}
+
+.gis-tab-chip {
+    display: inline-flex;
+    align-items: stretch;
+    flex: 0 0 auto;
+    max-width: 10rem;
+    overflow: hidden;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 650;
+}
+
+.gis-tab-select,
+.gis-tab-visibility,
+.gis-tab-drag-handle,
+.gis-tab-menu-trigger {
+    display: inline-flex;
+    align-items: center;
+    border: 0;
+    background: transparent;
+    color: inherit;
+}
+
+.gis-tab-select {
+    min-width: 0;
+    gap: 0.35rem;
+    padding: 0.35rem 0.25rem;
+}
+
+.gis-tab-drag-handle {
+    flex: 0 0 auto;
+    padding: 0.35rem 0.05rem 0.35rem 0.4rem;
+    cursor: grab;
+    opacity: 0.55;
+}
+
+.gis-tab-drag-handle:active {
+    cursor: grabbing;
+}
+
+.gis-tab-drag-handle:hover,
+.gis-tab-drag-handle:focus-visible,
+.gis-tab-menu-trigger:hover,
+.gis-tab-menu-trigger:focus-visible {
+    color: #fff;
+    opacity: 1;
+}
+
+.gis-tab-name {
+    display: inline-block;
+    min-width: 1.5rem;
+    max-width: 7rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gis-tab-name.is-editing {
+    padding: 0.1rem 0.25rem;
+    border-radius: 0.3rem;
+    background: rgba(15, 23, 42, 0.92);
+    outline: 2px solid rgba(125, 211, 252, 0.85);
+    overflow: visible;
+    text-overflow: clip;
+    user-select: text;
+}
+
+.gis-tab-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.15rem;
+    height: 1.15rem;
+    padding: 0 0.3rem;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.45);
+    color: currentColor;
+    font-size: 0.6rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.gis-tab-visibility {
+    flex: 0 0 auto;
+    justify-content: center;
+    padding: 0.35rem 0.2rem;
+    opacity: 0.82;
+}
+
+.gis-tab-menu-trigger {
+    flex: 0 0 auto;
+    justify-content: center;
+    padding: 0.35rem 0.5rem 0.35rem 0.15rem;
+    opacity: 0.68;
+}
+
+.gis-tab-visibility:hover,
+.gis-tab-visibility:focus-visible {
+    opacity: 1;
+    color: #fff;
+}
+
+.gis-tab-chip:hover,
+.gis-tabs-add:hover {
+    border-color: rgba(96, 165, 250, 0.8);
+    color: #f8fafc;
+}
+
+.gis-tab-chip.is-selected {
+    border-color: rgba(96, 165, 250, 0.9);
+    background: rgba(37, 99, 235, 0.72);
+    color: #fff;
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.18);
+}
+
+.gis-tab-chip.is-hidden {
+    border-style: dashed;
+    background: rgba(30, 41, 59, 0.45);
+    color: #94a3b8;
+}
+
+.gis-tab-chip.is-hidden.is-selected {
+    border-color: rgba(251, 191, 36, 0.78);
+    background: rgba(120, 53, 15, 0.32);
+    color: #fde68a;
+}
+
+.gis-tab-chip.is-track-drop-target {
+    border-color: rgba(34, 211, 238, 0.95);
+    background: rgba(8, 145, 178, 0.34);
+    color: #ecfeff;
+    box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.28), 0 0 1rem rgba(6, 182, 212, 0.18);
+}
+
+.gis-tab-chip.is-drop-before {
+    box-shadow: -3px 0 0 #38bdf8;
+}
+
+.gis-tab-chip.is-drop-after {
+    box-shadow: 3px 0 0 #38bdf8;
+}
+
+.gis-tabs-add {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 2rem;
+    width: 2rem;
+    border-radius: 0.65rem;
+}
+
+@media (max-width: 767px) {
+    .gis-tab-chip {
+        max-width: 9rem;
+    }
+
+    .gis-tab-name {
+        max-width: 5rem;
+    }
+
+    .gis-tab-drag-handle {
+        display: none;
+    }
+}
+
 body.auth-locked #header-tracks-container,
 body.auth-locked #toolbar-left,
 body.auth-locked #panel-main-menu,
@@ -1325,6 +1516,35 @@ body.auth-locked #print-drag-grid {
     display: grid;
     place-items: center;
     pointer-events: none;
+}
+
+.stats-gis-tab-hidden {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    padding: 1rem;
+    text-align: center;
+    color: #cbd5e1;
+    background: rgba(3, 7, 18, 0.96);
+}
+
+.stats-gis-tab-hidden.hidden {
+    display: none;
+}
+
+.stats-gis-tab-hidden strong {
+    color: #f8fafc;
+    font-size: 0.8rem;
+}
+
+.stats-gis-tab-hidden span {
+    color: #94a3b8;
+    font-size: 0.7rem;
 }
 
 .stats-summary-panel {

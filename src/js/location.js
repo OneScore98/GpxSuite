@@ -8,6 +8,12 @@ import {
     setActiveTrackId,
     setActiveSegmentId
 } from './state.js';
+import {
+    inserisciTracceInIngresso,
+    assegnaTracciaASchedaGis,
+    catturaDestinazioneIngressoTraccia,
+    getSelectedGisTabTracks
+} from './gis-tabs.js';
 import { escapeXml, filterGpxExportPoints, generateDistinctTrackColor } from './utils.js';
 
 const INITIAL_LOCATION_ZOOM = 16.5;
@@ -257,6 +263,7 @@ export function startDeviceRecording() {
     _recording = createEmptyRecording();
     _recording.state = 'recording';
     _recording.startedAt = Date.now();
+    _recording.gisTabId = catturaDestinazioneIngressoTraccia();
     if (!isDeviceLocationActive() && !startDeviceLocation()) {
         _recording = createEmptyRecording();
         emitRecordingStatus();
@@ -328,8 +335,10 @@ export async function finishDeviceRecording(name = getDefaultRecordingName()) {
     const trackName = sanitizeRecordingName(name || getDefaultRecordingName());
     const track = finalizeRecordingTrack(recording, recordedPoints, trackName);
     const segmentId = track.segments[0]?.id || null;
-    setActiveTrackId(track.id);
-    if (segmentId) setActiveSegmentId(segmentId);
+    if (track.gisTabId === catturaDestinazioneIngressoTraccia()) {
+        setActiveTrackId(track.id);
+        if (segmentId) setActiveSegmentId(segmentId);
+    }
     if (_saveHistoryState) _saveHistoryState();
     if (_updateMapData) _updateMapData(true);
     if (_updateActiveTracksHeader) _updateActiveTracksHeader();
@@ -356,8 +365,9 @@ function abortEmptyDeviceRecording(recording) {
         const index = tracks.indexOf(liveTrack);
         if (index !== -1) tracks.splice(index, 1);
         if (activeTrackId === liveTrack.id) {
-            setActiveTrackId(tracks[0]?.id || null);
-            setActiveSegmentId(tracks[0]?.segments?.[0]?.id || null);
+            const nextTrack = getSelectedGisTabTracks(tracks)[0] || null;
+            setActiveTrackId(nextTrack?.id || null);
+            setActiveSegmentId(nextTrack?.segments?.[0]?.id || null);
         }
         if (_updateMapData) _updateMapData(true);
         if (_renderGisTree) _renderGisTree();
@@ -1116,6 +1126,10 @@ function ensureRecordingTrack() {
     if (_recording.state === 'idle') return null;
     const existingTrack = getRecordingTrack();
     if (existingTrack) {
+        _recording.gisTabId = assegnaTracciaASchedaGis(
+            existingTrack,
+            _recording.gisTabId || existingTrack.gisTabId
+        );
         const segment = ensureRecordingSegment(existingTrack);
         segment.points = _recording.points;
         syncRecordingTrackAppearance(existingTrack);
@@ -1144,11 +1158,14 @@ function ensureRecordingTrack() {
         waypoints: []
     };
 
-    tracks.push(track);
+    inserisciTracceInIngresso(tracks, [track], { destinationGisTabId: _recording.gisTabId });
+    _recording.gisTabId = track.gisTabId;
     _recording.trackId = track.id;
     _recording.segmentId = track.segments[0].id;
-    setActiveTrackId(track.id);
-    setActiveSegmentId(track.segments[0].id);
+    if (track.gisTabId === catturaDestinazioneIngressoTraccia()) {
+        setActiveTrackId(track.id);
+        setActiveSegmentId(track.segments[0].id);
+    }
     return track;
 }
 
@@ -1252,8 +1269,10 @@ function finalizeRecordingTrack(recording, recordedPoints, trackName) {
             segments: [],
             waypoints: []
         };
-        tracks.push(track);
+        inserisciTracceInIngresso(tracks, [track], { destinationGisTabId: recording.gisTabId });
     }
+
+    recording.gisTabId = assegnaTracciaASchedaGis(track, recording.gisTabId || track.gisTabId);
 
     const segment = track.segments?.[0] || {
         id: recording.segmentId || `seg_${Date.now()}_rec`,
@@ -1852,6 +1871,7 @@ function persistRecordingSnapshot() {
             startedAt: _recording.startedAt,
             pausedAt: _recording.pausedAt,
             totalPausedMs: _recording.totalPausedMs,
+            gisTabId: _recording.gisTabId,
             points: _recording.points
         };
         localStorage.setItem(RECORDING_PERSIST_KEY, JSON.stringify(snapshot));
@@ -1976,7 +1996,8 @@ export function resumePendingRecordingSnapshot() {
         points: snap.points.slice(),
         skipped: 0,
         trackId: null,
-        segmentId: null
+        segmentId: null,
+        gisTabId: snap.gisTabId || catturaDestinazioneIngressoTraccia()
     };
     ensureRecordingTrack();
     refreshRecordingTrackData(true);
@@ -2010,7 +2031,8 @@ function createEmptyRecording() {
         points: [],
         skipped: 0,
         trackId: null,
-        segmentId: null
+        segmentId: null,
+        gisTabId: null
     };
 }
 

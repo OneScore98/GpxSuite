@@ -6,8 +6,11 @@ import {
     tracks, setTracks,
     activeTrackId, setActiveTrackId,
     activeSegmentId, setActiveSegmentId,
+    gisTabs, setGisTabs,
+    selectedGisTabId, setSelectedGisTabId,
     undoStack, setUndoStack,
     isSnapActive, setIsSnapActive,
+    isDrawing,
     currentSnapProfile, setCurrentSnapProfile,
     isCutting, setIsCutting,
     isBoxDeleting, setIsBoxDeleting,
@@ -22,12 +25,25 @@ import { showToast, updateActiveTracksHeader, createNewTrack, renderGisTree, upd
 import { haversineDistance } from './stats.js?v=robust-slope3-20260720';
 import { schedulePersistAppSession, schedulePersistTracks } from './storage.js';
 import { trackAnalyticsEvent } from './auth.js';
+import {
+    MESSAGGIO_GEOMETRIA_NON_MODIFICABILE,
+    puoModificareGeometria
+} from './gis-tabs.js';
+import {
+    analizzaJsonStatoCronologia,
+    costruisciJsonStatoCronologia
+} from './history-state.js';
 
 // Throttle: su file enormi JSON.stringify dell'intero state può richiedere
 // 100+ ms. Se l'utente fa molte modifiche rapide (es. tracciamento continuo),
 // raggruppiamo: lo snapshot viene differito a idle e collassato in uno solo.
 let _historyIdleHandle = null;
 let _historyPending = false;
+let _geometryOperationGeneration = 0;
+
+export function cancelPendingTrackGeometryInteractions() {
+    _geometryOperationGeneration += 1;
+}
 
 // ── Snapshot "copy-on-write" ──────────────────────────────────────────────────
 // Su file enormi (50k+ punti) JSON.stringify({tracks}) costa 100+ ms A OGNI
@@ -81,7 +97,12 @@ function _trackSnapshotJson(track) {
 function buildTracksSnapshotJson() {
     const parts = new Array(tracks.length);
     for (let i = 0; i < tracks.length; i++) parts[i] = _trackSnapshotJson(tracks[i]);
-    return '{"tracks":[' + parts.join(',') + ']}';
+    return costruisciJsonStatoCronologia({
+        gisTabs,
+        selectedGisTabId,
+        activeTrackId,
+        activeSegmentId
+    }, parts);
 }
 
 function pushHistorySnapshot() {
@@ -134,21 +155,26 @@ export function triggerUndo() {
     }
 
     undoStack.pop();
-    const prevState = JSON.parse(undoStack[undoStack.length - 1]);
+    const prevState = analizzaJsonStatoCronologia(undoStack[undoStack.length - 1]);
 
     setTracks(prevState.tracks);
-    if (tracks.length > 0) {
-        setActiveTrackId(tracks[tracks.length - 1].id);
-        const activeTrack = tracks.find(t => t.id === activeTrackId);
-        if (activeTrack.segments.length > 0) {
-            setActiveSegmentId(activeTrack.segments[activeTrack.segments.length - 1].id);
-        }
-    } else {
-        setActiveTrackId(null);
-        setActiveSegmentId(null);
+    if (Array.isArray(prevState.gisTabs) && prevState.gisTabs.length > 0) {
+        setGisTabs(prevState.gisTabs);
+        const restoredSelectedId = prevState.gisTabs.some(tab => tab.id === prevState.selectedGisTabId)
+            ? prevState.selectedGisTabId
+            : prevState.gisTabs[0].id;
+        setSelectedGisTabId(restoredSelectedId);
     }
+    const restoredActiveTrack = tracks.find(track => track.id === prevState.activeTrackId) || null;
+    setActiveTrackId(restoredActiveTrack?.id || null);
+    const restoredActiveSegment = restoredActiveTrack?.segments?.find(segment => (
+        segment.id === prevState.activeSegmentId
+    )) || restoredActiveTrack?.segments?.[0] || null;
+    setActiveSegmentId(restoredActiveSegment?.id || null);
 
     updateMapData();
+    updateActiveTracksHeader();
+    renderGisTree();
     showToast("Annullato con successo!", "success");
     schedulePersistTracks(tracks);
     schedulePersistAppSession();
@@ -159,19 +185,18 @@ export function triggerUndo() {
 }
 
 function ensureActiveEditableSegment() {
-    if (!activeTrackId || tracks.length === 0) {
-        createNewTrack();
+    const selectedTab = gisTabs.find(tab => tab.id === selectedGisTabId);
+    if (!selectedTab || selectedTab.visible === false) {
+        showToast(MESSAGGIO_GEOMETRIA_NON_MODIFICABILE, "error");
+        return { track: null, segment: null };
     }
 
-    let track = tracks.find(t => t.id === activeTrackId) || tracks[tracks.length - 1] || null;
+    let track = tracks.find(t => t.id === activeTrackId && t.gisTabId === selectedGisTabId) || null;
+    if (!track) track = createNewTrack(null, { destinationGisTabId: selectedGisTabId });
     if (!track) return { track: null, segment: null };
-
-    if (track.id !== activeTrackId) {
-        setActiveTrackId(track.id);
-    }
-
-    if (track.visible === false) {
-        track.visible = true;
+    if (!puoModificareGeometria(track)) {
+        showToast(MESSAGGIO_GEOMETRIA_NON_MODIFICABILE, "error");
+        return { track: null, segment: null };
     }
 
     if (!Array.isArray(track.segments) || track.segments.length === 0) {
@@ -189,8 +214,9 @@ function ensureActiveEditableSegment() {
         setActiveSegmentId(segment.id);
     }
 
-    if (segment.visible === false) {
-        segment.visible = true;
+    if (!puoModificareGeometria(track, segment)) {
+        showToast(MESSAGGIO_GEOMETRIA_NON_MODIFICABILE, "error");
+        return { track: null, segment: null };
     }
 
     return { track, segment };
@@ -226,10 +252,17 @@ export async function addPointToActiveSegment(lon, lat) {
     }
 
     const lastPoint = segment.points[segment.points.length - 1];
+    const operationGeneration = _geometryOperationGeneration;
     showToast("Calcolo percorso...", "info");
 
     try {
         const routePoints = await fetchSnapRoute(lastPoint, { lon, lat }, currentSnapProfile);
+        if (operationGeneration !== _geometryOperationGeneration) return;
+        if (!isDrawing) return;
+        if (!puoModificareGeometria(track, segment)) {
+            showToast(MESSAGGIO_GEOMETRIA_NON_MODIFICABILE, "error");
+            return;
+        }
         if (routePoints && routePoints.length > 0) {
             routePoints.forEach((pt, i) => {
                 const isEndpoint = i === routePoints.length - 1;
@@ -256,6 +289,12 @@ export async function addPointToActiveSegment(lon, lat) {
         }
     } catch (err) {
         console.warn('Errore routing:', err);
+        if (operationGeneration !== _geometryOperationGeneration) return;
+        if (!isDrawing) return;
+        if (!puoModificareGeometria(track, segment)) {
+            showToast(MESSAGGIO_GEOMETRIA_NON_MODIFICABILE, "error");
+            return;
+        }
         if (currentSnapProfile === 'water') {
             showToast("Routing acqua non disponibile: scegli punti su corsi d'acqua connessi", "error");
             return;
@@ -375,7 +414,26 @@ export async function fetchSnapRoute(from, to, profile) {
     throw new Error(errors.join(' | '));
 }
 
+function getEditableSelectedTracks() {
+    return tracks.filter(track => (
+        track.gisTabId === selectedGisTabId && puoModificareGeometria(track)
+    ));
+}
+
+function guardActiveTrackGeometry() {
+    const track = tracks.find(item => item.id === activeTrackId && item.gisTabId === selectedGisTabId);
+    if (puoModificareGeometria(track)) return true;
+    showToast(MESSAGGIO_GEOMETRIA_NON_MODIFICABILE, "error");
+    return false;
+}
+
 export function cutTrackAtPoint(lngLat) {
+    if (!guardActiveTrackGeometry()) {
+        setIsCutting(false);
+        updateToolButtons();
+        updateMapToolCursor();
+        return;
+    }
     let segmentCut = false;
 
     // Tolleranza di taglio in PIXEL convertita in km in base allo zoom corrente:
@@ -388,11 +446,13 @@ export function cutTrackAtPoint(lngLat) {
         toleranceKm = Math.max(0.02, (CUT_TOLERANCE_PX * metersPerPixel) / 1000);
     }
 
-    for (let tIdx = 0; tIdx < tracks.length; tIdx++) {
-        let track = tracks[tIdx];
+    const editableTracks = getEditableSelectedTracks();
+    for (let tIdx = 0; tIdx < editableTracks.length; tIdx++) {
+        let track = editableTracks[tIdx];
         for (let sIdx = 0; sIdx < track.segments.length; sIdx++) {
             let seg = track.segments[sIdx];
 
+            if (!puoModificareGeometria(track, seg)) continue;
             if (seg.points.length < 4) continue;
 
             let minDist = Infinity;
@@ -445,6 +505,18 @@ export function cutTrackAtPoint(lngLat) {
 }
 
 export function handleBoxDeleteClick(lngLat) {
+    if (!guardActiveTrackGeometry()) {
+        setIsBoxDeleting(false);
+        setBoxDeleteCoords(null);
+        updateBoxDeletePreview(null, null);
+        if (boxDeleteMarker) {
+            boxDeleteMarker.remove();
+            setBoxDeleteMarker(null);
+        }
+        updateToolButtons();
+        updateMapToolCursor();
+        return;
+    }
     if (!boxDeleteCoords) {
         setBoxDeleteCoords(lngLat);
         updateBoxDeletePreview(lngLat, lngLat);
@@ -464,8 +536,10 @@ export function handleBoxDeleteClick(lngLat) {
 
         let countDeleted = 0;
 
-        tracks.forEach(track => {
+        const editableTracks = getEditableSelectedTracks();
+        editableTracks.forEach(track => {
             track.segments.forEach(seg => {
+                if (!puoModificareGeometria(track, seg)) return;
                 seg.points.forEach(pt => {
                     const inBox = pt.lon >= minLng && pt.lon <= maxLng && pt.lat >= minLat && pt.lat <= maxLat;
                     if (inBox) countDeleted++;
@@ -475,8 +549,9 @@ export function handleBoxDeleteClick(lngLat) {
 
         if (countDeleted > 0) {
             saveHistoryState({ immediate: true });
-            tracks.forEach(track => {
+            editableTracks.forEach(track => {
                 track.segments.forEach(seg => {
+                    if (!puoModificareGeometria(track, seg)) return;
                     seg.points = seg.points.filter(pt => (
                         pt.lon < minLng || pt.lon > maxLng || pt.lat < minLat || pt.lat > maxLat
                     ));

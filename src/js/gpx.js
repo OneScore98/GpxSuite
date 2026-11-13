@@ -9,6 +9,11 @@ import { createNewTrack, showToast } from './ui.js?v=vibration-tooltip-units-202
 import { saveHistoryState } from './tracks.js?v=vibration-tooltip-units-20260715';
 import { updateMapData } from './map.js?v=robust-slope3-20260720';
 import {
+    inserisciTracceInIngresso,
+    assegnaTracciaInIngresso,
+    catturaDestinazioneIngressoTraccia
+} from './gis-tabs.js';
+import {
     escapeXml,
     filterGpxExportPoints,
     generateDistinctTrackColor,
@@ -96,7 +101,9 @@ function createImportedTrackShell(name, options = {}) {
         segments: [],
         waypoints: []
     };
-    tracks.push(track);
+    inserisciTracceInIngresso(tracks, [track], {
+        destinationGisTabId: options.destinationGisTabId
+    });
     return track;
 }
 
@@ -108,6 +115,7 @@ function normalizeImportTrackName(fileName, options = {}) {
 
 export async function importGPX(xmlText, fileName, options = {}) {
     const silent = options.silent === true;
+    const destinationGisTabId = options.destinationGisTabId || catturaDestinazioneIngressoTraccia();
     if (!silent) showToast("Importazione in corso...", "info");
 
     try {
@@ -123,10 +131,16 @@ export async function importGPX(xmlText, fileName, options = {}) {
         const targetTrack = options.targetTrackId ?
             tracks.find(track => track.id === options.targetTrackId) :
             null;
+        if (targetTrack) {
+            assegnaTracciaInIngresso(targetTrack, {
+                destinationGisTabId,
+                preserveValidOwner: true
+            });
+        }
         const newTrack = targetTrack || (
             silent || options.activate === false ?
-                createImportedTrackShell(trackName, options) :
-                createNewTrack(trackName)
+                createImportedTrackShell(trackName, { ...options, destinationGisTabId }) :
+                createNewTrack(trackName, { destinationGisTabId })
         );
 
         newTrack.name = options.preserveName === true && newTrack.name ? newTrack.name : trackName;

@@ -25,6 +25,9 @@ export let mapillaryToken = '';
 export let tracks = [];
 export let activeTrackId = null;
 export let activeSegmentId = null;
+export let schedeGis = [];
+export let idSchedaGisSelezionata = null;
+export { schedeGis as gisTabs, idSchedaGisSelezionata as selectedGisTabId };
 
 // Stato Editor
 export let isDrawing = false;
@@ -73,6 +76,10 @@ export function setMapillaryToken(v) { mapillaryToken = v; }
 export function setTracks(v) { tracks = v; }
 export function setActiveTrackId(v) { activeTrackId = v; }
 export function setActiveSegmentId(v) { activeSegmentId = v; }
+export function impostaSchedeGis(v) { schedeGis = v; }
+export function impostaIdSchedaGisSelezionata(v) { idSchedaGisSelezionata = v; }
+export const setGisTabs = impostaSchedeGis;
+export const setSelectedGisTabId = impostaIdSchedaGisSelezionata;
 export function setIsDrawing(v) { isDrawing = v; }
 export function setIsCutting(v) { isCutting = v; }
 export function setIsBoxDeleting(v) { isBoxDeleting = v; }

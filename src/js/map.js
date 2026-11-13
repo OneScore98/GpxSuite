@@ -36,12 +36,13 @@ import {
     isAddingWaypoint
 } from './state.js';
 
-import { renderGisTree, showToast, isGisTreeVisible, setSegmentActive, setTrackActive } from './ui.js?v=vibration-tooltip-units-20260715';
+import { activateTrackFromMap, renderGisTree, showToast, isGisTreeVisible } from './ui.js?v=vibration-tooltip-units-20260715';
 import { updateStatsAndProfile, haversineDistance, selectTrackPoint, clearSelectedTrackPoint } from './stats.js?v=robust-slope3-20260720';
 import { setupWaypointLayers, updateWaypointsOnMap, bindWaypointInteractions, refreshPinImages } from './waypoints.js';
 import { schedulePersistAppSession, schedulePersistTracks } from './storage.js';
 import { loadScriptOnce, loadStylesheetOnce, vibrationLevelColor } from './utils.js';
 import { computeSlopeProfile } from './slope.js?v=robust-slope3-20260720';
+import { isSegmentEffectivelyVisible, isTrackEffectivelyVisible } from './gis-tabs.js';
 
 // ─── RDP iterativo (no ricorsione, no stack overflow) ─────────────────────────
 function rdpIterative(points, tolerance) {
@@ -1616,11 +1617,11 @@ function buildColoredTrackGeoJSON(metric) {
 
     for (let ti = 0; ti < tracks.length; ti++) {
         const track = tracks[ti];
-        if (track.visible === false) continue;
+        if (!isTrackEffectivelyVisible(track)) continue;
         const width = (track.width || 3) + 1; // leggermente più spessa per visibilità
         for (let si = 0; si < track.segments.length; si++) {
             const seg = track.segments[si];
-            if (seg.visible === false) continue;
+            if (!isSegmentEffectivelyVisible(track, seg)) continue;
             const pts = seg.points;
             if (pts.length < 2) continue;
             const slopeProfile = computeSlopeProfile(pts);
@@ -1845,12 +1846,12 @@ function buildLodFeatures(lodIndex) {
     const features = [];
     for (let ti = 0; ti < tracks.length; ti++) {
         const track = tracks[ti];
-        if (track.visible === false) continue;
+        if (!isTrackEffectivelyVisible(track)) continue;
         const color = track.color || '#3b82f6';
         const width = track.width || 3;
         for (let si = 0; si < track.segments.length; si++) {
             const seg = track.segments[si];
-            if (seg.visible === false) continue;
+            if (!isSegmentEffectivelyVisible(track, seg)) continue;
             const pts = seg.points;
             if (pts.length < 2) continue;
             const coords = getSegmentCoordsCached(seg, lodIndex, tol);
@@ -2043,11 +2044,11 @@ function collectMissingElevationPoints(limit = 120) {
     const candidates = [];
     for (let ti = 0; ti < tracks.length && candidates.length < limit; ti++) {
         const track = tracks[ti];
-        if (track.visible === false) continue;
+        if (!isTrackEffectivelyVisible(track)) continue;
         if (track.localSource === 'recording-live') continue;
         for (let si = 0; si < track.segments.length && candidates.length < limit; si++) {
             const segment = track.segments[si];
-            if (segment.visible === false) continue;
+            if (!isSegmentEffectivelyVisible(track, segment)) continue;
             const hydrateFlatSegment = track.localSource !== 'imported' && segmentHasOnlyMissingElevation(segment);
             const points = segment.points || [];
             for (let pi = 0; pi < points.length && candidates.length < limit; pi++) {
@@ -2123,9 +2124,11 @@ function _refreshEditPointsSource() {
         for (let ti = 0; ti < tracks.length; ti++) {
             const track = tracks[ti];
             if (track.id !== activeTrackId) continue;
+            if (!isTrackEffectivelyVisible(track)) continue;
             for (let si = 0; si < track.segments.length; si++) {
                 const seg = track.segments[si];
                 if (seg.id !== activeSegmentId) continue;
+                if (!isSegmentEffectivelyVisible(track, seg)) continue;
                 const pts = seg.points;
                 for (let i = 0; i < pts.length; i++) {
                     const p = pts[i];
@@ -2158,7 +2161,7 @@ function _updateActiveSegmentOverlay(options) {
 
     const track = tracks.find(t => t.id === trackId);
     const seg = track ? track.segments.find(s => s.id === segId) : null;
-    if (!track || !seg || track.visible === false || seg.visible === false) return false;
+    if (!isSegmentEffectivelyVisible(track, seg)) return false;
 
     const pts = seg.points;
     const features = [];
@@ -2351,14 +2354,14 @@ export function setupLayers() {
             const segmentId = feature && feature.properties ? feature.properties.segmentId : null;
             if (!trackId || isDrawing || isCutting || isBoxDeleting || isAddingWaypoint) return;
             if (segmentId) {
-                setSegmentActive(trackId, segmentId);
+                if (!activateTrackFromMap(trackId, segmentId)) return;
                 const nearest = findNearestTrackPointOnScreen(trackId, segmentId, e.lngLat);
                 if (nearest) {
                     selectTrackPoint(trackId, segmentId, nearest.pointIndex, { source: 'map' });
                 }
                 return;
             }
-            setTrackActive(trackId);
+            activateTrackFromMap(trackId);
         };
 
         map.on('click', (e) => {

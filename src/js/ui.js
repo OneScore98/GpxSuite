@@ -5,6 +5,8 @@ import {
     tracks, setTracks,
     activeTrackId, setActiveTrackId,
     activeSegmentId, setActiveSegmentId,
+    gisTabs,
+    selectedGisTabId,
     undoStack,
     isDrawing, setIsDrawing,
     isCutting, setIsCutting,
@@ -27,15 +29,40 @@ import { forceUpdateStats, haversineDistance } from './stats.js?v=robust-slope3-
 import { trackAnalyticsEvent } from './auth.js';
 import { trovaTipoWaypoint } from './waypointTypes.js';
 import {
+    activateTrackOwnerGisTab,
+    inserisciTracceInIngresso,
+    areTracksInSameGisTab,
+    catturaDestinazioneIngressoTraccia,
+    createGisTab as createGisTabDomain,
+    deleteGisTab as deleteGisTabDomain,
+    getSelectedGisTabTracks,
+    getTracksForGisTab,
+    MESSAGGIO_GEOMETRIA_NON_MODIFICABILE,
+    puoModificareGeometria,
+    sonoElementiGeometriciModificabili,
+    isWaypointEffectivelyVisible,
+    isTrackEffectivelyVisible,
+    moveTrackToGisTab,
+    rememberActiveTrackForSelectedGisTab,
+    renameGisTab as renameGisTabDomain,
+    reorderGisTab as reorderGisTabDomain,
+    restoreGisTabsSession,
+    selectGisTab as selectGisTabDomain,
+    toggleGisTabVisibility as toggleGisTabVisibilityDomain
+} from './gis-tabs.js';
+import { importaFileGpxInOrdine, leggiFileComeTesto } from './gpx-import.js';
+import {
     listStoredTracks,
     loadStoredTrack,
     deleteStoredTrack,
+    eliminaTracceMemorizzate,
     ensureTrackStorageMeta,
     onLibraryChanged,
     loadPersistedAppSession,
     schedulePersistAppSession,
     schedulePersistTracks,
-    persistTrackNow
+    persistTrackNow,
+    persisteSubitoSessioneGisRipristinata
 } from './storage.js';
 
 // Riferimenti a funzioni degli altri moduli — iniettati da main.js per evitare
@@ -54,7 +81,9 @@ let _exportGPX = null;
 let _addPointToActiveSegment = null;
 let _cutTrackAtPoint = null;
 let _handleBoxDeleteClick = null;
+let _cancelPendingTrackGeometryInteractions = null;
 let _addWaypointAtCoords = null;
+let _cancelWaypointGeometryInteraction = null;
 let _saveWaypointModifications = null;
 let _setSnapProfile = null;
 let _togglePrintPlanning = null;
@@ -82,6 +111,8 @@ let _updateRecordingSettings = null;
 let _getDefaultRecordingName = null;
 let _localLibraryBound = false;
 let _gisDragPayload = null;
+let _gisTabDragPayload = null;
+let _gisTabContextMenu = null;
 let _trackContextMenu = null;
 let _savingLoggerSessionId = null;
 let _trackLongPressTimer = null;
@@ -1927,6 +1958,52 @@ function clearBoxDeleteSelection() {
     }
 }
 
+function canActivateGeometricTool(options = {}) {
+    const selectedTab = gisTabs.find(tab => tab.id === selectedGisTabId);
+    const track = tracks.find(item => item.id === activeTrackId) || null;
+
+    if (selectedTab?.visible === false) {
+        showToast(MESSAGGIO_GEOMETRIA_NON_MODIFICABILE, 'error');
+        return false;
+    }
+    if (!track && options.allowTrackCreation === true && selectedTab?.visible !== false) {
+        return true;
+    }
+    if (!track || track.gisTabId !== selectedGisTabId) {
+        showToast('Seleziona o crea una traccia nella Scheda GIS corrente.', 'error');
+        return false;
+    }
+
+    const segment = options.requireSegment === true
+        ? ((track.segments || []).find(item => item.id === activeSegmentId)
+            || (track.segments || []).at(-1)
+            || null)
+        : null;
+    const editable = options.requireSegment === true && segment
+        ? puoModificareGeometria(track, segment)
+        : puoModificareGeometria(track);
+    if (!editable) {
+        showToast(MESSAGGIO_GEOMETRIA_NON_MODIFICABILE, 'error');
+        return false;
+    }
+    return true;
+}
+
+export function terminateGeometricModes(options = {}) {
+    const wasActive = isDrawing || isCutting || isBoxDeleting || isAddingWaypoint;
+    setIsDrawing(false);
+    setIsCutting(false);
+    setIsBoxDeleting(false);
+    setIsAddingWaypoint(false);
+    if (_cancelPendingTrackGeometryInteractions) _cancelPendingTrackGeometryInteractions();
+    clearBoxDeleteSelection();
+    if (_cancelWaypointGeometryInteraction) _cancelWaypointGeometryInteraction();
+    updateToolButtons();
+    updateMapToolCursor();
+    if (options.refreshMap !== false && _updateMapData) _updateMapData(true);
+    return wasActive;
+}
+
 export function injectDeps(deps) {
     _updateMapData = deps.updateMapData;
     _saveHistoryState = deps.saveHistoryState;
@@ -1942,7 +2019,9 @@ export function injectDeps(deps) {
     _addPointToActiveSegment = deps.addPointToActiveSegment;
     _cutTrackAtPoint = deps.cutTrackAtPoint;
     _handleBoxDeleteClick = deps.handleBoxDeleteClick;
+    _cancelPendingTrackGeometryInteractions = deps.cancelPendingTrackGeometryInteractions;
     _addWaypointAtCoords = deps.addWaypointAtCoords;
+    _cancelWaypointGeometryInteraction = deps.cancelWaypointGeometryInteraction;
     _saveWaypointModifications = deps.saveWaypointModifications;
     _setSnapProfile = deps.setSnapProfile;
     _togglePrintPlanning = deps.togglePrintPlanning;
@@ -1991,7 +2070,438 @@ export function setupPrintUiEvents() {
     };
 }
 
-export function createNewTrack(name) {
+function applySelectedGisTabContext(gisTabId, options = {}) {
+    if (!gisTabs.some(tab => tab.id === gisTabId)) return null;
+    const previousGisTabId = selectedGisTabId;
+    const nextActiveTrackId = selectGisTabDomain(gisTabId, tracks);
+    if (previousGisTabId === gisTabId && options.force !== true) return nextActiveTrackId;
+    terminateGeometricModes({ refreshMap: false });
+
+    const activeTrack = getSelectedGisTabTracks(tracks)
+        .find(track => track.id === nextActiveTrackId) || null;
+    setActiveTrackId(activeTrack?.id || null);
+    const activeSegment = activeTrack?.segments.find(segment => segment.id === activeSegmentId)
+        || activeTrack?.segments[0]
+        || null;
+    setActiveSegmentId(activeSegment?.id || null);
+    if (activeTrack) setTrackExpanded(activeTrack.id, true);
+    setTreeSelection([]);
+
+    renderGisTabsBar();
+    updateActiveTracksHeader();
+    renderGisTree();
+    if (_updateMapData) _updateMapData();
+    forceUpdateStats();
+    schedulePersistAppSession();
+    return nextActiveTrackId;
+}
+
+export function createNewGisTab() {
+    const createdTab = createGisTabDomain();
+    applySelectedGisTabContext(createdTab.id, { force: true });
+    requestAnimationFrame(() => openGisTabNameEditor(createdTab.id));
+    return createdTab;
+}
+
+export function selectGisTabById(gisTabId) {
+    return applySelectedGisTabContext(gisTabId);
+}
+
+function closeGisTabContextMenu() {
+    if (_gisTabContextMenu) {
+        _gisTabContextMenu.remove();
+        _gisTabContextMenu = null;
+    }
+    document.removeEventListener('pointerdown', handleOutsideGisTabContextMenu);
+    document.removeEventListener('keydown', handleGisTabContextMenuKeydown);
+}
+
+function handleOutsideGisTabContextMenu(event) {
+    if (!_gisTabContextMenu || _gisTabContextMenu.contains(event.target)) return;
+    closeGisTabContextMenu();
+}
+
+function handleGisTabContextMenuKeydown(event) {
+    if (event.key === 'Escape') closeGisTabContextMenu();
+}
+
+function openGisTabContextMenu(gisTabId, clientX, clientY) {
+    const tab = gisTabs.find(item => item.id === gisTabId);
+    if (!tab) return;
+    closeGisTabContextMenu();
+
+    const menu = document.createElement('div');
+    menu.className = 'gpx-track-context-menu fixed z-50 w-52 rounded-xl border border-gray-700 bg-gray-950 shadow-2xl p-2 text-xs text-gray-200';
+    menu.setAttribute('role', 'menu');
+    menu.innerHTML = `
+      <div class="px-2 pb-2 mb-1 border-b border-gray-800 font-bold truncate">${escapeXml(tab.name)}</div>
+      <button type="button" data-gis-tab-menu-action="rename" role="menuitem"
+              class="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-gray-800 text-left">
+        <i data-lucide="pencil" class="w-3.5 h-3.5"></i><span>Rinomina</span>
+      </button>
+      <button type="button" data-gis-tab-menu-action="delete" role="menuitem"
+              class="w-full flex items-center gap-2 px-2 py-2 rounded-lg text-red-300 hover:bg-red-950 text-left">
+        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i><span>Elimina</span>
+      </button>`;
+    document.body.appendChild(menu);
+    refreshLucideIcons();
+
+    const padding = 8;
+    const rect = menu.getBoundingClientRect();
+    menu.style.left = `${Math.max(padding, Math.min(clientX, window.innerWidth - rect.width - padding))}px`;
+    menu.style.top = `${Math.max(padding, Math.min(clientY, window.innerHeight - rect.height - padding))}px`;
+    menu.querySelector('[data-gis-tab-menu-action="rename"]').addEventListener('click', () => {
+        closeGisTabContextMenu();
+        openGisTabNameEditor(gisTabId);
+    });
+    menu.querySelector('[data-gis-tab-menu-action="delete"]').addEventListener('click', () => {
+        requestDeleteGisTab(gisTabId);
+    });
+    _gisTabContextMenu = menu;
+    setTimeout(() => {
+        document.addEventListener('pointerdown', handleOutsideGisTabContextMenu);
+        document.addEventListener('keydown', handleGisTabContextMenuKeydown);
+    }, 0);
+}
+
+export async function requestDeleteGisTab(gisTabId) {
+    const tab = gisTabs.find(item => item.id === gisTabId);
+    closeGisTabContextMenu();
+    if (!tab) return false;
+    if (gisTabs.length <= 1) {
+        showToast("L'ultima Scheda GIS non può essere eliminata", 'info');
+        return false;
+    }
+
+    const ownedTracks = getTracksForGisTab(gisTabId, tracks);
+    const trackLabel = ownedTracks.length === 1 ? 'traccia' : 'tracce';
+    const confirmed = window.confirm(
+        `Eliminare la Scheda GIS "${tab.name}" e ${ownedTracks.length} ${trackLabel}?\n\n` +
+        'Puoi ripristinare tutto con Ctrl+Z.'
+    );
+    if (!confirmed) return false;
+
+    if (_saveHistoryState) _saveHistoryState({ immediate: true });
+    const storedTrackIds = ownedTracks.map(track => track.localFileId).filter(Boolean);
+    try {
+        await eliminaTracceMemorizzate(storedTrackIds);
+    } catch (err) {
+        console.error(err);
+        showToast("Impossibile eliminare le tracce dall'archivio locale", 'error');
+        return false;
+    }
+
+    if (gisTabId === selectedGisTabId) {
+        terminateGeometricModes({ refreshMap: false });
+    }
+    const result = deleteGisTabDomain(gisTabId, tracks);
+    if (!result) return false;
+    const nextTrack = tracks.find(track => track.id === result.activeTrackId) || null;
+    setActiveTrackId(nextTrack?.id || null);
+    setActiveSegmentId(nextTrack?.segments?.[0]?.id || null);
+    setTreeSelection([]);
+    if (_saveHistoryState) _saveHistoryState({ immediate: true });
+
+    updateActiveTracksHeader();
+    renderGisTree();
+    if (_updateMapData) _updateMapData();
+    forceUpdateStats();
+    renderLocalGpxLibrary();
+    schedulePersistTracks(tracks);
+    schedulePersistAppSession();
+    showToast(`Scheda GIS "${tab.name}" eliminata`, 'success');
+    return true;
+}
+
+export function openGisTabNameEditor(gisTabId) {
+    closeGisTabContextMenu();
+    const nameEl = document.getElementById(`gis-tab-name-${gisTabId}`);
+    if (!nameEl) return;
+    nameEl.contentEditable = 'true';
+    nameEl.classList.add('is-editing');
+    nameEl.focus();
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(nameEl);
+    selection.removeAllRanges();
+    selection.addRange(range);
+}
+
+function closeGisTabNameEditor(nameEl) {
+    if (!nameEl) return;
+    nameEl.contentEditable = 'false';
+    nameEl.classList.remove('is-editing');
+}
+
+export function finishGisTabNameEditor(gisTabId, requestedName) {
+    const tab = gisTabs.find(item => item.id === gisTabId);
+    const nameEl = document.getElementById(`gis-tab-name-${gisTabId}`);
+    if (!tab) {
+        closeGisTabNameEditor(nameEl);
+        return false;
+    }
+
+    const previousName = tab.name;
+    const renamed = renameGisTabDomain(gisTabId, requestedName);
+    if (renamed === null) {
+        if (nameEl) nameEl.textContent = previousName;
+        closeGisTabNameEditor(nameEl);
+        showToast('Esiste già una Scheda GIS con questo nome', 'error');
+        return false;
+    }
+
+    if (nameEl) nameEl.textContent = renamed;
+    closeGisTabNameEditor(nameEl);
+    aggiornaDopoMutazioneSchedeGis();
+    return true;
+}
+
+function handleGisTabNameKeydown(event, gisTabId) {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        finishGisTabNameEditor(gisTabId, event.currentTarget.textContent);
+        event.currentTarget.blur();
+    } else if (event.key === 'Escape') {
+        event.preventDefault();
+        const tab = gisTabs.find(item => item.id === gisTabId);
+        if (tab) event.currentTarget.textContent = tab.name;
+        closeGisTabNameEditor(event.currentTarget);
+        event.currentTarget.blur();
+    }
+}
+
+function clearGisTabDropIndicators() {
+    document.querySelectorAll('.gis-tab-chip.is-drop-before, .gis-tab-chip.is-drop-after')
+        .forEach(chip => chip.classList.remove('is-drop-before', 'is-drop-after'));
+}
+
+function handleGisTabDragStart(event, gisTabId) {
+    _gisTabDragPayload = { type: 'gis-tab', gisTabId };
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', JSON.stringify(_gisTabDragPayload));
+}
+
+function handleGisTabDragOver(event, targetGisTabId) {
+    if (_gisTabDragPayload?.type !== 'gis-tab' || _gisTabDragPayload.gisTabId === targetGisTabId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    const chip = event.currentTarget;
+    const rect = chip.getBoundingClientRect();
+    const position = event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+    clearGisTabDropIndicators();
+    chip.classList.add(position === 'before' ? 'is-drop-before' : 'is-drop-after');
+}
+
+function handleGisTabDrop(event, targetGisTabId) {
+    if (_gisTabDragPayload?.type !== 'gis-tab') return;
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const position = event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+    const changed = reorderGisTabDomain(_gisTabDragPayload.gisTabId, targetGisTabId, position);
+    _gisTabDragPayload = null;
+    clearGisTabDropIndicators();
+    if (!changed) return;
+    aggiornaDopoMutazioneSchedeGis();
+    showToast('Ordine delle Schede GIS aggiornato', 'success');
+}
+
+function handleGisTabDragEnd() {
+    _gisTabDragPayload = null;
+    clearGisTabDropIndicators();
+}
+
+function renderGisTabsBar() {
+    const list = document.getElementById('gis-tabs-list');
+    if (!list) return;
+
+    list.innerHTML = gisTabs.map(tab => {
+        const isSelected = tab.id === selectedGisTabId;
+        const isVisible = tab.visible !== false;
+        const trackCount = getTracksForGisTab(tab.id, tracks).length;
+        return `
+          <div class="gis-tab-chip ${isSelected ? 'is-selected' : ''} ${isVisible ? '' : 'is-hidden'}"
+               data-gis-tab-id="${escapeXml(tab.id)}"
+               data-gis-tab-drop="${escapeXml(tab.id)}"
+               role="listitem">
+            <button type="button" draggable="true"
+                    class="gis-tab-drag-handle"
+                    data-gis-tab-drag="${escapeXml(tab.id)}"
+                    aria-label="Riordina la Scheda GIS ${escapeXml(tab.name)}"
+                    title="Trascina per riordinare">
+              <i data-lucide="grip-vertical" class="w-3 h-3"></i>
+            </button>
+            <button type="button"
+                    class="gis-tab-select"
+                    data-gis-tab-select="${escapeXml(tab.id)}"
+                    aria-pressed="${isSelected ? 'true' : 'false'}"
+                    title="Apri ${escapeXml(tab.name)}">
+              <span id="gis-tab-name-${escapeXml(tab.id)}" class="gis-tab-name" contenteditable="false" spellcheck="false">${escapeXml(tab.name)}</span>
+              <span class="gis-tab-count" aria-label="${trackCount} ${trackCount === 1 ? 'traccia' : 'tracce'}">${trackCount}</span>
+            </button>
+            <button type="button"
+                    class="gis-tab-visibility"
+                    data-gis-tab-visibility="${escapeXml(tab.id)}"
+                    aria-label="${isVisible ? 'Nascondi' : 'Mostra'} la Scheda GIS ${escapeXml(tab.name)}"
+                    title="${isVisible ? 'Nascondi' : 'Mostra'} la Scheda GIS sulla mappa e in stampa">
+              <i data-lucide="${isVisible ? 'eye' : 'eye-off'}" class="w-3.5 h-3.5"></i>
+            </button>
+            <button type="button"
+                    class="gis-tab-menu-trigger"
+                    data-gis-tab-menu="${escapeXml(tab.id)}"
+                    aria-label="Azioni per la Scheda GIS ${escapeXml(tab.name)}"
+                    title="Azioni Scheda GIS">
+              <i data-lucide="more-vertical" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>`;
+    }).join('');
+
+    list.querySelectorAll('[data-gis-tab-select]').forEach(button => {
+        button.addEventListener('click', () => selectGisTabById(button.dataset.gisTabSelect));
+    });
+    list.querySelectorAll('[data-gis-tab-visibility]').forEach(button => {
+        button.addEventListener('click', event => {
+            event.stopPropagation();
+            toggleGisTabVisibilityById(button.dataset.gisTabVisibility);
+        });
+    });
+    list.querySelectorAll('[data-gis-tab-id]').forEach(chip => {
+        const gisTabId = chip.dataset.gisTabId;
+        chip.addEventListener('contextmenu', event => {
+            event.preventDefault();
+            openGisTabContextMenu(gisTabId, event.clientX, event.clientY);
+        });
+        chip.addEventListener('dragover', event => {
+            handleGisTabDragOver(event, gisTabId);
+            handleTrackGisTabDragOver(event);
+        });
+        chip.addEventListener('dragleave', handleTrackGisTabDragLeave);
+        chip.addEventListener('drop', event => {
+            handleGisTabDrop(event, gisTabId);
+            handleTrackGisTabDrop(event);
+        });
+    });
+    list.querySelectorAll('[data-gis-tab-drag]').forEach(button => {
+        button.addEventListener('dragstart', event => handleGisTabDragStart(event, button.dataset.gisTabDrag));
+        button.addEventListener('dragend', handleGisTabDragEnd);
+    });
+    list.querySelectorAll('.gis-tab-name').forEach(nameEl => {
+        const gisTabId = nameEl.closest('[data-gis-tab-id]')?.dataset.gisTabId;
+        nameEl.addEventListener('dblclick', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            openGisTabNameEditor(gisTabId);
+        });
+        nameEl.addEventListener('keydown', event => handleGisTabNameKeydown(event, gisTabId));
+        nameEl.addEventListener('blur', event => {
+            if (event.currentTarget.contentEditable === 'true') {
+                finishGisTabNameEditor(gisTabId, event.currentTarget.textContent);
+            }
+        });
+    });
+    list.querySelectorAll('[data-gis-tab-menu]').forEach(button => {
+        button.addEventListener('click', event => {
+            event.stopPropagation();
+            const rect = button.getBoundingClientRect();
+            openGisTabContextMenu(button.dataset.gisTabMenu, rect.right, rect.bottom + 4);
+        });
+    });
+    refreshLucideIcons();
+}
+
+function aggiornaDopoMutazioneSchedeGis() {
+    renderGisTabsBar();
+    updateActiveTracksHeader();
+    renderGisTree();
+    if (_updateMapData) _updateMapData();
+    forceUpdateStats();
+    schedulePersistAppSession();
+}
+
+function clearGisTabDropTargets() {
+    document.querySelectorAll('.gis-tab-chip.is-track-drop-target')
+        .forEach(chip => chip.classList.remove('is-track-drop-target'));
+}
+
+function handleTrackGisTabDragOver(event) {
+    if (_gisDragPayload?.type !== 'track') return;
+    const destinationGisTabId = event.currentTarget.dataset.gisTabDrop;
+    const sourceTrack = tracks.find(track => track.id === _gisDragPayload.trackId);
+    if (!sourceTrack || sourceTrack.gisTabId === destinationGisTabId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'move';
+    event.currentTarget.classList.add('is-track-drop-target');
+}
+
+function handleTrackGisTabDragLeave(event) {
+    if (event.currentTarget.contains(event.relatedTarget)) return;
+    event.currentTarget.classList.remove('is-track-drop-target');
+}
+
+function handleTrackGisTabDrop(event) {
+    if (_gisDragPayload?.type !== 'track') return;
+    event.preventDefault();
+    event.stopPropagation();
+    const trackId = _gisDragPayload.trackId;
+    const destinationGisTabId = event.currentTarget.dataset.gisTabDrop;
+    clearGisTabDropTargets();
+    _gisDragPayload = null;
+    moveTrackToGisTabById(trackId, destinationGisTabId);
+}
+
+export function toggleGisTabVisibilityById(gisTabId) {
+    const tab = gisTabs.find(item => item.id === gisTabId);
+    if (!tab) return null;
+    const isVisible = toggleGisTabVisibilityDomain(gisTabId);
+    if (isVisible === false && gisTabId === selectedGisTabId) {
+        terminateGeometricModes({ refreshMap: false });
+    }
+    renderGisTabsBar();
+    renderGisTree();
+    if (_updateMapData) _updateMapData();
+    forceUpdateStats();
+    schedulePersistAppSession();
+    showToast(`Scheda GIS ${tab.name}: ${isVisible ? 'visibile' : 'nascosta'}`, 'info');
+    return isVisible;
+}
+
+export function moveTrackToGisTabById(trackId, destinationGisTabId) {
+    closeTrackContextMenu();
+    const movedTrack = tracks.find(track => track.id === trackId);
+    const destinationTab = gisTabs.find(tab => tab.id === destinationGisTabId);
+    if (
+        !movedTrack ||
+        movedTrack.gisTabId !== selectedGisTabId ||
+        !destinationTab ||
+        destinationGisTabId === selectedGisTabId
+    ) {
+        return false;
+    }
+
+    if (_saveHistoryState) _saveHistoryState();
+    const result = moveTrackToGisTab(trackId, destinationGisTabId, tracks);
+    if (!result) return false;
+
+    if (activeTrackId === trackId) {
+        const nextActiveTrack = tracks.find(track => track.id === result.sourceActiveTrackId) || null;
+        setActiveTrackId(nextActiveTrack?.id || null);
+        setActiveSegmentId(nextActiveTrack?.segments[0]?.id || null);
+        if (nextActiveTrack) setTrackExpanded(nextActiveTrack.id, true);
+    }
+    setTreeSelection([]);
+    renderGisTabsBar();
+    updateActiveTracksHeader();
+    renderGisTree();
+    if (_updateMapData) _updateMapData(true);
+    renderLocalGpxLibrary();
+    schedulePersistTracks(tracks);
+    schedulePersistAppSession();
+    showToast(`Traccia "${movedTrack.name}" spostata in "${destinationTab.name}"`, 'success');
+    return true;
+}
+
+export function createNewTrack(name, options = {}) {
     const trackName = name || `Traccia ${tracks.length + 1}`;
     const color = generateDistinctTrackColor(tracks.map(track => track.color));
     const newTrack = {
@@ -2014,13 +2524,20 @@ export function createNewTrack(name) {
         }],
         waypoints: []
     };
-    tracks.push(newTrack);
+    inserisciTracceInIngresso(tracks, [newTrack], {
+        destinationGisTabId: options.destinationGisTabId
+    });
+    if (newTrack.gisTabId !== selectedGisTabId) {
+        applySelectedGisTabContext(newTrack.gisTabId);
+    }
     setActiveTrackId(newTrack.id);
     setActiveSegmentId(newTrack.segments[0].id);
+    rememberActiveTrackForSelectedGisTab(newTrack.id, tracks);
 
     if (_saveHistoryState) _saveHistoryState();
     updateActiveTracksHeader();
     renderGisTree();
+    schedulePersistAppSession();
     showToast(`Creata: ${trackName}`, 'info');
     return newTrack;
 }
@@ -2099,7 +2616,7 @@ function parseTreeKey(key) {
 
 function getTreeItemOrder() {
     const order = [];
-    tracks.forEach(track => {
+    getSelectedGisTabTracks(tracks).forEach(track => {
         order.push(makeTreeKey('track', track.id));
         track.segments.forEach(seg => order.push(makeTreeKey('segment', track.id, seg.id)));
     });
@@ -2189,22 +2706,24 @@ function cloneSegmentForPaste(segment, suffix = ' copia') {
     };
 }
 
-function cloneTrackForPaste(track, suffix = ' copia') {
+function cloneTrackForPaste(track, suffix = ' copia', preserveIdentity = false) {
     const cloned = JSON.parse(JSON.stringify(track));
-    cloned.id = uid('track');
-    cloned.localFileId = uid('local');
-    cloned.localCreatedAt = Date.now();
     cloned.localUpdatedAt = Date.now();
-    cloned.localSource = 'created';
     cloned.name = `${track.name || 'Traccia'}${suffix}`;
-    cloned.segments = (cloned.segments || []).map(seg => ({
-        ...seg,
-        id: uid('seg')
-    }));
-    cloned.waypoints = (cloned.waypoints || []).map(wp => ({
-        ...wp,
-        id: uid('wp')
-    }));
+    if (!preserveIdentity) {
+        cloned.id = uid('track');
+        cloned.localFileId = uid('local');
+        cloned.localCreatedAt = Date.now();
+        cloned.localSource = 'created';
+        cloned.segments = (cloned.segments || []).map(seg => ({
+            ...seg,
+            id: uid('seg')
+        }));
+        cloned.waypoints = (cloned.waypoints || []).map(wp => ({
+            ...wp,
+            id: uid('wp')
+        }));
+    }
     return cloned;
 }
 
@@ -2229,8 +2748,28 @@ function refreshAfterTreeClipboardMutation(message) {
     updateActiveTracksHeader();
     renderGisTree();
     renderLocalGpxLibrary();
+    schedulePersistTracks(tracks);
     schedulePersistAppSession();
     if (message) showToast(message, 'success');
+}
+
+function elementiGeometriciSelezionati() {
+    const tracce = getSelectedTracks();
+    const idTracce = new Set(tracce.map(traccia => traccia.id));
+    return [
+        ...tracce.map(traccia => ({ traccia })),
+        ...getSelectedSegments()
+            .filter(elemento => !idTracce.has(elemento.track.id))
+            .map(elemento => ({ traccia: elemento.track, segmento: elemento.segment }))
+    ];
+}
+
+function consentiMutazioneGeometrica(elementi = []) {
+    const schedaSelezionata = gisTabs.find(scheda => scheda.id === selectedGisTabId);
+    const elementiValidi = elementi.length === 0 || sonoElementiGeometriciModificabili(elementi);
+    if (schedaSelezionata && schedaSelezionata.visible !== false && elementiValidi) return true;
+    showToast(MESSAGGIO_GEOMETRIA_NON_MODIFICABILE, 'error');
+    return false;
 }
 
 function removeSelectionForCut() {
@@ -2249,7 +2788,8 @@ function removeSelectionForCut() {
     }
 
     if (!tracks.some(track => track.id === activeTrackId)) {
-        const nextTrack = tracks[0] || null;
+        const nextTrackId = selectGisTabDomain(selectedGisTabId, tracks);
+        const nextTrack = tracks.find(track => track.id === nextTrackId) || null;
         setActiveTrackId(nextTrack?.id || null);
         setActiveSegmentId(nextTrack?.segments[0]?.id || null);
         if (nextTrack) setTrackExpanded(nextTrack.id, true);
@@ -2268,13 +2808,33 @@ function pasteTreeClipboard(target = {}) {
         return;
     }
 
+    const tracceDestinazione = getSelectedGisTabTracks(tracks);
+    const tracciaDestinazione = tracceDestinazione.find(track => track.id === target.trackId)
+        || ((_treeClipboard.segments || []).length > 0
+            ? (tracceDestinazione.find(track => track.id === activeTrackId) || tracceDestinazione[0] || null)
+            : null);
+    const segmentoDestinazione = target.segId
+        ? tracciaDestinazione?.segments.find(segmento => segmento.id === target.segId)
+        : null;
+    const elementiDestinazione = tracciaDestinazione
+        ? [{ traccia: tracciaDestinazione, segmento: segmentoDestinazione || null }]
+        : [];
+    if (!consentiMutazioneGeometrica(elementiDestinazione)) return;
+
     const pastedKeys = [];
-    const trackTargetIndex = target.trackId ? tracks.findIndex(track => track.id === target.trackId) : -1;
+    const destinationGisTabId = catturaDestinazioneIngressoTraccia();
+    const trackTargetIndex = target.trackId
+        ? tracks.findIndex(track => track.id === target.trackId && track.gisTabId === destinationGisTabId)
+        : -1;
     let insertTrackIndex = trackTargetIndex === -1 ? tracks.length : trackTargetIndex + 1;
 
     (_treeClipboard.tracks || []).forEach(trackData => {
-        const cloned = cloneTrackForPaste(trackData, _treeClipboard.mode === 'cut' ? '' : ' copia');
-        tracks.splice(insertTrackIndex, 0, cloned);
+        const isCut = _treeClipboard.mode === 'cut';
+        const cloned = cloneTrackForPaste(trackData, isCut ? '' : ' copia', isCut);
+        inserisciTracceInIngresso(tracks, [cloned], {
+            destinationGisTabId,
+            indiceInserimento: insertTrackIndex
+        });
         insertTrackIndex++;
         pastedKeys.push(makeTreeKey('track', cloned.id));
         setActiveTrackId(cloned.id);
@@ -2283,9 +2843,10 @@ function pasteTreeClipboard(target = {}) {
     });
 
     if ((_treeClipboard.segments || []).length > 0) {
-        const targetTrack = tracks.find(track => track.id === target.trackId)
-            || tracks.find(track => track.id === activeTrackId)
-            || tracks[0];
+        const destinationTracks = getSelectedGisTabTracks(tracks);
+        const targetTrack = destinationTracks.find(track => track.id === target.trackId)
+            || destinationTracks.find(track => track.id === activeTrackId)
+            || destinationTracks[0];
         if (!targetTrack) return;
 
         let insertSegmentIndex = target.segId
@@ -2352,11 +2913,20 @@ function openTrackContextMenuAt(trackId, clientX, clientY) {
     const hasClipboard = !!_treeClipboard && (((_treeClipboard.tracks || []).length + (_treeClipboard.segments || []).length) > 0);
     const pointCount = (track.segments || []).reduce((sum, segment) => sum + ((segment.points || []).length), 0);
 
-    const trackIndex = tracks.findIndex(t => t.id === trackId);
+    const selectedTabTracks = getSelectedGisTabTracks(tracks);
+    const trackIndex = selectedTabTracks.findIndex(t => t.id === trackId);
     const isFirst = trackIndex === 0;
-    const isLast = trackIndex === tracks.length - 1;
+    const isLast = trackIndex === selectedTabTracks.length - 1;
     const selectedTracks = getSelectedTracks();
     const selectedTracksCount = selectedTracks.length;
+    const destinationTabs = gisTabs.filter(tab => tab.id !== track.gisTabId);
+    const moveDestinationsHtml = destinationTabs.map(tab => `
+      <button type="button"
+              data-move-track-destination="${escapeXml(tab.id)}"
+              class="w-full flex items-center gap-2 px-2 py-2 rounded-lg text-left hover:bg-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+        <i data-lucide="panel-top" class="w-3.5 h-3.5"></i>
+        <span class="truncate">${escapeXml(tab.name)}</span>
+      </button>`).join('');
 
     closeTrackContextMenu();
     const menu = document.createElement('div');
@@ -2375,9 +2945,26 @@ function openTrackContextMenuAt(trackId, clientX, clientY) {
       ${createTreeContextMenuButton('download', 'Scarica traccia', `downloadTrackGPX('${track.id}', 'context_menu')`)}
       ${createTreeContextMenuButton('chevron-up', 'Sposta su', `moveTrackUp('${track.id}')`, isFirst)}
       ${createTreeContextMenuButton('chevron-down', 'Sposta giù', `moveTrackDown('${track.id}')`, isLast)}
+      <button type="button"
+              data-move-track-toggle
+              aria-expanded="false"
+              aria-controls="track-move-destinations"
+              ${destinationTabs.length === 0 ? 'disabled' : ''}
+              class="w-full flex items-center gap-2 px-2 py-2 rounded-lg text-left hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed">
+        <i data-lucide="panel-top-open" class="w-3.5 h-3.5"></i>
+        <span class="flex-1">Sposta in…</span>
+        <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+      </button>
+      <div id="track-move-destinations"
+           data-move-track-list
+           role="group"
+           aria-label="Sposta la traccia in un'altra Scheda GIS"
+           class="hidden ml-3 pl-2 border-l border-gray-800">
+        ${moveDestinationsHtml}
+      </div>
       ${selectedTracksCount > 1
             ? createTreeContextMenuButton('git-merge', 'Unisci tracce selezionate', 'mergeSelectedTracks()')
-            : createTreeContextMenuButton('git-merge', 'Unisci con un\'altra traccia...', `openMergeTracksModal('${track.id}')`, tracks.length < 2)
+            : createTreeContextMenuButton('git-merge', 'Unisci con un\'altra traccia...', `openMergeTracksModal('${track.id}')`, selectedTabTracks.length < 2)
         }
       <div class="my-1 border-t border-gray-800"></div>
       <button onclick="openTrackNameEditor('${track.id}')" class="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-gray-800 text-left">
@@ -2400,6 +2987,20 @@ function openTrackContextMenuAt(trackId, clientX, clientY) {
       ${createTreeContextMenuButton('trash-2', selectedCount > 1 ? 'Elimina selezione' : 'Elimina file', selectedCount > 1 ? 'deleteTreeSelection()' : `deleteTrack('${track.id}')`, false, true)}`;
     document.body.appendChild(menu);
     refreshLucideIcons();
+
+    const moveToggle = menu.querySelector('[data-move-track-toggle]');
+    const moveList = menu.querySelector('[data-move-track-list]');
+    moveToggle?.addEventListener('click', () => {
+        const willOpen = moveList.classList.contains('hidden');
+        moveList.classList.toggle('hidden', !willOpen);
+        moveToggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        if (willOpen) moveList.querySelector('[data-move-track-destination]')?.focus();
+    });
+    menu.querySelectorAll('[data-move-track-destination]').forEach(button => {
+        button.addEventListener('click', () => {
+            moveTrackToGisTabById(track.id, button.dataset.moveTrackDestination);
+        });
+    });
 
     const padding = 8;
     const rect = menu.getBoundingClientRect();
@@ -2555,6 +3156,7 @@ export function cutTreeSelection() {
         showToast('Nessun elemento selezionato', 'info');
         return;
     }
+    if (!consentiMutazioneGeometrica(elementiGeometriciSelezionati())) return;
     _treeClipboard = { ...payload, mode: 'cut' };
     removeSelectionForCut();
     closeTrackContextMenu();
@@ -2583,6 +3185,7 @@ export function deleteTreeSelection() {
         showToast('Nessun elemento selezionato', 'info');
         return;
     }
+    if (!consentiMutazioneGeometrica(elementiGeometriciSelezionati())) return;
     removeSelectionForCut();
     closeTrackContextMenu();
     refreshAfterTreeClipboardMutation('Selezione eliminata');
@@ -3404,9 +4007,14 @@ function createOffroadTrack(sourceTrack, extractedRanges, nameBase, summary) {
         waypoints: []
     };
 
-    tracks.push(newTrack);
-    setActiveTrackId(newTrack.id);
-    setActiveSegmentId(newTrack.segments[0]?.id || null);
+    inserisciTracceInIngresso(tracks, [newTrack], {
+        destinationGisTabId: sourceTrack.gisTabId
+    });
+    const destinationGisTabId = newTrack.gisTabId;
+    if (destinationGisTabId === catturaDestinazioneIngressoTraccia()) {
+        setActiveTrackId(newTrack.id);
+        setActiveSegmentId(newTrack.segments[0]?.id || null);
+    }
     return newTrack;
 }
 
@@ -3705,11 +4313,15 @@ export async function renderLocalGpxLibrary() {
 export async function openStoredTrackFromLibrary(fileId) {
     const existing = tracks.find(track => track.localFileId === fileId);
     if (existing) {
+        if (existing.gisTabId !== selectedGisTabId) {
+            applySelectedGisTabContext(existing.gisTabId);
+        }
         setTrackActive(existing.id);
         showToast(`Già in memoria: ${existing.name}`, 'info');
         return;
     }
 
+    const destinationGisTabId = catturaDestinazioneIngressoTraccia();
     const storedTrack = await loadStoredTrack(fileId);
     if (!storedTrack) {
         showToast("File locale non trovato", "error");
@@ -3718,9 +4330,16 @@ export async function openStoredTrackFromLibrary(fileId) {
     }
 
     ensureTrackStorageMeta(storedTrack, storedTrack.localSource || 'imported');
-    tracks.push(storedTrack);
+    inserisciTracceInIngresso(tracks, [storedTrack], {
+        destinationGisTabId,
+        preserveValidOwner: true
+    });
+    if (storedTrack.gisTabId !== selectedGisTabId) {
+        applySelectedGisTabContext(storedTrack.gisTabId);
+    }
     setActiveTrackId(storedTrack.id);
     setActiveSegmentId(storedTrack.segments[0]?.id || null);
+    rememberActiveTrackForSelectedGisTab(storedTrack.id, tracks);
     if (_saveHistoryState) _saveHistoryState();
     if (_updateMapData) _updateMapData(true);
     updateActiveTracksHeader();
@@ -3733,7 +4352,16 @@ export async function openStoredTrackFromLibrary(fileId) {
 export async function restoreStoredTracksOnStartup() {
     const session = loadPersistedAppSession();
     const files = await listStoredTracks();
-    if (files.length === 0) return { restoredCount: 0, session };
+    if (files.length === 0) {
+        const restoredSession = restoreGisTabsSession([], session);
+        setTracks([]);
+        setActiveTrackId(null);
+        setActiveSegmentId(null);
+        if (restoredSession.needsPersistence) {
+            await persisteSubitoSessioneGisRipristinata([], session);
+        }
+        return { restoredCount: 0, session };
+    }
 
     const restoredTracks = [];
     for (let i = 0; i < files.length; i++) {
@@ -3751,27 +4379,36 @@ export async function restoreStoredTracksOnStartup() {
         restoredTracks.push(storedTrack);
     }
 
-    if (restoredTracks.length === 0) return { restoredCount: 0, session };
-
-    if (Array.isArray(session?.trackOrder) && session.trackOrder.length > 0) {
-        const orderMap = new Map(session.trackOrder.map((id, index) => [id, index]));
-        restoredTracks.sort((a, b) => {
-            const aIndex = orderMap.has(a.localFileId) ? orderMap.get(a.localFileId) : Number.MAX_SAFE_INTEGER;
-            const bIndex = orderMap.has(b.localFileId) ? orderMap.get(b.localFileId) : Number.MAX_SAFE_INTEGER;
-            return aIndex - bIndex;
-        });
+    if (restoredTracks.length === 0) {
+        const restoredSession = restoreGisTabsSession([], session);
+        setTracks([]);
+        setActiveTrackId(null);
+        setActiveSegmentId(null);
+        if (restoredSession.needsPersistence) {
+            await persisteSubitoSessioneGisRipristinata([], session);
+        }
+        return { restoredCount: 0, session };
     }
 
+    const restoredSession = restoreGisTabsSession(restoredTracks, session);
     setTracks(restoredTracks);
-    const activeTrack = restoredTracks.find(track => track.id === session?.activeTrackId)
-        || restoredTracks.find(track => track.visible !== false)
-        || restoredTracks[0];
+    const selectedActiveTrackId = selectGisTabDomain(selectedGisTabId, restoredTracks);
+    const activeTrack = restoredTracks.find(track => track.id === selectedActiveTrackId) || null;
     setActiveTrackId(activeTrack?.id || null);
 
     const activeSegment = activeTrack?.segments.find(segment => segment.id === session?.activeSegmentId)
         || activeTrack?.segments[0]
         || null;
     setActiveSegmentId(activeSegment?.id || null);
+
+    if (restoredSession.needsPersistence) {
+        const repairedIds = new Set(restoredSession.repairedTrackIds);
+        await persisteSubitoSessioneGisRipristinata(
+            restoredTracks.filter(track => repairedIds.has(track.id)),
+            session
+        );
+    }
+    schedulePersistTracks(restoredTracks);
 
     if (typeof session?.hikingTrailsVisible === 'boolean') {
         const hikingToggle = document.getElementById('toggle-hiking-trails');
@@ -4047,35 +4684,38 @@ export function flushGisTreeIfDirty() {
 function _doRenderGisTree() {
     _gisTreeDirty = false;
     const container = document.getElementById('gis-file-tree');
+    renderGisTabsBar();
     normalizeTreeSelection();
     pruneCollapsedActiveTracks();
+    const selectedTracks = getSelectedGisTabTracks(tracks);
     const offroadJobsHtml = renderOffroadJobsHtml();
-    if (tracks.length === 0 && !offroadJobsHtml) {
+    if (selectedTracks.length === 0 && !offroadJobsHtml) {
         container.innerHTML = `
           <div class="text-center py-6 text-gray-500 text-xs italic">
-            Nessuna traccia o waypoint caricati in memoria.
+            Nessuna traccia in questa Scheda GIS.<br>Creane una o importa un GPX.
           </div>`;
         return;
     }
 
     let html = offroadJobsHtml;
 
-    if (tracks.length > 0) {
+    if (selectedTracks.length > 0) {
         html += `<div class="space-y-2">
           <span class="text-[10px] text-gray-400 font-bold uppercase tracking-wider flex items-center gap-1">
-            <i data-lucide="folder-tree" class="w-3.5 h-3.5"></i> File GPX in mappa (${tracks.length})
+            <i data-lucide="folder-tree" class="w-3.5 h-3.5"></i> File GPX nella scheda (${selectedTracks.length})
           </span>`;
 
-        tracks.forEach((track, trackIndex) => {
+        selectedTracks.forEach((track, trackIndex) => {
             const isActive = track.id === activeTrackId;
             const isSelected = selectionHas(makeTreeKey('track', track.id));
+            const isTemporarilyHiddenByGisTab = track.visible !== false && !isTrackEffectivelyVisible(track);
             const isExpanded = isTrackExpanded(track.id, isActive);
             const areSegmentsExpanded = isTrackSectionExpanded(track.id, 'segments');
             const areWaypointsExpanded = isTrackSectionExpanded(track.id, 'waypoints');
             const segmentCount = track.segments.length;
             const pointCount = track.segments.reduce((sum, seg) => sum + seg.points.length, 0);
             const isFirst = trackIndex === 0;
-            const isLast = trackIndex === tracks.length - 1;
+            const isLast = trackIndex === selectedTracks.length - 1;
 
             // Paginazione righe: mostra al massimo N segmenti/waypoint per volta.
             // Il limite viene esteso automaticamente per includere il segmento attivo.
@@ -4112,7 +4752,8 @@ function _doRenderGisTree() {
                               ondragstart="handleGisDragStart(event, 'track', '${track.id}')"
                               ondragend="handleGisDragEnd(event)"
                               class="gis-track-drag mt-0.5 text-gray-600 hover:text-gray-300 cursor-grab active:cursor-grabbing"
-                              title="Trascina per riordinare questo file GPX">
+                              aria-label="Trascina per riordinare o spostare la traccia ${escapeXml(track.name)} in un'altra Scheda GIS"
+                              title="Trascina per riordinare o spostare in un'altra Scheda GIS">
                         <i data-lucide="grip-vertical" class="w-4 h-4"></i>
                       </button>
                       <div class="gis-track-title-block flex-1 min-w-0 cursor-pointer">
@@ -4121,6 +4762,13 @@ function _doRenderGisTree() {
                           <i data-lucide="file-map" class="w-3.5 h-3.5 ${isActive ? 'text-blue-300' : 'text-gray-500'} shrink-0"></i>
                           <span id="track-name-${track.id}" data-track-name-id="${track.id}" role="button" tabindex="0" contenteditable="false"
                                 class="track-name-label block text-xs font-bold ${track.visible === false ? 'text-gray-500 line-through' : 'text-white'} border-b border-transparent focus:border-blue-500 focus:outline-none min-w-0 flex-1 truncate cursor-pointer select-none">${escapeXml(track.name)}</span>
+                          ${isTemporarilyHiddenByGisTab ? `
+                          <span class="gis-track-tab-hidden-indicator text-amber-300 shrink-0"
+                                role="img"
+                                aria-label="Traccia temporaneamente invisibile perché la Scheda GIS è nascosta"
+                                title="Scheda GIS nascosta: la preferenza della traccia resta attiva e verrà ripristinata quando mostri la scheda">
+                            <i data-lucide="layers-2" class="w-3.5 h-3.5"></i>
+                          </span>` : ''}
                         </div>
                         <div id="track-meta-${track.id}" class="gis-track-meta text-[10px] text-gray-500 mt-0.5 pl-5">File ${trackIndex + 1} · ${segmentCount} segmenti · ${pointCount} pt · ${track.waypoints.length} wp · ${track.width || 3}px</div>
                       </div>
@@ -4128,7 +4776,7 @@ function _doRenderGisTree() {
                     <div class="gis-track-actions flex items-center gap-1.5 shrink-0">
                       <button onclick="moveTrackUp('${track.id}')" ${isFirst ? 'disabled class="opacity-20 cursor-not-allowed text-gray-700"' : 'class="text-gray-400 hover:text-white"'} title="Sposta su"><i data-lucide="chevron-up" class="w-3.5 h-3.5"></i></button>
                       <button onclick="moveTrackDown('${track.id}')" ${isLast ? 'disabled class="opacity-20 cursor-not-allowed text-gray-700"' : 'class="text-gray-400 hover:text-white"'} title="Sposta giù"><i data-lucide="chevron-down" class="w-3.5 h-3.5"></i></button>
-                      <button onclick="toggleTrackVisibility('${track.id}')" class="text-gray-400 hover:text-white" title="Mostra/Nascondi File"><i data-lucide="${track.visible === false ? 'eye-off' : 'eye'}" class="w-3.5 h-3.5"></i></button>
+                      <button onclick="toggleTrackVisibility('${track.id}')" class="text-gray-400 hover:text-white" title="Preferenza individuale: ${track.visible === false ? 'mostra' : 'nascondi'} file"><i data-lucide="${track.visible === false ? 'eye-off' : 'eye'}" class="w-3.5 h-3.5"></i></button>
                       <input type="color" value="${track.color}" onchange="changeTrackColor('${track.id}', this.value)" class="w-4 h-4 rounded border-0 bg-transparent cursor-pointer" title="Colore traccia">
                       <button onclick="handleTrackContextMenu(event, '${track.id}')" class="text-gray-500 hover:text-white" title="Menu file"><i data-lucide="more-vertical" class="w-3.5 h-3.5"></i></button>
                       <button onclick="deleteTrack('${track.id}')" class="text-gray-500 hover:text-red-400" title="Elimina file"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
@@ -4260,11 +4908,12 @@ function getDropPosition(event) {
 }
 
 function finishGisTreeMove(message) {
-    if (_saveHistoryState) _saveHistoryState();
     if (_updateMapData) _updateMapData(true);
     updateActiveTracksHeader();
     renderGisTree();
     renderLocalGpxLibrary();
+    schedulePersistTracks(tracks);
+    schedulePersistAppSession();
     showToast(message, 'success');
 }
 
@@ -4282,6 +4931,7 @@ export function handleGisDragOver(event) {
 
 export function handleGisDragEnd() {
     _gisDragPayload = null;
+    clearGisTabDropTargets();
 }
 
 export function handleGisDrop(event, targetType, targetTrackId, targetSegId = null) {
@@ -4295,12 +4945,22 @@ export function handleGisDrop(event, targetType, targetTrackId, targetSegId = nu
     if (_gisDragPayload.type === 'track' && targetType === 'track') {
         const fromIndex = tracks.findIndex(track => track.id === _gisDragPayload.trackId);
         const targetIndex = tracks.findIndex(track => track.id === targetTrackId);
-        if (fromIndex === -1 || targetIndex === -1 || fromIndex === targetIndex) return;
+        const sourceTrack = tracks[fromIndex];
+        const targetTrack = tracks[targetIndex];
+        if (
+            fromIndex === -1 ||
+            targetIndex === -1 ||
+            fromIndex === targetIndex ||
+            sourceTrack?.gisTabId !== selectedGisTabId ||
+            targetTrack?.gisTabId !== selectedGisTabId
+        ) return;
 
+        if (_saveHistoryState) _saveHistoryState();
         let toIndex = targetIndex + (getDropPosition(event) === 'after' ? 1 : 0);
         if (fromIndex < toIndex) toIndex--;
         tracks.splice(toIndex, 0, tracks.splice(fromIndex, 1)[0]);
         setActiveTrackId(_gisDragPayload.trackId);
+        rememberActiveTrackForSelectedGisTab(_gisDragPayload.trackId, tracks);
         const activeTrack = tracks.find(track => track.id === _gisDragPayload.trackId);
         setActiveSegmentId(activeTrack?.segments[0]?.id || null);
         _gisDragPayload = null;
@@ -4312,7 +4972,12 @@ export function handleGisDrop(event, targetType, targetTrackId, targetSegId = nu
 
     const sourceTrack = tracks.find(track => track.id === _gisDragPayload.trackId);
     const targetTrack = tracks.find(track => track.id === targetTrackId);
-    if (!sourceTrack || !targetTrack) return;
+    if (
+        !sourceTrack ||
+        !targetTrack ||
+        sourceTrack.gisTabId !== selectedGisTabId ||
+        targetTrack.gisTabId !== selectedGisTabId
+    ) return;
 
     if (
         targetType === 'segment' &&
@@ -4326,6 +4991,7 @@ export function handleGisDrop(event, targetType, targetTrackId, targetSegId = nu
     const sourceIndex = sourceTrack.segments.findIndex(seg => seg.id === _gisDragPayload.segId);
     if (sourceIndex === -1) return;
 
+    if (_saveHistoryState) _saveHistoryState();
     const [segment] = sourceTrack.segments.splice(sourceIndex, 1);
     let targetIndex = targetTrack.segments.length;
 
@@ -4343,21 +5009,49 @@ export function handleGisDrop(event, targetType, targetTrackId, targetSegId = nu
     finishGisTreeMove(sourceTrack.id === targetTrack.id ? "Segmento riordinato" : "Segmento spostato in un altro file");
 }
 
-export function setTrackActive(trackId, shouldFocus = false) {
+function activateOwnedTrack(trackId, options = {}) {
     const track = tracks.find(tr => tr.id === trackId);
-    if (!track) return;
+    const requestedSegmentId = options.segmentId;
+    if (!track || (requestedSegmentId && !track.segments.some(segment => segment.id === requestedSegmentId))) {
+        return false;
+    }
 
+    const previousGisTabId = selectedGisTabId;
     const wasActive = activeTrackId === trackId;
+    if (!activateTrackOwnerGisTab(trackId, tracks)) return false;
     setActiveTrackId(trackId);
     if (!wasActive) setTrackExpanded(trackId, true);
-    if (track.segments.length > 0) {
+    if (requestedSegmentId) {
+        setActiveSegmentId(requestedSegmentId);
+        setTrackSectionExpanded(trackId, 'segments', true);
+    } else if (track.segments.length > 0) {
         setActiveSegmentId(track.segments[track.segments.length - 1].id);
     }
-    if (shouldFocus) focusTrackOnMap(track);
+    if (options.clearTreeSelection) setTreeSelection([]);
+    if (previousGisTabId !== track.gisTabId) renderGisTabsBar();
+    if (options.shouldFocus) {
+        if (requestedSegmentId) focusSegmentOnMap(trackId, requestedSegmentId);
+        else focusTrackOnMap(track);
+    }
     if (_updateMapData) _updateMapData();
     updateActiveTracksHeader();
-    if (!wasActive) renderGisTree();
+    if (options.forceTreeRefresh || requestedSegmentId || !wasActive || previousGisTabId !== track.gisTabId) {
+        renderGisTree();
+    }
     schedulePersistAppSession();
+    return true;
+}
+
+export function activateTrackFromMap(trackId, segmentId = null) {
+    return activateOwnedTrack(trackId, {
+        segmentId: segmentId || undefined,
+        clearTreeSelection: true,
+        forceTreeRefresh: true
+    });
+}
+
+export function setTrackActive(trackId, shouldFocus = false) {
+    activateOwnedTrack(trackId, { shouldFocus });
 }
 
 export function renameTrack(trackId, newName) {
@@ -4396,6 +5090,9 @@ export function toggleTrackVisibility(trackId) {
     const t = tracks.find(tr => tr.id === trackId);
     if (t) {
         t.visible = t.visible === false ? true : false;
+        if (t.id === activeTrackId && t.visible === false) {
+            terminateGeometricModes({ refreshMap: false });
+        }
         if (_saveHistoryState) _saveHistoryState();
         if (_updateMapData) _updateMapData();
         renderGisTree();
@@ -4429,6 +5126,9 @@ export function toggleSegmentVisibility(trackId, segId) {
         const s = t.segments.find(sg => sg.id === segId);
         if (s) {
             s.visible = s.visible === false ? true : false;
+            if (t.id === activeTrackId && s.id === activeSegmentId && s.visible === false) {
+                terminateGeometricModes({ refreshMap: false });
+            }
             if (_saveHistoryState) _saveHistoryState();
             if (_updateMapData) _updateMapData();
         }
@@ -4437,11 +5137,13 @@ export function toggleSegmentVisibility(trackId, segId) {
 
 export function deleteTrack(trackId) {
     const trackToDelete = tracks.find(t => t.id === trackId);
+    if (!trackToDelete || !consentiMutazioneGeometrica([{ traccia: trackToDelete }])) return;
     const remainingTracks = tracks.filter(t => t.id !== trackId);
     setTracks(remainingTracks);
     _collapsedActiveTrackIds.delete(trackId);
     if (activeTrackId === trackId) {
-        const nextTrack = remainingTracks.length > 0 ? remainingTracks[0] : null;
+        const nextTrackId = selectGisTabDomain(selectedGisTabId, remainingTracks);
+        const nextTrack = remainingTracks.find(track => track.id === nextTrackId) || null;
         setActiveTrackId(nextTrack ? nextTrack.id : null);
         setActiveSegmentId(nextTrack && nextTrack.segments.length > 0 ? nextTrack.segments[0].id : null);
         if (nextTrack) setTrackExpanded(nextTrack.id, true);
@@ -4457,7 +5159,7 @@ export function deleteTrack(trackId) {
 
 export function addNewSegmentToTrack(trackId) {
     const t = tracks.find(tr => tr.id === trackId);
-    if (t) {
+    if (t && consentiMutazioneGeometrica([{ traccia: t }])) {
         const newSegId = 'seg_' + Date.now();
         t.segments.push({
             id: newSegId,
@@ -4489,24 +5191,19 @@ export function renameSegment(trackId, segId, newName) {
 }
 
 export function setSegmentActive(trackId, segId, shouldFocus = false) {
-    setActiveTrackId(trackId);
-    setActiveSegmentId(segId);
-    setTrackExpanded(trackId, true);
-    setTrackSectionExpanded(trackId, 'segments', true);
-    if (shouldFocus) focusSegmentOnMap(trackId, segId);
-    if (_updateMapData) _updateMapData();
-    updateActiveTracksHeader();
-    renderGisTree();
-    schedulePersistAppSession();
+    activateOwnedTrack(trackId, { segmentId: segId, shouldFocus });
 }
 
 export function deleteSegment(trackId, segId) {
     const t = tracks.find(tr => tr.id === trackId);
-    if (t) {
+    const segmento = t?.segments.find(sg => sg.id === segId) || null;
+    if (t && segmento && consentiMutazioneGeometrica([{ traccia: t, segmento }])) {
         t.segments = t.segments.filter(sg => sg.id !== segId);
         if (activeSegmentId === segId) {
             setActiveSegmentId(t.segments.length > 0 ? t.segments[0].id : null);
         }
+    } else {
+        return;
     }
     if (_saveHistoryState) _saveHistoryState();
     if (_updateMapData) _updateMapData();
@@ -4519,22 +5216,25 @@ export function zoomToWaypoint(lon, lat) {
 
 export function deleteWaypoint(trackId, wpId) {
     const track = tracks.find(t => t.id === trackId);
-    if (track) {
+    const waypoint = track?.waypoints.find(item => item.id === wpId) || null;
+    if (track && waypoint && isWaypointEffectivelyVisible(track, waypoint)
+        && consentiMutazioneGeometrica([{ traccia: track }])) {
         track.waypoints = track.waypoints.filter(w => w.id !== wpId);
         if (_saveHistoryState) _saveHistoryState();
         if (_updateMapData) _updateMapData();
         showToast("Waypoint rimosso", "info");
-    }
+    } else if (track && waypoint) showToast(MESSAGGIO_GEOMETRIA_NON_MODIFICABILE, 'error');
 }
 
 export function updateActiveTracksHeader() {
     const list = document.getElementById('active-tracks-list');
-    if (tracks.length === 0) {
-        list.innerHTML = `<span class="text-gray-500 italic whitespace-nowrap">Nessuna traccia creata</span>`;
+    const selectedTracks = getSelectedGisTabTracks(tracks);
+    if (selectedTracks.length === 0) {
+        list.innerHTML = `<span class="text-gray-500 italic whitespace-nowrap">Nessuna traccia nella scheda</span>`;
         return;
     }
 
-    list.innerHTML = tracks.map(t => {
+    list.innerHTML = selectedTracks.map(t => {
         const isActive = t.id === activeTrackId;
         return `
           <div onclick="setTrackActive('${t.id}', true)" class="cursor-pointer flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${isActive ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400 hover:text-white'} ${t.visible === false ? 'opacity-50' : ''}">
@@ -4612,24 +5312,30 @@ export function showToast(message, type = 'info') {
 
 export function moveTrackUp(trackId) {
     closeTrackContextMenu();
-    const index = tracks.findIndex(t => t.id === trackId);
-    if (index <= 0) return;
+    const selectedTracks = getSelectedGisTabTracks(tracks);
+    const selectedIndex = selectedTracks.findIndex(track => track.id === trackId);
+    if (selectedIndex <= 0) return;
 
-    const temp = tracks[index];
-    tracks[index] = tracks[index - 1];
-    tracks[index - 1] = temp;
+    const index = tracks.findIndex(track => track.id === trackId);
+    const previousIndex = tracks.findIndex(track => track.id === selectedTracks[selectedIndex - 1].id);
+    if (index === -1 || previousIndex === -1) return;
+    if (_saveHistoryState) _saveHistoryState();
+    [tracks[index], tracks[previousIndex]] = [tracks[previousIndex], tracks[index]];
 
     finishGisTreeMove("Traccia spostata in alto");
 }
 
 export function moveTrackDown(trackId) {
     closeTrackContextMenu();
-    const index = tracks.findIndex(t => t.id === trackId);
-    if (index === -1 || index >= tracks.length - 1) return;
+    const selectedTracks = getSelectedGisTabTracks(tracks);
+    const selectedIndex = selectedTracks.findIndex(track => track.id === trackId);
+    if (selectedIndex === -1 || selectedIndex >= selectedTracks.length - 1) return;
 
-    const temp = tracks[index];
-    tracks[index] = tracks[index + 1];
-    tracks[index + 1] = temp;
+    const index = tracks.findIndex(track => track.id === trackId);
+    const nextIndex = tracks.findIndex(track => track.id === selectedTracks[selectedIndex + 1].id);
+    if (index === -1 || nextIndex === -1) return;
+    if (_saveHistoryState) _saveHistoryState();
+    [tracks[index], tracks[nextIndex]] = [tracks[nextIndex], tracks[index]];
 
     finishGisTreeMove("Traccia spostata in basso");
 }
@@ -4637,11 +5343,13 @@ export function moveTrackDown(trackId) {
 export function openMergeTracksModal(trackId) {
     closeTrackContextMenu();
     const sourceTrack = tracks.find(t => t.id === trackId);
-    if (!sourceTrack) return;
+    if (!sourceTrack || sourceTrack.gisTabId !== selectedGisTabId) return;
 
-    const otherTracks = tracks.filter(t => t.id !== trackId);
+    const otherTracks = tracks.filter(t => (
+        t.id !== trackId && t.gisTabId === sourceTrack.gisTabId
+    ));
     if (otherTracks.length === 0) {
-        showToast("Nessun'altra traccia disponibile con cui effettuare l'unione", "error");
+        showToast("Nessun'altra traccia disponibile in questa Scheda GIS", "error");
         return;
     }
 
@@ -4694,7 +5402,17 @@ export function openMergeTracksModal(trackId) {
 export function mergeTwoTracks(sourceId, targetId) {
     const sourceTrack = tracks.find(t => t.id === sourceId);
     const targetTrack = tracks.find(t => t.id === targetId);
-    if (!sourceTrack || !targetTrack) return;
+    if (
+        !sourceTrack ||
+        !targetTrack ||
+        sourceId === targetId ||
+        !areTracksInSameGisTab([sourceId, targetId], tracks, selectedGisTabId)
+    ) {
+        showToast("Sposta prima le tracce nella stessa Scheda GIS per unirle", "error");
+        return;
+    }
+
+    if (_saveHistoryState) _saveHistoryState();
 
     // Copy segments
     if (sourceTrack.segments) {
@@ -4726,11 +5444,12 @@ export function mergeTwoTracks(sourceId, targetId) {
     setTrackExpanded(targetTrack.id, true);
     setTreeSelection([makeTreeKey('track', targetTrack.id)]);
 
-    if (_saveHistoryState) _saveHistoryState();
     if (_updateMapData) _updateMapData();
     updateActiveTracksHeader();
     renderGisTree();
     renderLocalGpxLibrary();
+    schedulePersistTracks(tracks);
+    schedulePersistAppSession();
 
     showToast(`Traccia "${sourceTrack.name}" unita in "${targetTrack.name}"!`, "success");
 }
@@ -4742,6 +5461,12 @@ export function mergeSelectedTracks() {
         showToast("Seleziona almeno due tracce per effettuare l'unione", "error");
         return;
     }
+    if (!areTracksInSameGisTab(selectedTracks.map(track => track.id), tracks, selectedGisTabId)) {
+        showToast("Sposta prima le tracce nella stessa Scheda GIS per unirle", "error");
+        return;
+    }
+
+    if (_saveHistoryState) _saveHistoryState();
 
     // Sort selectedTracks by their index in tracks to keep order consistent
     selectedTracks.sort((a, b) => {
@@ -4783,11 +5508,12 @@ export function mergeSelectedTracks() {
     setTrackExpanded(targetTrack.id, true);
     setTreeSelection([makeTreeKey('track', targetTrack.id)]);
 
-    if (_saveHistoryState) _saveHistoryState();
     if (_updateMapData) _updateMapData();
     updateActiveTracksHeader();
     renderGisTree();
     renderLocalGpxLibrary();
+    schedulePersistTracks(tracks);
+    schedulePersistAppSession();
 
     showToast(`Tracce unite con successo in "${targetTrack.name}"!`, "success");
 }
@@ -4915,12 +5641,14 @@ export function setupEvents() {
     if (viewMode3dButton) viewMode3dButton.onclick = () => _setDimensionMode(true);
 
     document.getElementById('btn-draw-track').onclick = () => {
-        setIsDrawing(!isDrawing);
-        setIsCutting(false);
-        setIsBoxDeleting(false);
-        setIsAddingWaypoint(false);
+        const shouldActivate = !isDrawing;
+        if (shouldActivate && !canActivateGeometricTool({
+            allowTrackCreation: true,
+            requireSegment: true
+        })) return;
+        terminateGeometricModes({ refreshMap: false });
+        setIsDrawing(shouldActivate);
         _disablePrintPlanning();
-        clearBoxDeleteSelection();
 
         const btn = document.getElementById('btn-draw-track');
         if (isDrawing) {
@@ -5160,36 +5888,33 @@ export function setupEvents() {
     });
 
     document.getElementById('btn-cut-track').onclick = () => {
-        setIsCutting(!isCutting);
-        setIsDrawing(false);
-        setIsBoxDeleting(false);
-        setIsAddingWaypoint(false);
+        const shouldActivate = !isCutting;
+        if (shouldActivate && !canActivateGeometricTool()) return;
+        terminateGeometricModes({ refreshMap: false });
+        setIsCutting(shouldActivate);
         _disablePrintPlanning();
-        clearBoxDeleteSelection();
         updateToolButtons();
         updateMapToolCursor();
         showToast(isCutting ? "Clicca su un punto della traccia per tagliarla in due segmenti" : "Taglio disattivato", "info");
     };
 
     document.getElementById('btn-box-delete').onclick = () => {
-        setIsBoxDeleting(!isBoxDeleting);
-        setIsDrawing(false);
-        setIsCutting(false);
-        setIsAddingWaypoint(false);
+        const shouldActivate = !isBoxDeleting;
+        if (shouldActivate && !canActivateGeometricTool()) return;
+        terminateGeometricModes({ refreshMap: false });
+        setIsBoxDeleting(shouldActivate);
         _disablePrintPlanning();
-        clearBoxDeleteSelection();
         updateToolButtons();
         updateMapToolCursor();
         showToast(isBoxDeleting ? "Clicca due punti per definire il rettangolo d'eliminazione" : "Cancellazione box disattivata", "info");
     };
 
     document.getElementById('btn-add-waypoint').onclick = () => {
-        setIsAddingWaypoint(!isAddingWaypoint);
-        setIsDrawing(false);
-        setIsCutting(false);
-        setIsBoxDeleting(false);
+        const shouldActivate = !isAddingWaypoint;
+        if (shouldActivate && !canActivateGeometricTool()) return;
+        terminateGeometricModes({ refreshMap: false });
+        setIsAddingWaypoint(shouldActivate);
         _disablePrintPlanning();
-        clearBoxDeleteSelection();
         updateToolButtons();
         updateMapToolCursor();
         showToast(isAddingWaypoint ? "Clicca sulla mappa per inserire un Waypoint" : "Inserimento waypoint disattivato", "info");
@@ -5212,24 +5937,34 @@ export function setupEvents() {
 
     const fileImportInput = document.getElementById('file-import-gpx');
     if (fileImportInput) {
-        fileImportInput.onchange = (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                trackAnalyticsEvent('import_gpx', {
-                    fileName: file.name,
-                    size: file.size
-                }).catch(err => console.warn(err));
-                const reader = new FileReader();
-                reader.onload = function (evt) {
-                    _importGPX(evt.target.result, file.name);
-                };
-                reader.readAsText(file);
+        fileImportInput.onchange = async event => {
+            const file = event.target.files;
+            try {
+                await importaFileGpxInOrdine(file, {
+                    catturaDestinazione: catturaDestinazioneIngressoTraccia,
+                    leggiTesto: leggiFileComeTesto,
+                    importaGpx: _importGPX,
+                    notificaFile: elemento => {
+                        trackAnalyticsEvent('import_gpx', {
+                            fileName: elemento.name,
+                            size: elemento.size
+                        }).catch(err => console.warn(err));
+                    }
+                });
+            } catch (err) {
+                console.error(err);
+                showToast('Impossibile importare uno dei file GPX selezionati', 'error');
+            } finally {
+                event.target.value = '';
             }
         };
     }
 
     document.getElementById('btn-tree-new-track').onclick = () => {
         createNewTrack();
+    };
+    document.getElementById('btn-add-gis-tab').onclick = () => {
+        createNewGisTab();
     };
 
     document.getElementById('btn-search').onclick = searchNominatim;

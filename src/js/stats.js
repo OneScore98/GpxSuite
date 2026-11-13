@@ -9,9 +9,10 @@
 //   3. Tutto il lavoro viene eseguito in un requestIdleCallback per non
 //      competere con il rendering della mappa durante pan/zoom
 
-import { chart, setChart, tracks, activeTrackId, map } from './state.js';
+import { chart, setChart, tracks, activeTrackId, gisTabs, selectedGisTabId, map } from './state.js';
 import { loadScriptOnce, vibrationLevelColor } from './utils.js';
 import { computeSlopeProfile } from './slope.js?v=robust-slope3-20260720';
+import { isSegmentEffectivelyVisible, isTrackEffectivelyVisible } from './gis-tabs.js';
 
 const CHART_JS_URL = 'https://cdn.jsdelivr.net/npm/chart.js';
 let _chartLoadPromise = null;
@@ -179,10 +180,10 @@ const surfaceBandsPlugin = {
 function _getActiveTrackColor() {
     if (activeTrackId) {
         const t = tracks.find(t => t.id === activeTrackId);
-        if (t?.color) return t.color;
+        if (isTrackEffectivelyVisible(t) && t.color) return t.color;
     }
     for (const t of tracks) {
-        if (t.visible !== false && t.color) return t.color;
+        if (isTrackEffectivelyVisible(t) && t.color) return t.color;
     }
     return '#3b82f6';
 }
@@ -1389,10 +1390,10 @@ function findChartTimeOrigin() {
     for (let ti = 0; ti < tracks.length; ti++) {
         const track = tracks[ti];
         if (activeTrackId && track.id !== activeTrackId) continue;
-        if (track.visible === false) continue;
+        if (!isTrackEffectivelyVisible(track)) continue;
         for (let si = 0; si < track.segments.length; si++) {
             const segment = track.segments[si];
-            if (segment.visible === false) continue;
+            if (!isSegmentEffectivelyVisible(track, segment)) continue;
             const points = segment.points || [];
             for (let pi = 0; pi < points.length; pi++) {
                 const timeMs = readPointTimeMs(points[pi]);
@@ -1750,6 +1751,52 @@ function isStatsPanelVisible() {
     return !panel.classList.contains('translate-y-60');
 }
 
+function isSelectedGisTabHidden() {
+    return gisTabs.find(tab => tab.id === selectedGisTabId)?.visible === false;
+}
+
+function setHiddenGisTabStatsState(hidden) {
+    document.getElementById('stats-gis-tab-hidden')?.classList.toggle('hidden', !hidden);
+    if (!hidden) return;
+
+    const values = {
+        'stat-dist': '0.00 km',
+        'stat-ascent': '+0 m',
+        'stat-descent': '-0 m',
+        'stat-max-alt': '0 m',
+        'stat-avg-speed': '0.0 km/h',
+        'stat-max-speed': '0.0 km/h',
+        'stat-segments-count': '0',
+        'stat-avg-slope': '0%',
+        'stat-max-slope': '0%',
+        'stat-surface-summary': 'N/D',
+        'stat-max-tilt': '--',
+        'stat-avg-vibration': '--',
+        'stat-max-vibration': '--',
+        'stat-avg-vibration-mps2': '--',
+        'stat-max-vibration-mps2': '--'
+    };
+    for (const [id, value] of Object.entries(values)) {
+        const element = document.getElementById(id);
+        if (element) element.textContent = value;
+    }
+
+    _chartPointsGeo = [];
+    _chartPointIndex = [];
+    _chartPointLookup = new Map();
+    clearSelectedTrackPoint();
+    document.getElementById('stats-chart-empty')?.classList.add('hidden');
+    const legend = document.getElementById('stats-color-legend');
+    if (legend) legend.style.display = 'none';
+    if (!chart) return;
+    _setChartFullXRange(0);
+    chart.$surfaceBands = [];
+    chart.data.labels = [];
+    for (let i = 0; i < chart.data.datasets.length; i++) chart.data.datasets[i].data = [];
+    _applyChartXScale(chart);
+    chart.update('none');
+}
+
 // Debounce + idle: il calcolo non blocca pan/zoom della mappa
 let _statsTimer = null;
 let _statsIdleHandle = null;
@@ -1783,6 +1830,9 @@ export function forceUpdateStats() {
 function _doUpdateStats() {
     // Skip totale se il pannello è chiuso — risparmio enorme su file grandi
     if (!isStatsPanelVisible()) return;
+    const selectedTabHidden = isSelectedGisTabHidden();
+    setHiddenGisTabStatsState(selectedTabHidden);
+    if (selectedTabHidden) return;
 
     let totalDistance = 0;
     let totalAscent   = 0;
@@ -1837,10 +1887,10 @@ function _doUpdateStats() {
     for (let ti = 0; ti < tracks.length; ti++) {
         const t = tracks[ti];
         if (activeTrackId && t.id !== activeTrackId) continue;
-        if (t.visible === false) continue;
+        if (!isTrackEffectivelyVisible(t)) continue;
         for (let si = 0; si < t.segments.length; si++) {
             const s = t.segments[si];
-            if (s.visible === false) continue;
+            if (!isSegmentEffectivelyVisible(t, s)) continue;
             pointsTotalEstimate += s.points.length;
             if (!needsTimeScan) continue;
             for (let pi = 0; pi < s.points.length; pi++) {
@@ -1868,11 +1918,11 @@ function _doUpdateStats() {
     for (let ti = 0; ti < tracks.length; ti++) {
         const track = tracks[ti];
         if (activeTrackId && track.id !== activeTrackId) continue;
-        if (track.visible === false) continue;
+        if (!isTrackEffectivelyVisible(track)) continue;
         const segs = track.segments;
         for (let si = 0; si < segs.length; si++) {
             const seg = segs[si];
-            if (seg.visible === false) continue;
+            if (!isSegmentEffectivelyVisible(track, seg)) continue;
             totalSegments++;
             prevPt = null;
             prevTimeMs = null;
