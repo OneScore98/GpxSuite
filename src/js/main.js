@@ -16,7 +16,7 @@ import {
     setStyleRestoredHook
 } from './map.js?v=robust-slope3-20260720';
 import { importGPX, exportGPX } from './gpx.js?v=vibration-tooltip-units-20260715';
-import { addPointToActiveSegment, cutTrackAtPoint, handleBoxDeleteClick, saveHistoryState, triggerUndo, setSnapProfile } from './tracks.js?v=vibration-tooltip-units-20260715';
+import { addPointToActiveSegment, cancelPendingTrackGeometryInteractions, cutTrackAtPoint, handleBoxDeleteClick, saveHistoryState, triggerUndo, setSnapProfile } from './tracks.js?v=vibration-tooltip-units-20260715';
 import { addWaypointAtCoords, cancelWaypointGeometryInteraction, saveWaypointModifications, openWaypointEditor, updateWaypointsOnMap } from './waypoints.js?v=vibration-tooltip-units-20260715';
 import { flushPersistedStateNow, schedulePersistAppSession, schedulePersistTracks } from './storage.js';
 import {
@@ -182,6 +182,7 @@ injectDeps({
     addPointToActiveSegment,
     cutTrackAtPoint,
     handleBoxDeleteClick,
+    cancelPendingTrackGeometryInteractions,
     addWaypointAtCoords,
     cancelWaypointGeometryInteraction,
     saveWaypointModifications,

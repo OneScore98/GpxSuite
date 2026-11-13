@@ -78,6 +78,7 @@ let _exportGPX = null;
 let _addPointToActiveSegment = null;
 let _cutTrackAtPoint = null;
 let _handleBoxDeleteClick = null;
+let _cancelPendingTrackGeometryInteractions = null;
 let _addWaypointAtCoords = null;
 let _cancelWaypointGeometryInteraction = null;
 let _saveWaypointModifications = null;
@@ -1993,6 +1994,7 @@ export function terminateGeometricModes(options = {}) {
     setIsCutting(false);
     setIsBoxDeleting(false);
     setIsAddingWaypoint(false);
+    if (_cancelPendingTrackGeometryInteractions) _cancelPendingTrackGeometryInteractions();
     clearBoxDeleteSelection();
     if (_cancelWaypointGeometryInteraction) _cancelWaypointGeometryInteraction();
     updateToolButtons();
@@ -2016,6 +2018,7 @@ export function injectDeps(deps) {
     _addPointToActiveSegment = deps.addPointToActiveSegment;
     _cutTrackAtPoint = deps.cutTrackAtPoint;
     _handleBoxDeleteClick = deps.handleBoxDeleteClick;
+    _cancelPendingTrackGeometryInteractions = deps.cancelPendingTrackGeometryInteractions;
     _addWaypointAtCoords = deps.addWaypointAtCoords;
     _cancelWaypointGeometryInteraction = deps.cancelWaypointGeometryInteraction;
     _saveWaypointModifications = deps.saveWaypointModifications;

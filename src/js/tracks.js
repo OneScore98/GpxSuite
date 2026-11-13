@@ -35,6 +35,11 @@ const HIDDEN_GEOMETRY_MESSAGE = 'Modifica geometrica non disponibile: rendi visi
 // raggruppiamo: lo snapshot viene differito a idle e collassato in uno solo.
 let _historyIdleHandle = null;
 let _historyPending = false;
+let _geometryOperationGeneration = 0;
+
+export function cancelPendingTrackGeometryInteractions() {
+    _geometryOperationGeneration += 1;
+}
 
 // ── Snapshot "copy-on-write" ──────────────────────────────────────────────────
 // Su file enormi (50k+ punti) JSON.stringify({tracks}) costa 100+ ms A OGNI
@@ -243,10 +248,12 @@ export async function addPointToActiveSegment(lon, lat) {
     }
 
     const lastPoint = segment.points[segment.points.length - 1];
+    const operationGeneration = _geometryOperationGeneration;
     showToast("Calcolo percorso...", "info");
 
     try {
         const routePoints = await fetchSnapRoute(lastPoint, { lon, lat }, currentSnapProfile);
+        if (operationGeneration !== _geometryOperationGeneration) return;
         if (!isDrawing) return;
         if (!isGeometryEditable(track, segment)) {
             showToast(HIDDEN_GEOMETRY_MESSAGE, "error");
@@ -278,6 +285,7 @@ export async function addPointToActiveSegment(lon, lat) {
         }
     } catch (err) {
         console.warn('Errore routing:', err);
+        if (operationGeneration !== _geometryOperationGeneration) return;
         if (!isDrawing) return;
         if (!isGeometryEditable(track, segment)) {
             showToast(HIDDEN_GEOMETRY_MESSAGE, "error");
